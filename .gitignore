@@ -1,0 +1,37 @@
+# macOS
+.DS_Store
+
+# Xcode user state
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.moved-aside
+
+# Build products
+build/
+DerivedData/
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# Swift Package Manager local state
+.build/
+.swiftpm/
+
+# CocoaPods/Carthage output (the project currently has no third-party dependencies)
+Pods/
+Carthage/Build/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.p12
+*.mobileprovision
+*.cer
+*.key
+
+# Editor files
+.idea/
+.vscode/
+*~

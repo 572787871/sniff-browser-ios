@@ -1,0 +1,189 @@
+name: Build unsigned iOS IPA
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build, test and package
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show Xcode toolchain
+        run: |
+          set -o pipefail
+          mkdir -p build/logs
+          xcodebuild -version 2>&1 | tee build/logs/xcode-version.log
+          xcrun swift --version 2>&1 | tee build/logs/swift-version.log
+
+      - name: Install XcodeGen
+        run: |
+          set -o pipefail
+          brew install xcodegen 2>&1 | tee build/logs/xcodegen-install.log
+          xcodegen version 2>&1 | tee build/logs/xcodegen-version.log
+
+      - name: Generate Xcode project
+        run: |
+          set -o pipefail
+          xcodegen generate 2>&1 | tee build/logs/xcodegen-generate.log
+
+      - name: Stage generated Xcode project
+        run: |
+          mkdir -p build/generated-project
+          ditto SniffBrowser.xcodeproj \
+            build/generated-project/SniffBrowser.xcodeproj
+
+      - name: List project configuration
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project SniffBrowser.xcodeproj \
+            -scheme SniffBrowser \
+            -list 2>&1 | tee build/logs/xcodebuild-list.log
+
+      - name: Build for iOS Simulator
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project SniffBrowser.xcodeproj \
+            -scheme SniffBrowser \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/DerivedData-Simulator \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee build/logs/simulator-build.log
+
+      - name: Select an available iPhone Simulator
+        id: simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          SIMULATOR_UDID="$(
+            xcrun simctl list devices available -j |
+              python3 -c '
+          import json
+          import sys
+
+          data = json.load(sys.stdin)["devices"]
+          candidates = []
+          for runtime, devices in data.items():
+              if ".iOS-" not in runtime:
+                  continue
+              version = tuple(
+                  int(part) for part in runtime.rsplit(".iOS-", 1)[1].split("-")
+              )
+              for device in devices:
+                  if device.get("isAvailable") and device["name"].startswith("iPhone"):
+                      candidates.append((version, device["udid"]))
+          if not candidates:
+              raise SystemExit("No available iPhone Simulator was found.")
+          print(max(candidates)[1])
+          '
+          )"
+          echo "udid=${SIMULATOR_UDID}" >> "$GITHUB_OUTPUT"
+          echo "Selected simulator: ${SIMULATOR_UDID}" | tee build/logs/simulator-selection.log
+          xcrun simctl boot "${SIMULATOR_UDID}" || true
+          xcrun simctl bootstatus "${SIMULATOR_UDID}" -b
+
+      - name: Run unit tests
+        run: |
+          set -o pipefail
+          mkdir -p build/TestResults
+          rm -rf build/TestResults/SniffBrowserTests.xcresult
+          xcodebuild \
+            -project SniffBrowser.xcodeproj \
+            -scheme SniffBrowser \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}' \
+            -derivedDataPath build/DerivedData-Tests \
+            -resultBundlePath build/TestResults/SniffBrowserTests.xcresult \
+            CODE_SIGNING_ALLOWED=NO \
+            test 2>&1 | tee build/logs/unit-tests.log
+
+      - name: Build unsigned Release app for iPhone
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project SniffBrowser.xcodeproj \
+            -scheme SniffBrowser \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData-Device \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build 2>&1 | tee build/logs/iphoneos-release-build.log
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="$(
+            find build/DerivedData-Device/Build/Products/Release-iphoneos \
+              -maxdepth 1 \
+              -type d \
+              -name 'SniffBrowser.app' \
+              -print \
+              -quit
+          )"
+          if [[ -z "${APP_PATH}" || ! -d "${APP_PATH}" ]]; then
+            echo "SniffBrowser.app was not found in Release-iphoneos." | tee build/logs/ipa-package.log
+            exit 1
+          fi
+
+          PACKAGE_ROOT="${RUNNER_TEMP}/sniffbrowser-package"
+          mkdir -p "${PACKAGE_ROOT}/Payload" build/artifacts
+          ditto "${APP_PATH}" "${PACKAGE_ROOT}/Payload/SniffBrowser.app"
+          (
+            cd "${PACKAGE_ROOT}"
+            /usr/bin/zip -qry \
+              "${GITHUB_WORKSPACE}/build/artifacts/SniffBrowser-unsigned.ipa" \
+              Payload
+          )
+          /usr/bin/shasum -a 256 \
+            build/artifacts/SniffBrowser-unsigned.ipa |
+            tee build/logs/ipa-sha256.log
+
+      - name: Upload unsigned IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SniffBrowser-unsigned-ipa
+          path: build/artifacts/SniffBrowser-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload generated Xcode project
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SniffBrowser-generated-xcodeproj
+          path: build/generated-project/SniffBrowser.xcodeproj
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SniffBrowser-build-logs
+          path: |
+            build/logs
+            build/TestResults/SniffBrowserTests.xcresult
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,0 +1,256 @@
+import UIKit
+
+struct AddressBarState: Equatable {
+  var url: URL?
+  var isLoading = false
+  var progress = 0.0
+  var isEditing = false
+}
+
+protocol AddressBarDelegate: AnyObject {
+  func addressBar(_ addressBar: AddressBarView, didSubmit text: String)
+  func addressBarDidRequestReload(_ addressBar: AddressBarView)
+  func addressBarDidRequestStop(_ addressBar: AddressBarView)
+  func addressBarDidBeginEditing(_ addressBar: AddressBarView)
+  func addressBarDidEndEditing(_ addressBar: AddressBarView)
+}
+
+final class AddressBarView: UIView {
+  weak var delegate: AddressBarDelegate?
+
+  private let materialView = UIVisualEffectView(
+    effect: UIBlurEffect(style: .systemThinMaterial)
+  )
+  private let securityImageView = UIImageView()
+  private let textField = UITextField()
+  private let trailingButton = UIButton(type: .system)
+  private let progressView = UIProgressView(progressViewStyle: .bar)
+  private var state = AddressBarState()
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    configure()
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    configure()
+  }
+
+  func apply(_ state: AddressBarState) {
+    self.state = state
+    if !textField.isFirstResponder {
+      textField.text = displayText(for: state.url)
+      textField.textAlignment = state.url == nil ? .center : .left
+    }
+    updateSecurityIcon(for: state.url)
+    updateTrailingButton()
+    progressView.setProgress(Float(state.progress), animated: true)
+    progressView.isHidden = !state.isLoading || state.progress >= 1
+    accessibilityValue = state.url?.absoluteString ?? "新标签页"
+  }
+
+  func beginEditing() {
+    textField.becomeFirstResponder()
+  }
+
+  private func configure() {
+    translatesAutoresizingMaskIntoConstraints = false
+    directionalLayoutMargins = NSDirectionalEdgeInsets(
+      top: 0,
+      leading: AppSpacing.sm,
+      bottom: 0,
+      trailing: AppSpacing.xs
+    )
+
+    materialView.translatesAutoresizingMaskIntoConstraints = false
+    materialView.layer.cornerRadius = AppRadius.input
+    materialView.layer.cornerCurve = .continuous
+    materialView.clipsToBounds = true
+    materialView.layer.borderWidth = 0.5
+    materialView.layer.borderColor = AppColors.separator.cgColor
+    addSubview(materialView)
+
+    securityImageView.translatesAutoresizingMaskIntoConstraints = false
+    securityImageView.tintColor = AppColors.secondaryText
+    securityImageView.contentMode = .scaleAspectFit
+    securityImageView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+      pointSize: 14,
+      weight: .medium
+    )
+    materialView.contentView.addSubview(securityImageView)
+
+    textField.translatesAutoresizingMaskIntoConstraints = false
+    textField.delegate = self
+    textField.font = AppTypography.body
+    textField.textColor = AppColors.primaryText
+    textField.tintColor = AppColors.accent
+    textField.placeholder = "搜索或输入网址"
+    textField.autocapitalizationType = .none
+    textField.autocorrectionType = .no
+    textField.spellCheckingType = .no
+    textField.keyboardType = .URL
+    textField.returnKeyType = .go
+    textField.clearButtonMode = .never
+    textField.accessibilityLabel = "地址与搜索"
+    textField.accessibilityIdentifier = "browser.address"
+    textField.addTarget(
+      self,
+      action: #selector(textDidChange),
+      for: .editingChanged
+    )
+    materialView.contentView.addSubview(textField)
+
+    trailingButton.translatesAutoresizingMaskIntoConstraints = false
+    trailingButton.tintColor = AppColors.secondaryText
+    trailingButton.accessibilityIdentifier = "browser.reloadOrStop"
+    trailingButton.addTarget(
+      self,
+      action: #selector(trailingButtonPressed),
+      for: .touchUpInside
+    )
+    materialView.contentView.addSubview(trailingButton)
+
+    progressView.translatesAutoresizingMaskIntoConstraints = false
+    progressView.progressTintColor = AppColors.accent
+    progressView.trackTintColor = .clear
+    progressView.isHidden = true
+    materialView.contentView.addSubview(progressView)
+
+    NSLayoutConstraint.activate([
+      heightAnchor.constraint(equalToConstant: AppMetrics.addressBarHeight),
+      materialView.topAnchor.constraint(equalTo: topAnchor),
+      materialView.leadingAnchor.constraint(equalTo: leadingAnchor),
+      materialView.trailingAnchor.constraint(equalTo: trailingAnchor),
+      materialView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+      securityImageView.leadingAnchor.constraint(
+        equalTo: materialView.contentView.leadingAnchor,
+        constant: AppSpacing.sm
+      ),
+      securityImageView.centerYAnchor.constraint(
+        equalTo: materialView.contentView.centerYAnchor
+      ),
+      securityImageView.widthAnchor.constraint(equalToConstant: 18),
+      securityImageView.heightAnchor.constraint(equalToConstant: 18),
+
+      textField.leadingAnchor.constraint(
+        equalTo: securityImageView.trailingAnchor,
+        constant: AppSpacing.xs
+      ),
+      textField.trailingAnchor.constraint(
+        equalTo: trailingButton.leadingAnchor,
+        constant: -AppSpacing.xs
+      ),
+      textField.topAnchor.constraint(equalTo: materialView.contentView.topAnchor),
+      textField.bottomAnchor.constraint(equalTo: materialView.contentView.bottomAnchor),
+
+      trailingButton.trailingAnchor.constraint(
+        equalTo: materialView.contentView.trailingAnchor,
+        constant: -AppSpacing.xs
+      ),
+      trailingButton.centerYAnchor.constraint(
+        equalTo: materialView.contentView.centerYAnchor
+      ),
+      trailingButton.widthAnchor.constraint(
+        equalToConstant: AppMetrics.minimumTapSize
+      ),
+      trailingButton.heightAnchor.constraint(
+        equalToConstant: AppMetrics.minimumTapSize
+      ),
+
+      progressView.leadingAnchor.constraint(
+        equalTo: materialView.contentView.leadingAnchor,
+        constant: AppRadius.input
+      ),
+      progressView.trailingAnchor.constraint(
+        equalTo: materialView.contentView.trailingAnchor,
+        constant: -AppRadius.input
+      ),
+      progressView.bottomAnchor.constraint(
+        equalTo: materialView.contentView.bottomAnchor
+      ),
+      progressView.heightAnchor.constraint(equalToConstant: 2),
+    ])
+    updateSecurityIcon(for: nil)
+    updateTrailingButton()
+  }
+
+  private func displayText(for url: URL?) -> String? {
+    guard let url else { return nil }
+    return url.host ?? url.absoluteString
+  }
+
+  private func updateSecurityIcon(for url: URL?) {
+    let symbol: String
+    let color: UIColor
+    switch url?.scheme?.lowercased() {
+    case "https":
+      symbol = "lock.fill"
+      color = AppColors.secondaryText
+      securityImageView.accessibilityLabel = "安全连接"
+    case "http":
+      symbol = "exclamationmark.triangle.fill"
+      color = AppColors.warning
+      securityImageView.accessibilityLabel = "连接不安全"
+    default:
+      symbol = "globe"
+      color = AppColors.secondaryText
+      securityImageView.accessibilityLabel = "新标签页"
+    }
+    securityImageView.image = UIImage(systemName: symbol)
+    securityImageView.tintColor = color
+  }
+
+  private func updateTrailingButton() {
+    let isEditingWithText = textField.isFirstResponder
+      && textField.text?.isEmpty == false
+    let symbol = isEditingWithText
+      ? "xmark.circle.fill"
+      : (state.isLoading ? "xmark" : "arrow.clockwise")
+    trailingButton.setImage(UIImage(systemName: symbol), for: .normal)
+    trailingButton.accessibilityLabel = isEditingWithText
+      ? "清除"
+      : (state.isLoading ? "停止载入" : "重新载入")
+  }
+
+  @objc private func textDidChange() {
+    updateTrailingButton()
+  }
+
+  @objc private func trailingButtonPressed() {
+    if textField.isFirstResponder, textField.text?.isEmpty == false {
+      textField.text = ""
+      updateTrailingButton()
+      return
+    }
+    state.isLoading
+      ? delegate?.addressBarDidRequestStop(self)
+      : delegate?.addressBarDidRequestReload(self)
+  }
+}
+
+extension AddressBarView: UITextFieldDelegate {
+  func textFieldDidBeginEditing(_ textField: UITextField) {
+    state.isEditing = true
+    textField.text = state.url?.absoluteString
+    textField.textAlignment = .left
+    updateTrailingButton()
+    DispatchQueue.main.async { textField.selectAll(nil) }
+    delegate?.addressBarDidBeginEditing(self)
+  }
+
+  func textFieldDidEndEditing(_ textField: UITextField) {
+    state.isEditing = false
+    textField.text = displayText(for: state.url)
+    textField.textAlignment = state.url == nil ? .center : .left
+    updateTrailingButton()
+    delegate?.addressBarDidEndEditing(self)
+  }
+
+  func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+    delegate?.addressBar(self, didSubmit: textField.text ?? "")
+    textField.resignFirstResponder()
+    return true
+  }
+}
