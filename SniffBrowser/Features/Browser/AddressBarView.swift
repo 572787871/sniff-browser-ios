@@ -7,6 +7,7 @@ struct AddressBarState: Equatable {
   var isEditing = false
 }
 
+@MainActor
 protocol AddressBarDelegate: AnyObject {
   func addressBar(_ addressBar: AddressBarView, didSubmit text: String)
   func addressBarDidRequestReload(_ addressBar: AddressBarView)

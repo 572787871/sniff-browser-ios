@@ -1,5 +1,6 @@
 import UIKit
 
+@MainActor
 protocol NewTabViewDelegate: AnyObject {
   func newTabView(_ view: NewTabView, didSubmit text: String)
 }

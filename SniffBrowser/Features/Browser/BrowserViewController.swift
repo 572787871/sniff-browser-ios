@@ -34,8 +34,8 @@ final class BrowserViewController: UIViewController {
   private var lastFailedURL: URL?
   private var lastRequestedURL: URL?
 
-  init(viewModel: BrowserViewModel = BrowserViewModel()) {
-    self.viewModel = viewModel
+  init(viewModel: BrowserViewModel? = nil) {
+    self.viewModel = viewModel ?? BrowserViewModel()
     super.init(nibName: nil, bundle: nil)
   }
 

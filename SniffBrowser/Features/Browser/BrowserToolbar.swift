@@ -8,6 +8,7 @@ enum BrowserToolbarAction {
   case more
 }
 
+@MainActor
 protocol BrowserToolbarDelegate: AnyObject {
   func browserToolbar(
     _ toolbar: BrowserToolbar,
