@@ -10,9 +10,7 @@ struct BrowserDisplayError: Equatable {
 enum BrowserErrorMapper {
   static func map(_ error: Error) -> BrowserDisplayError {
     let nsError = error as NSError
-    guard nsError.domain == NSURLErrorDomain,
-          let code = URLError.Code(rawValue: nsError.code)
-    else {
+    guard nsError.domain == NSURLErrorDomain else {
       return BrowserDisplayError(
         title: "网页无法打开",
         message: "载入网页时出现问题，请稍后重试。",
@@ -20,6 +18,7 @@ enum BrowserErrorMapper {
         canRetry: true
       )
     }
+    let code = URLError.Code(rawValue: nsError.code)
 
     switch code {
     case .notConnectedToInternet, .networkConnectionLost:
