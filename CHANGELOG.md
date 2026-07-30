@@ -15,6 +15,8 @@
 - 添加基础服务与 XCTest。
 - 添加 GitHub Actions 未签名 IPA 构建。
 - 添加原创 1024×1024 App Icon 与动态 Accent Color。
+- 在 GitHub 托管 macOS Runner 完成 XcodeGen、模拟器编译、单元测试、iphoneos Release 和未签名 IPA 打包的全链路验证。
+- 提交由 `project.yml` 生成的 `SniffBrowser.xcodeproj`，同时保持 XcodeGen 配置为工程唯一真实来源。
 
 ### 说明
 

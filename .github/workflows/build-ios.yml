@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Show Xcode toolchain
         run: |
@@ -32,6 +32,7 @@ jobs:
       - name: Install XcodeGen
         run: |
           set -o pipefail
+          brew untap aws/tap >/dev/null 2>&1 || true
           brew install xcodegen 2>&1 | tee build/logs/xcodegen-install.log
           xcodegen version 2>&1 | tee build/logs/xcodegen-version.log
 
@@ -108,7 +109,7 @@ jobs:
             -project SniffBrowser.xcodeproj \
             -scheme SniffBrowser \
             -configuration Debug \
-            -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}' \
+            -destination 'platform=iOS Simulator,arch=arm64,id=${{ steps.simulator.outputs.udid }}' \
             -derivedDataPath build/DerivedData-Tests \
             -resultBundlePath build/TestResults/SniffBrowserTests.xcresult \
             CODE_SIGNING_ALLOWED=NO \
@@ -161,7 +162,7 @@ jobs:
 
       - name: Upload unsigned IPA
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: SniffBrowser-unsigned-ipa
           path: build/artifacts/SniffBrowser-unsigned.ipa
@@ -170,7 +171,7 @@ jobs:
 
       - name: Upload generated Xcode project
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: SniffBrowser-generated-xcodeproj
           path: build/generated-project/SniffBrowser.xcodeproj
@@ -179,7 +180,7 @@ jobs:
 
       - name: Upload build logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: SniffBrowser-build-logs
           path: |

@@ -24,6 +24,7 @@
 - 资源、下载、认证协议与基础安全服务。
 - XCTest 单元测试。
 - GitHub Actions Simulator、测试、iphoneos Release 与未签名 IPA。
+- GitHub 托管 macOS Runner 已完成一次全链路成功验证。
 
 实际完成状态以 `CHANGELOG.md` 和 GitHub Actions 为准。
 
@@ -90,6 +91,8 @@ xcodebuild test \
 4. 以关闭代码签名的方式编译 iphoneos Release。
 5. 打包 `SniffBrowser-unsigned.ipa`。
 6. 上传 IPA 和完整日志。
+
+可在仓库的 [Actions 页面](https://github.com/572787871/sniff-browser-ios/actions/workflows/build-ios.yml) 查看每次真实构建结果。
 
 ## 下载与安装未签名 IPA
 
