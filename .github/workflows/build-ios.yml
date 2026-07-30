@@ -146,6 +146,22 @@ jobs:
             echo "SniffBrowser.app was not found in Release-iphoneos." | tee build/logs/ipa-package.log
             exit 1
           fi
+          if [[ ! -f "${APP_PATH}/Assets.car" ]]; then
+            echo "Assets.car is missing from SniffBrowser.app." | tee build/logs/ipa-package.log
+            exit 1
+          fi
+          python3 - "${APP_PATH}/Info.plist" <<'PY'
+          import plistlib
+          import sys
+
+          with open(sys.argv[1], "rb") as plist_file:
+              info = plistlib.load(plist_file)
+          if info.get("UIDeviceFamily") != [1]:
+              raise SystemExit(
+                  f"Expected iPhone-only UIDeviceFamily [1], got "
+                  f"{info.get('UIDeviceFamily')!r}."
+              )
+          PY
 
           PACKAGE_ROOT="${RUNNER_TEMP}/sniffbrowser-package"
           mkdir -p "${PACKAGE_ROOT}/Payload" build/artifacts
