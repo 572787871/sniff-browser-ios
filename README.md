@@ -73,12 +73,34 @@ open SniffBrowser.xcodeproj
 
 ## 运行测试
 
+先从当前 Xcode 安装中自动选择一个可用的 iPhone Simulator，再按 UDID 执行测试，避免依赖固定机型名称：
+
 ```bash
 xcodegen generate
+
+SIMULATOR_UDID="$(
+  xcrun simctl list devices available -j |
+    python3 -c '
+import json
+import sys
+
+devices = json.load(sys.stdin)["devices"]
+candidates = [
+    device["udid"]
+    for runtime_devices in devices.values()
+    for device in runtime_devices
+    if device.get("isAvailable") and device["name"].startswith("iPhone")
+]
+if not candidates:
+    raise SystemExit("未找到可用的 iPhone Simulator")
+print(candidates[0])
+'
+)"
+
 xcodebuild test \
   -project SniffBrowser.xcodeproj \
   -scheme SniffBrowser \
-  -destination 'platform=iOS Simulator,name=iPhone 16 Pro'
+  -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}"
 ```
 
 ## GitHub Actions

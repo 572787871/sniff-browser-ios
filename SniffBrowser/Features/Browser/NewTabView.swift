@@ -11,8 +11,12 @@ final class NewTabView: UIView {
   private let titleLabel = UILabel()
   private let welcomeLabel = UILabel()
   private let dateLabel = UILabel()
-  private let searchMaterial = UIVisualEffectView(
-    effect: UIBlurEffect(style: .systemThinMaterial)
+  private let scrollView = UIScrollView()
+  private let contentContainer = UIView()
+  private let contentStack = UIStackView()
+  private let searchMaterial = AppMaterialView(
+    style: .systemThinMaterial,
+    fallbackColor: AppColors.chromeFallback
   )
   private let searchImageView = UIImageView(image: UIImage(systemName: "magnifyingglass"))
   private let textField = UITextField()
@@ -26,6 +30,11 @@ final class NewTabView: UIView {
   required init?(coder: NSCoder) {
     super.init(coder: coder)
     configure()
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    updateResolvedColors()
   }
 
   func focusSearch() {
@@ -66,7 +75,6 @@ final class NewTabView: UIView {
     searchMaterial.layer.cornerCurve = .continuous
     searchMaterial.clipsToBounds = true
     searchMaterial.layer.borderWidth = 0.5
-    searchMaterial.layer.borderColor = AppColors.separator.cgColor
 
     searchImageView.translatesAutoresizingMaskIntoConstraints = false
     searchImageView.tintColor = AppColors.secondaryText
@@ -74,6 +82,7 @@ final class NewTabView: UIView {
 
     textField.translatesAutoresizingMaskIntoConstraints = false
     textField.font = AppTypography.body
+    textField.adjustsFontForContentSizeCategory = true
     textField.textColor = AppColors.primaryText
     textField.tintColor = AppColors.accent
     textField.placeholder = "搜索或输入网址"
@@ -95,57 +104,95 @@ final class NewTabView: UIView {
       for: .touchUpInside
     )
 
-    addSubview(titleLabel)
-    addSubview(welcomeLabel)
-    addSubview(dateLabel)
-    addSubview(searchMaterial)
+    scrollView.translatesAutoresizingMaskIntoConstraints = false
+    scrollView.alwaysBounceVertical = false
+    scrollView.keyboardDismissMode = .interactive
+    scrollView.showsVerticalScrollIndicator = false
+    addSubview(scrollView)
+
+    contentContainer.translatesAutoresizingMaskIntoConstraints = false
+    scrollView.addSubview(contentContainer)
+
+    contentStack.translatesAutoresizingMaskIntoConstraints = false
+    contentStack.axis = .vertical
+    contentStack.alignment = .fill
+    contentStack.spacing = AppSpacing.xs
+    contentStack.addArrangedSubview(titleLabel)
+    contentStack.addArrangedSubview(welcomeLabel)
+    contentStack.setCustomSpacing(AppSpacing.sm, after: welcomeLabel)
+    contentStack.addArrangedSubview(dateLabel)
+    contentStack.setCustomSpacing(AppSpacing.xl, after: dateLabel)
+    contentStack.addArrangedSubview(searchMaterial)
+    contentContainer.addSubview(contentStack)
+
     searchMaterial.contentView.addSubview(searchImageView)
     searchMaterial.contentView.addSubview(textField)
     searchMaterial.contentView.addSubview(submitButton)
 
-    let readable = readableContentGuide
+    let centerConstraint = contentStack.centerYAnchor.constraint(
+      equalTo: contentContainer.centerYAnchor,
+      constant: -AppSpacing.xxl
+    )
+    centerConstraint.priority = .defaultHigh
+    let viewportHeightConstraint = contentContainer.heightAnchor.constraint(
+      equalTo: scrollView.frameLayoutGuide.heightAnchor
+    )
+    viewportHeightConstraint.priority = .defaultLow
+    let preferredWidthConstraint = contentStack.widthAnchor.constraint(
+      equalTo: contentContainer.widthAnchor,
+      constant: -(AppSpacing.xl * 2)
+    )
+    preferredWidthConstraint.priority = .defaultHigh
     NSLayoutConstraint.activate([
-      titleLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
-      titleLabel.centerYAnchor.constraint(
-        equalTo: centerYAnchor,
-        constant: -96
+      scrollView.topAnchor.constraint(equalTo: topAnchor),
+      scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
+      scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+      scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+      contentContainer.topAnchor.constraint(
+        equalTo: scrollView.contentLayoutGuide.topAnchor
       ),
-      titleLabel.leadingAnchor.constraint(
-        greaterThanOrEqualTo: readable.leadingAnchor
+      contentContainer.leadingAnchor.constraint(
+        equalTo: scrollView.contentLayoutGuide.leadingAnchor
       ),
-      titleLabel.trailingAnchor.constraint(
-        lessThanOrEqualTo: readable.trailingAnchor
+      contentContainer.trailingAnchor.constraint(
+        equalTo: scrollView.contentLayoutGuide.trailingAnchor
       ),
-      welcomeLabel.topAnchor.constraint(
-        equalTo: titleLabel.bottomAnchor,
-        constant: AppSpacing.xs
+      contentContainer.bottomAnchor.constraint(
+        equalTo: scrollView.contentLayoutGuide.bottomAnchor
       ),
-      welcomeLabel.leadingAnchor.constraint(
-        equalTo: readable.leadingAnchor,
-        constant: AppSpacing.md
+      contentContainer.widthAnchor.constraint(
+        equalTo: scrollView.frameLayoutGuide.widthAnchor
       ),
-      welcomeLabel.trailingAnchor.constraint(
-        equalTo: readable.trailingAnchor,
-        constant: -AppSpacing.md
+      contentContainer.heightAnchor.constraint(
+        greaterThanOrEqualTo: scrollView.frameLayoutGuide.heightAnchor
       ),
-      dateLabel.topAnchor.constraint(
-        equalTo: welcomeLabel.bottomAnchor,
-        constant: AppSpacing.sm
-      ),
-      dateLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
-      searchMaterial.topAnchor.constraint(
-        equalTo: dateLabel.bottomAnchor,
+      viewportHeightConstraint,
+
+      contentStack.centerXAnchor.constraint(equalTo: contentContainer.centerXAnchor),
+      centerConstraint,
+      contentStack.topAnchor.constraint(
+        greaterThanOrEqualTo: contentContainer.topAnchor,
         constant: AppSpacing.xl
       ),
-      searchMaterial.leadingAnchor.constraint(
-        equalTo: readable.leadingAnchor,
-        constant: AppSpacing.md
+      contentStack.bottomAnchor.constraint(
+        lessThanOrEqualTo: contentContainer.bottomAnchor,
+        constant: -AppSpacing.xl
       ),
-      searchMaterial.trailingAnchor.constraint(
-        equalTo: readable.trailingAnchor,
-        constant: -AppSpacing.md
+      contentStack.leadingAnchor.constraint(
+        greaterThanOrEqualTo: contentContainer.leadingAnchor,
+        constant: AppSpacing.xl
       ),
-      searchMaterial.heightAnchor.constraint(equalToConstant: 52),
+      contentStack.trailingAnchor.constraint(
+        lessThanOrEqualTo: contentContainer.trailingAnchor,
+        constant: -AppSpacing.xl
+      ),
+      preferredWidthConstraint,
+      contentStack.widthAnchor.constraint(
+        lessThanOrEqualToConstant: AppMetrics.maximumReadableWidth
+      ),
+
+      searchMaterial.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
       searchImageView.leadingAnchor.constraint(
         equalTo: searchMaterial.contentView.leadingAnchor,
         constant: AppSpacing.md
@@ -179,6 +226,19 @@ final class NewTabView: UIView {
         equalToConstant: AppMetrics.minimumTapSize
       ),
     ])
+    updateResolvedColors()
+    registerForTraitChanges([
+      UITraitUserInterfaceStyle.self,
+      UITraitAccessibilityContrast.self,
+    ]) { (view: NewTabView, _) in
+      view.updateResolvedColors()
+    }
+  }
+
+  private func updateResolvedColors() {
+    searchMaterial.layer.borderColor = AppColors.separator
+      .resolvedColor(with: traitCollection)
+      .cgColor
   }
 
   @objc private func submit() {

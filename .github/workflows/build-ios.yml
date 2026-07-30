@@ -146,8 +146,8 @@ jobs:
             echo "SniffBrowser.app was not found in Release-iphoneos." | tee build/logs/ipa-package.log
             exit 1
           fi
-          if [[ ! -f "${APP_PATH}/Assets.car" ]]; then
-            echo "Assets.car is missing from SniffBrowser.app." | tee build/logs/ipa-package.log
+          if [[ ! -s "${APP_PATH}/Assets.car" ]]; then
+            echo "Assets.car is missing or empty in SniffBrowser.app." | tee build/logs/ipa-package.log
             exit 1
           fi
           python3 - "${APP_PATH}/Info.plist" <<'PY'
@@ -156,6 +156,17 @@ jobs:
 
           with open(sys.argv[1], "rb") as plist_file:
               info = plistlib.load(plist_file)
+          primary_icon = (
+              info.get("CFBundleIcons", {})
+              .get("CFBundlePrimaryIcon", {})
+          )
+          if not (
+              primary_icon.get("CFBundleIconName")
+              or primary_icon.get("CFBundleIconFiles")
+          ):
+              raise SystemExit(
+                  "The built app does not contain primary App Icon metadata."
+              )
           if info.get("UIDeviceFamily") != [1]:
               raise SystemExit(
                   f"Expected iPhone-only UIDeviceFamily [1], got "

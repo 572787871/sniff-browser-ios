@@ -1,7 +1,66 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
-
+    "当前页面资源" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前页面资源"
+          }
+        }
+      }
+    },
+    "嗅探浏览器" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "嗅探浏览器"
+          }
+        }
+      }
+    },
+    "新标签页" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新标签页"
+          }
+        }
+      }
+    },
+    "暂无下载任务" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无下载任务"
+          }
+        }
+      }
+    },
+    "文件库为空" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件库为空"
+          }
+        }
+      }
+    },
+    "游客模式" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "游客模式"
+          }
+        }
+      }
+    }
   },
   "version" : "1.0"
 }

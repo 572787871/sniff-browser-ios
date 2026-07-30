@@ -45,12 +45,15 @@ final class BrowserViewModel {
     canGoBack: Bool,
     canGoForward: Bool
   ) {
-    state.title = title?.isEmpty == false ? title ?? "网页" : "网页"
-    state.url = url
-    state.isLoading = isLoading
-    state.progress = min(1, max(0, progress))
-    state.canGoBack = canGoBack
-    state.canGoForward = canGoForward
+    let resolvedTitle = title.flatMap { $0.isEmpty ? nil : $0 } ?? "网页"
+    state = BrowserViewState(
+      title: resolvedTitle,
+      url: url,
+      isLoading: isLoading,
+      progress: min(1, max(0, progress)),
+      canGoBack: canGoBack,
+      canGoForward: canGoForward
+    )
   }
 
   func resetToNewTab() {

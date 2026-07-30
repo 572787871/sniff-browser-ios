@@ -12,6 +12,7 @@
 		1D4245D078B142D21BE1C831 /* BrowserPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53733FDAFD677E6B6ADE809 /* BrowserPreferences.swift */; };
 		2A86A7DE1F9532E497145A61 /* FileNameSanitizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2DCA296BF0908321E165287 /* FileNameSanitizer.swift */; };
 		2B3284995A215CF40AC60F0D /* DesignSystemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C536725C826F5AFACBE479D /* DesignSystemTests.swift */; };
+		2D66261B4267660248974F12 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = BCE0F1F652AEF6A8E396DDEF /* Localizable.xcstrings */; };
 		391BACFD3552DBF1D794C540 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 005CB4DE73A6CAB8BB8BA353 /* SceneDelegate.swift */; };
 		48E9870AE9EEB1679802832C /* ResourceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5008E160C0A58FA0B741B42 /* ResourceModels.swift */; };
 		4B2458A044953DA6ABC7D899 /* FileNameSanitizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 612DD1A2E8273ECE5BA574F0 /* FileNameSanitizerTests.swift */; };
@@ -52,6 +53,7 @@
 		EA53679BEA08FBE6F2512E04 /* DownloadManagerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8926E1AA2A5D398CAB8652F /* DownloadManagerViewController.swift */; };
 		EAD9A0CBCB76337A2C408E59 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45FE2B2B2A71AF731ACD33DD /* AppDelegate.swift */; };
 		EEF81A5AD74DF8A6AF2E5FEF /* AppRadius.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85E92E827684F2D4BD8E7C04 /* AppRadius.swift */; };
+		F3BE49341D2F28E33E50E084 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 19623EBEB0C5A9940978A7EE /* Assets.xcassets */; };
 		F6A9DFA644AD579596AF682A /* TabOverviewItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C3A666EF10F808BB1707C5D /* TabOverviewItem.swift */; };
 		FC9EB70A715F4EBE2A43F6CF /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF4AA04D55AEE3E18A90551E /* AppLogger.swift */; };
 /* End PBXBuildFile section */
@@ -68,6 +70,7 @@
 
 /* Begin PBXFileReference section */
 		005CB4DE73A6CAB8BB8BA353 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		19623EBEB0C5A9940978A7EE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		258A35D45AB1CCA24CEFE731 /* NewTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewTabView.swift; sourceTree = "<group>"; };
 		2CDE9EE6C92948BC828E02BD /* FileManagerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileManagerViewController.swift; sourceTree = "<group>"; };
 		304B3C72D2FF22CA29D64B69 /* AuthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModels.swift; sourceTree = "<group>"; };
@@ -106,6 +109,7 @@
 		B5008E160C0A58FA0B741B42 /* ResourceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceModels.swift; sourceTree = "<group>"; };
 		B53733FDAFD677E6B6ADE809 /* BrowserPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserPreferences.swift; sourceTree = "<group>"; };
 		B9A7D494D2B056C4885F1BD8 /* AppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinator.swift; sourceTree = "<group>"; };
+		BCE0F1F652AEF6A8E396DDEF /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		CD1F6B16CCCFD5AB355589F3 /* DownloadModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadModels.swift; sourceTree = "<group>"; };
 		D8926E1AA2A5D398CAB8652F /* DownloadManagerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadManagerViewController.swift; sourceTree = "<group>"; };
 		D9E8EF6F9FCEF19057B064BC /* ErrorStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorStateView.swift; sourceTree = "<group>"; };
@@ -150,6 +154,15 @@
 				803C8B4C7A51373E4D01848E /* SniffBrowserTests */,
 				6C8696152B119DE9C4CD1DF1 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		2AF0CD0507B8316B9A27C855 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				19623EBEB0C5A9940978A7EE /* Assets.xcassets */,
+				BCE0F1F652AEF6A8E396DDEF /* Localizable.xcstrings */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		3879BE2FF8CCCCE7D4783A2D /* Sniffer */ = {
@@ -202,6 +215,7 @@
 				1A1E2568C7B52B66EA62C56F /* Application */,
 				E52337BFF40F431218FAB47B /* Core */,
 				AAC25C13990D622610C339B3 /* Features */,
+				2AF0CD0507B8316B9A27C855 /* Resources */,
 				6614599E0881F403EC0E7DBE /* Services */,
 			);
 			path = SniffBrowser;
@@ -358,6 +372,7 @@
 			buildConfigurationList = DF12776DF7F792E085CB20F0 /* Build configuration list for PBXNativeTarget "SniffBrowser" */;
 			buildPhases = (
 				425DC9EF08DFD54DF12F9497 /* Sources */,
+				D66C04375355E1DEB9EC297F /* Resources */,
 			);
 			buildRules = (
 			);
@@ -426,6 +441,18 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D66C04375355E1DEB9EC297F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F3BE49341D2F28E33E50E084 /* Assets.xcassets in Resources */,
+				2D66261B4267660248974F12 /* Localizable.xcstrings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		425DC9EF08DFD54DF12F9497 /* Sources */ = {
@@ -523,7 +550,7 @@
 				PRODUCT_NAME = SniffBrowser;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				UIKITFORMAC_SUPPORT = NO;
 			};
 			name = Debug;
@@ -543,7 +570,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.SniffBrowserTests;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SniffBrowser.app/SniffBrowser";
 			};
 			name = Release;
@@ -583,6 +610,8 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_APP_INTENTS_METADATA_EXTRACTION = NO;
+				ENABLE_APPINTENTS_METADATA_EXTRACTION = NO;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -625,7 +654,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.SniffBrowserTests;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SniffBrowser.app/SniffBrowser";
 			};
 			name = Debug;
@@ -665,6 +694,8 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_APP_INTENTS_METADATA_EXTRACTION = NO;
+				ENABLE_APPINTENTS_METADATA_EXTRACTION = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -721,7 +752,7 @@
 				PRODUCT_NAME = SniffBrowser;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 				UIKITFORMAC_SUPPORT = NO;
 			};
 			name = Release;

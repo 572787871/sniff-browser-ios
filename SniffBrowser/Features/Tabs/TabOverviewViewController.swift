@@ -22,7 +22,10 @@ final class TabOverviewViewController: BaseViewController {
             message: "新建标签页后，可以在这里快速切换和管理网页。"
         )
     )
-    private let bottomBar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
+    private let bottomBar = AppMaterialView(
+        style: .systemChromeMaterial,
+        fallbackColor: AppColors.chromeFallback
+    )
     private let newTabButton = UIButton(type: .system)
 
     init(items: [TabOverviewItem]) {
@@ -65,7 +68,8 @@ final class TabOverviewViewController: BaseViewController {
             menu: UIMenu(children: [
                 UIAction(
                     title: "新建无痕标签页",
-                    image: UIImage(systemName: "eye.slash")
+                    image: UIImage(systemName: "eye.slash"),
+                    attributes: [.disabled]
                 ) { [weak self] _ in
                     self?.createTab(isPrivate: true)
                 }
@@ -76,6 +80,7 @@ final class TabOverviewViewController: BaseViewController {
 
     private func configureModeControl() {
         modeControl.selectedSegmentIndex = 0
+        modeControl.setEnabled(false, forSegmentAt: 1)
         modeControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
         modeControl.translatesAutoresizingMaskIntoConstraints = false
         modeControl.setContentHuggingPriority(.required, for: .vertical)
@@ -191,7 +196,7 @@ final class TabOverviewViewController: BaseViewController {
     }
 
     @objc private func newTabPressed() {
-        createTab(isPrivate: modeControl.selectedSegmentIndex == 1)
+        createTab(isPrivate: false)
     }
 }
 

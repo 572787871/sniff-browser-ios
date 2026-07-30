@@ -19,8 +19,9 @@ protocol AddressBarDelegate: AnyObject {
 final class AddressBarView: UIView {
   weak var delegate: AddressBarDelegate?
 
-  private let materialView = UIVisualEffectView(
-    effect: UIBlurEffect(style: .systemThinMaterial)
+  private let materialView = AppMaterialView(
+    style: .systemThinMaterial,
+    fallbackColor: AppColors.chromeFallback
   )
   private let securityImageView = UIImageView()
   private let textField = UITextField()
@@ -38,6 +39,11 @@ final class AddressBarView: UIView {
     configure()
   }
 
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    updateResolvedColors()
+  }
+
   func apply(_ state: AddressBarState) {
     self.state = state
     if !textField.isFirstResponder {
@@ -46,9 +52,13 @@ final class AddressBarView: UIView {
     }
     updateSecurityIcon(for: state.url)
     updateTrailingButton()
-    progressView.setProgress(Float(state.progress), animated: true)
+    progressView.setProgress(
+      Float(state.progress),
+      animated: !UIAccessibility.isReduceMotionEnabled
+    )
     progressView.isHidden = !state.isLoading || state.progress >= 1
-    accessibilityValue = state.url?.absoluteString ?? "新标签页"
+    progressView.accessibilityElementsHidden = progressView.isHidden
+    progressView.accessibilityValue = "\(Int((state.progress * 100).rounded()))%"
   }
 
   func beginEditing() {
@@ -69,7 +79,6 @@ final class AddressBarView: UIView {
     materialView.layer.cornerCurve = .continuous
     materialView.clipsToBounds = true
     materialView.layer.borderWidth = 0.5
-    materialView.layer.borderColor = AppColors.separator.cgColor
     addSubview(materialView)
 
     securityImageView.translatesAutoresizingMaskIntoConstraints = false
@@ -79,11 +88,14 @@ final class AddressBarView: UIView {
       pointSize: 14,
       weight: .medium
     )
+    securityImageView.isAccessibilityElement = true
+    securityImageView.accessibilityTraits = .image
     materialView.contentView.addSubview(securityImageView)
 
     textField.translatesAutoresizingMaskIntoConstraints = false
     textField.delegate = self
     textField.font = AppTypography.body
+    textField.adjustsFontForContentSizeCategory = true
     textField.textColor = AppColors.primaryText
     textField.tintColor = AppColors.accent
     textField.placeholder = "搜索或输入网址"
@@ -116,10 +128,12 @@ final class AddressBarView: UIView {
     progressView.progressTintColor = AppColors.accent
     progressView.trackTintColor = .clear
     progressView.isHidden = true
+    progressView.isAccessibilityElement = true
+    progressView.accessibilityLabel = "网页载入进度"
     materialView.contentView.addSubview(progressView)
 
     NSLayoutConstraint.activate([
-      heightAnchor.constraint(equalToConstant: AppMetrics.addressBarHeight),
+      heightAnchor.constraint(greaterThanOrEqualToConstant: AppMetrics.addressBarHeight),
       materialView.topAnchor.constraint(equalTo: topAnchor),
       materialView.leadingAnchor.constraint(equalTo: leadingAnchor),
       materialView.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -173,8 +187,21 @@ final class AddressBarView: UIView {
       ),
       progressView.heightAnchor.constraint(equalToConstant: 2),
     ])
+    updateResolvedColors()
+    registerForTraitChanges([
+      UITraitUserInterfaceStyle.self,
+      UITraitAccessibilityContrast.self,
+    ]) { (view: AddressBarView, _) in
+      view.updateResolvedColors()
+    }
     updateSecurityIcon(for: nil)
     updateTrailingButton()
+  }
+
+  private func updateResolvedColors() {
+    materialView.layer.borderColor = AppColors.separator
+      .resolvedColor(with: traitCollection)
+      .cgColor
   }
 
   private func displayText(for url: URL?) -> String? {
@@ -201,6 +228,7 @@ final class AddressBarView: UIView {
     }
     securityImageView.image = UIImage(systemName: symbol)
     securityImageView.tintColor = color
+    textField.accessibilityHint = securityImageView.accessibilityLabel
   }
 
   private func updateTrailingButton() {

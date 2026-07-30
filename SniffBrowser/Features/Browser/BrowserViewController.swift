@@ -19,7 +19,7 @@ final class BrowserViewController: UIViewController {
 
   private let viewModel: BrowserViewModel
   private let addressBar = AddressBarView()
-  private let toolbar = BrowserToolbar()
+  private let toolbar = BrowserToolbar(frame: .zero)
   private let contentView = UIView()
   private let newTabView = NewTabView()
   private let errorView = BrowserErrorView()
@@ -353,7 +353,6 @@ final class BrowserViewController: UIViewController {
 
   @objc private func refresh() {
     webView.reload()
-    refreshControl.endRefreshing()
   }
 }
 

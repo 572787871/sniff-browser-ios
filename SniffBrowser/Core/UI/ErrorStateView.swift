@@ -25,6 +25,8 @@ final class ErrorStateView: UIView {
     private let messageLabel = UILabel()
     private let retryButton = UIButton(type: .system)
     private let stackView = UIStackView()
+    private let scrollView = UIScrollView()
+    private let contentContainer = UIView()
     private var retryAction: (() -> Void)?
 
     init(
@@ -76,18 +78,20 @@ final class ErrorStateView: UIView {
         retryButton.isHidden = configuration.retryTitle == nil || retryAction == nil
         retryButton.accessibilityLabel = configuration.retryTitle
 
-        accessibilityLabel = [
-            configuration.title,
-            configuration.message
-        ].joined(separator: "，")
+        var elements: [Any] = [titleLabel, messageLabel]
+        if !retryButton.isHidden {
+            elements.append(retryButton)
+        }
+        accessibilityElements = elements
     }
 
     private func buildView() {
-        layoutMargins = UIEdgeInsets(
+        isAccessibilityElement = false
+        contentContainer.directionalLayoutMargins = NSDirectionalEdgeInsets(
             top: AppSpacing.xl,
-            left: AppSpacing.xl,
+            leading: AppSpacing.xl,
             bottom: AppSpacing.xl,
-            right: AppSpacing.xl
+            trailing: AppSpacing.xl
         )
 
         symbolView.tintColor = AppColors.danger
@@ -119,19 +123,71 @@ final class ErrorStateView: UIView {
         stackView.addArrangedSubview(messageLabel)
         stackView.setCustomSpacing(AppSpacing.lg, after: messageLabel)
         stackView.addArrangedSubview(retryButton)
-        addSubview(stackView)
+
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.alwaysBounceVertical = false
+        scrollView.showsVerticalScrollIndicator = false
+        addSubview(scrollView)
+
+        contentContainer.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.addSubview(contentContainer)
+        contentContainer.addSubview(stackView)
+
+        let centerConstraint = stackView.centerYAnchor.constraint(
+            equalTo: contentContainer.centerYAnchor
+        )
+        centerConstraint.priority = .defaultHigh
+        let viewportHeightConstraint = contentContainer.heightAnchor.constraint(
+            equalTo: scrollView.frameLayoutGuide.heightAnchor
+        )
+        viewportHeightConstraint.priority = .defaultLow
 
         NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            contentContainer.topAnchor.constraint(
+                equalTo: scrollView.contentLayoutGuide.topAnchor
+            ),
+            contentContainer.leadingAnchor.constraint(
+                equalTo: scrollView.contentLayoutGuide.leadingAnchor
+            ),
+            contentContainer.trailingAnchor.constraint(
+                equalTo: scrollView.contentLayoutGuide.trailingAnchor
+            ),
+            contentContainer.bottomAnchor.constraint(
+                equalTo: scrollView.contentLayoutGuide.bottomAnchor
+            ),
+            contentContainer.widthAnchor.constraint(
+                equalTo: scrollView.frameLayoutGuide.widthAnchor
+            ),
+            contentContainer.heightAnchor.constraint(
+                greaterThanOrEqualTo: scrollView.frameLayoutGuide.heightAnchor
+            ),
+            viewportHeightConstraint,
+
             symbolView.widthAnchor.constraint(equalToConstant: AppMetrics.stateSymbolSize),
             symbolView.heightAnchor.constraint(equalTo: symbolView.widthAnchor),
             retryButton.heightAnchor.constraint(greaterThanOrEqualToConstant: AppMetrics.minimumTapSize),
 
-            stackView.centerXAnchor.constraint(equalTo: layoutMarginsGuide.centerXAnchor),
-            stackView.centerYAnchor.constraint(equalTo: layoutMarginsGuide.centerYAnchor),
-            stackView.leadingAnchor.constraint(greaterThanOrEqualTo: layoutMarginsGuide.leadingAnchor),
-            stackView.trailingAnchor.constraint(lessThanOrEqualTo: layoutMarginsGuide.trailingAnchor),
-            stackView.topAnchor.constraint(greaterThanOrEqualTo: layoutMarginsGuide.topAnchor),
-            stackView.bottomAnchor.constraint(lessThanOrEqualTo: layoutMarginsGuide.bottomAnchor),
+            stackView.centerXAnchor.constraint(
+                equalTo: contentContainer.layoutMarginsGuide.centerXAnchor
+            ),
+            centerConstraint,
+            stackView.leadingAnchor.constraint(
+                greaterThanOrEqualTo: contentContainer.layoutMarginsGuide.leadingAnchor
+            ),
+            stackView.trailingAnchor.constraint(
+                lessThanOrEqualTo: contentContainer.layoutMarginsGuide.trailingAnchor
+            ),
+            stackView.topAnchor.constraint(
+                greaterThanOrEqualTo: contentContainer.layoutMarginsGuide.topAnchor
+            ),
+            stackView.bottomAnchor.constraint(
+                lessThanOrEqualTo: contentContainer.layoutMarginsGuide.bottomAnchor
+            ),
             stackView.widthAnchor.constraint(lessThanOrEqualToConstant: 440)
         ])
     }

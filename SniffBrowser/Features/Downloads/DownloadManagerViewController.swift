@@ -28,7 +28,7 @@ final class DownloadManagerViewController: BaseViewController {
         }
     }
 
-    private weak var manager: DownloadManaging?
+    private let manager: DownloadManaging?
     private var selectedScope = Scope.all
     private var operationTask: Task<Void, Never>?
 
@@ -244,6 +244,7 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
             actions.append(cancel)
         }
 
+        guard !actions.isEmpty else { return nil }
         let configuration = UISwipeActionsConfiguration(actions: actions)
         configuration.performsFirstActionWithFullSwipe = false
         return configuration

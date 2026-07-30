@@ -3,7 +3,7 @@ import UIKit
 final class LoginViewController: BaseViewController {
     var onAuthenticated: ((AuthSession) -> Void)?
 
-    private weak var provider: AuthProviding?
+    private let provider: AuthProviding?
     private var authenticationTask: Task<Void, Never>?
 
     private let scrollView = UIScrollView()

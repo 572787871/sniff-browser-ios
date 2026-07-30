@@ -34,7 +34,11 @@ final class BrowserViewModelTests: XCTestCase {
     let viewModel = try makeViewModel()
     let expectedURL = try XCTUnwrap(URL(string: "https://example.com"))
     var publishedState: BrowserViewState?
-    viewModel.onStateChange = { publishedState = $0 }
+    var publishCount = 0
+    viewModel.onStateChange = {
+      publishedState = $0
+      publishCount += 1
+    }
 
     viewModel.update(
       title: "Example",
@@ -52,6 +56,7 @@ final class BrowserViewModelTests: XCTestCase {
     XCTAssertTrue(viewModel.state.canGoBack)
     XCTAssertFalse(viewModel.state.canGoForward)
     XCTAssertEqual(publishedState, viewModel.state)
+    XCTAssertEqual(publishCount, 1)
     XCTAssertTrue(viewModel.state.isSecure)
     XCTAssertFalse(viewModel.state.isInsecure)
   }

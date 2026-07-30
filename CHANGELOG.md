@@ -17,8 +17,10 @@
 - 添加原创 1024×1024 App Icon 与动态 Accent Color。
 - 在 GitHub 托管 macOS Runner 完成 XcodeGen、模拟器编译、单元测试、iphoneos Release 和未签名 IPA 打包的全链路验证。
 - 提交由 `project.yml` 生成的 `SniffBrowser.xcodeproj`，同时保持 XcodeGen 配置为工程唯一真实来源。
-- 修正 XcodeGen 资源阶段，确保 App Icon、Accent Color 与本地化资源实际进入 App 包。
-- 在 CI 中验证 `Assets.car` 存在且产物仅面向 iPhone。
+- 修正 XcodeGen 资源阶段配置，将 App Icon、Accent Color 与本地化资源纳入 App 资源构建阶段。
+- 增加 CI 产物断言，检查 `Assets.car`、主 App Icon 元数据与 iPhone-only 配置；是否通过以对应最终提交的成功工作流为准。
+- 完善 Reduce Motion、Reduce Transparency、Dynamic Type、VoiceOver 和小屏滚动边界适配。
+- 未接入真实服务的资源预览、下载和无痕操作不再伪装为可用；下拉刷新会持续到网页加载结束。
 
 ### 说明
 

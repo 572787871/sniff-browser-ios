@@ -17,9 +17,13 @@ protocol BrowserToolbarDelegate: AnyObject {
   )
 }
 
-final class BrowserToolbar: UIVisualEffectView {
+final class BrowserToolbar: UIView {
   weak var toolbarDelegate: BrowserToolbarDelegate?
 
+  private let materialView = AppMaterialView(
+    style: .systemChromeMaterial,
+    fallbackColor: AppColors.chromeFallback
+  )
   private let backButton = BrowserChromeButton(symbol: "chevron.backward")
   private let forwardButton = BrowserChromeButton(symbol: "chevron.forward")
   private let sniffButton = BrowserChromeButton(
@@ -29,19 +33,19 @@ final class BrowserToolbar: UIVisualEffectView {
   private let moreButton = BrowserChromeButton(symbol: "ellipsis")
   private let tabCountLabel = UILabel()
 
-  override init(effect: UIVisualEffect?) {
-    super.init(effect: effect ?? UIBlurEffect(style: .systemChromeMaterial))
+  override init(frame: CGRect) {
+    super.init(frame: frame)
     configure()
-  }
-
-  convenience init() {
-    self.init(effect: UIBlurEffect(style: .systemChromeMaterial))
   }
 
   required init?(coder: NSCoder) {
     super.init(coder: coder)
-    effect = UIBlurEffect(style: .systemChromeMaterial)
     configure()
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    updateResolvedColors()
   }
 
   func update(canGoBack: Bool, canGoForward: Bool, tabCount: Int) {
@@ -58,11 +62,12 @@ final class BrowserToolbar: UIVisualEffectView {
 
   private func configure() {
     translatesAutoresizingMaskIntoConstraints = false
-    layer.cornerCurve = .continuous
-    layer.cornerRadius = AppRadius.card
-    layer.borderWidth = 0.5
-    layer.borderColor = AppColors.separator.cgColor
-    clipsToBounds = true
+    materialView.translatesAutoresizingMaskIntoConstraints = false
+    materialView.layer.cornerCurve = .continuous
+    materialView.layer.cornerRadius = AppRadius.card
+    materialView.layer.borderWidth = 0.5
+    materialView.clipsToBounds = true
+    addSubview(materialView)
 
     let definitions: [
       (button: BrowserChromeButton, action: BrowserToolbarAction, label: String)
@@ -119,21 +124,38 @@ final class BrowserToolbar: UIVisualEffectView {
     stack.axis = .horizontal
     stack.alignment = .fill
     stack.distribution = .equalSpacing
-    contentView.addSubview(stack)
+    materialView.contentView.addSubview(stack)
     NSLayoutConstraint.activate([
       heightAnchor.constraint(equalToConstant: AppMetrics.toolbarHeight),
-      stack.topAnchor.constraint(equalTo: contentView.topAnchor),
+      materialView.topAnchor.constraint(equalTo: topAnchor),
+      materialView.leadingAnchor.constraint(equalTo: leadingAnchor),
+      materialView.trailingAnchor.constraint(equalTo: trailingAnchor),
+      materialView.bottomAnchor.constraint(equalTo: bottomAnchor),
+      stack.topAnchor.constraint(equalTo: materialView.contentView.topAnchor),
       stack.leadingAnchor.constraint(
-        equalTo: contentView.leadingAnchor,
+        equalTo: materialView.contentView.leadingAnchor,
         constant: AppSpacing.sm
       ),
       stack.trailingAnchor.constraint(
-        equalTo: contentView.trailingAnchor,
+        equalTo: materialView.contentView.trailingAnchor,
         constant: -AppSpacing.sm
       ),
-      stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+      stack.bottomAnchor.constraint(equalTo: materialView.contentView.bottomAnchor),
     ])
+    updateResolvedColors()
+    registerForTraitChanges([
+      UITraitUserInterfaceStyle.self,
+      UITraitAccessibilityContrast.self,
+    ]) { (view: BrowserToolbar, _) in
+      view.updateResolvedColors()
+    }
     update(canGoBack: false, canGoForward: false, tabCount: 1)
+  }
+
+  private func updateResolvedColors() {
+    materialView.layer.borderColor = AppColors.separator
+      .resolvedColor(with: traitCollection)
+      .cgColor
   }
 }
 

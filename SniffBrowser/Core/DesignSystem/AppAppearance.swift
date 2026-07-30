@@ -3,9 +3,22 @@ import UIKit
 enum AppAppearance {
     static let quickAnimationDuration: TimeInterval = 0.18
     static let standardAnimationDuration: TimeInterval = 0.28
+    private static var transparencyObserver: NSObjectProtocol?
 
     /// 在 App 启动时调用一次，统一系统导航组件的基础外观。
     static func configure() {
+        applyNavigationAppearance()
+        guard transparencyObserver == nil else { return }
+        transparencyObserver = NotificationCenter.default.addObserver(
+            forName: UIAccessibility.reduceTransparencyStatusDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            AppAppearance.applyNavigationAppearance()
+        }
+    }
+
+    private static func applyNavigationAppearance() {
         let navigationAppearance = UINavigationBarAppearance()
         navigationAppearance.configureWithDefaultBackground()
         navigationAppearance.backgroundEffect = UIAccessibility.isReduceTransparencyEnabled

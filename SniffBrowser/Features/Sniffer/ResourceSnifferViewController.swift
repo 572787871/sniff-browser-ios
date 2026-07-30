@@ -1,9 +1,21 @@
 import UIKit
 
 final class ResourceSnifferViewController: BaseViewController {
-    var sniffingService: ResourceSniffingService?
-    var onPreviewResource: ((DetectedResource) -> Void)?
-    var onDownloadResource: ((DetectedResource) -> Void)?
+    var sniffingService: ResourceSniffingService? {
+        didSet {
+            updateAvailableActionsIfNeeded()
+        }
+    }
+    var onPreviewResource: ((DetectedResource) -> Void)? {
+        didSet {
+            updateAvailableActionsIfNeeded()
+        }
+    }
+    var onDownloadResource: ((DetectedResource) -> Void)? {
+        didSet {
+            updateAvailableActionsIfNeeded()
+        }
+    }
 
     private enum Filter: Int, CaseIterable {
         case all
@@ -76,6 +88,7 @@ final class ResourceSnifferViewController: BaseViewController {
         configureTable()
         configureEmptyState()
         updateContent()
+        updateAvailableActions()
     }
 
     func configurePage(title: String?, url: URL?) {
@@ -223,6 +236,27 @@ final class ResourceSnifferViewController: BaseViewController {
         updateFilterButtons()
     }
 
+    private func updateAvailableActionsIfNeeded() {
+        guard isViewLoaded else { return }
+        updateAvailableActions()
+    }
+
+    private func updateAvailableActions() {
+        let canScan = sniffingService != nil
+        summaryView.setRefreshAvailable(canScan)
+        navigationItem.rightBarButtonItem?.isEnabled = canScan
+        emptyState.configure(
+            .init(
+                symbolName: "dot.radiowaves.left.and.right",
+                title: "暂未发现可下载资源",
+                message: "尝试播放网页中的视频或音频，然后重新扫描当前页面。",
+                actionTitle: canScan ? "重新扫描" : nil
+            ),
+            action: canScan ? { [weak self] in self?.refreshResources() } : nil
+        )
+        tableView.reloadData()
+    }
+
     private func updateFilterButtons() {
         for case let button as UIButton in filterStack.arrangedSubviews {
             guard let filter = Filter(rawValue: button.tag) else { continue }
@@ -282,6 +316,7 @@ final class ResourceSnifferViewController: BaseViewController {
             action: #selector(refreshPressed)
         )
         navigationItem.rightBarButtonItem?.accessibilityLabel = "重新扫描当前页面"
+        navigationItem.rightBarButtonItem?.isEnabled = sniffingService != nil
     }
 
     @objc private func refreshPressed() {
@@ -311,11 +346,27 @@ extension ResourceSnifferViewController: UITableViewDataSource {
             return UITableViewCell()
         }
         let resource = filteredResources[indexPath.row]
-        cell.configure(resource: resource)
-        cell.onPreview = { [weak self] in self?.onPreviewResource?(resource) }
-        cell.onDownload = { [weak self] in
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            self?.onDownloadResource?(resource)
+        let previewHandler = onPreviewResource
+        let downloadHandler = onDownloadResource
+        cell.configure(
+            resource: resource,
+            canPreview: previewHandler != nil,
+            canDownload: downloadHandler != nil
+        )
+        if let previewHandler {
+            cell.onPreview = {
+                previewHandler(resource)
+            }
+        } else {
+            cell.onPreview = nil
+        }
+        if let downloadHandler {
+            cell.onDownload = {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                downloadHandler(resource)
+            }
+        } else {
+            cell.onDownload = nil
         }
         return cell
     }
@@ -344,6 +395,11 @@ private final class ResourcePageSummaryView: UIView {
         domainLabel.text = domain
         countLabel.text = "已识别 \(resourceCount) 项"
         accessibilityLabel = "\(title)，\(domain)，已识别 \(resourceCount) 项资源"
+    }
+
+    func setRefreshAvailable(_ isAvailable: Bool) {
+        refreshButton.isHidden = !isAvailable
+        refreshButton.isEnabled = isAvailable
     }
 
     private func configureView() {
@@ -432,7 +488,11 @@ private final class ResourceListCell: UITableViewCell {
         onDownload = nil
     }
 
-    func configure(resource: DetectedResource) {
+    func configure(
+        resource: DetectedResource,
+        canPreview: Bool,
+        canDownload: Bool
+    ) {
         nameLabel.text = resource.fileName
         let format = resource.mimeType?.split(separator: "/").last.map(String.init)
             ?? resource.url.pathExtension.uppercased()
@@ -444,6 +504,10 @@ private final class ResourceListCell: UITableViewCell {
             .joined(separator: " · ")
         domainLabel.text = resource.url.host ?? resource.sourcePageURL?.host
         typeIconView.image = UIImage(systemName: symbolName(for: resource.resourceType))
+        previewButton.isHidden = !canPreview
+        previewButton.isEnabled = canPreview
+        downloadButton.isHidden = !canDownload
+        downloadButton.isEnabled = canDownload
         accessibilityLabel = "\(resource.fileName)，\(metadataLabel.text ?? "")"
     }
 

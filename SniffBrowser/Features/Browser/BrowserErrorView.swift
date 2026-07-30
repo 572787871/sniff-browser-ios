@@ -3,10 +3,12 @@ import UIKit
 final class BrowserErrorView: UIView {
   var onRetry: (() -> Void)?
 
-  private let symbolView = UIImageView()
-  private let titleLabel = UILabel()
-  private let messageLabel = UILabel()
-  private let retryButton = UIButton(type: .system)
+  private let stateView = ErrorStateView(
+    configuration: ErrorStateView.Configuration(
+      title: "无法打开网页",
+      message: "请检查网络连接后重试。"
+    )
+  )
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -19,60 +21,30 @@ final class BrowserErrorView: UIView {
   }
 
   func apply(_ error: BrowserDisplayError) {
-    symbolView.image = UIImage(systemName: error.symbolName)
-    titleLabel.text = error.title
-    messageLabel.text = error.message
-    retryButton.isHidden = !error.canRetry
-    accessibilityLabel = "\(error.title)。\(error.message)"
+    let retryAction: (() -> Void)? = error.canRetry
+      ? { [weak self] in self?.onRetry?() }
+      : nil
+    stateView.configure(
+      ErrorStateView.Configuration(
+        symbolName: error.symbolName,
+        title: error.title,
+        message: error.message,
+        retryTitle: error.canRetry ? "重试" : nil
+      ),
+      retryAction: retryAction
+    )
   }
 
   private func configure() {
     translatesAutoresizingMaskIntoConstraints = false
     backgroundColor = AppColors.background
-
-    symbolView.translatesAutoresizingMaskIntoConstraints = false
-    symbolView.tintColor = AppColors.secondaryText
-    symbolView.contentMode = .scaleAspectFit
-
-    titleLabel.font = AppTypography.title
-    titleLabel.textColor = AppColors.primaryText
-    titleLabel.textAlignment = .center
-    titleLabel.numberOfLines = 0
-    titleLabel.adjustsFontForContentSizeCategory = true
-
-    messageLabel.font = AppTypography.body
-    messageLabel.textColor = AppColors.secondaryText
-    messageLabel.textAlignment = .center
-    messageLabel.numberOfLines = 0
-    messageLabel.adjustsFontForContentSizeCategory = true
-
-    var configuration = UIButton.Configuration.filled()
-    configuration.title = "重试"
-    configuration.cornerStyle = .medium
-    retryButton.configuration = configuration
-    retryButton.addTarget(self, action: #selector(retry), for: .touchUpInside)
-
-    let stack = UIStackView(
-      arrangedSubviews: [symbolView, titleLabel, messageLabel, retryButton]
-    )
-    stack.translatesAutoresizingMaskIntoConstraints = false
-    stack.axis = .vertical
-    stack.alignment = .center
-    stack.spacing = AppSpacing.md
-    addSubview(stack)
+    stateView.translatesAutoresizingMaskIntoConstraints = false
+    addSubview(stateView)
     NSLayoutConstraint.activate([
-      stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-      stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: AppSpacing.xl),
-      stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -AppSpacing.xl),
-      symbolView.widthAnchor.constraint(equalToConstant: 46),
-      symbolView.heightAnchor.constraint(equalToConstant: 46),
-      retryButton.heightAnchor.constraint(
-        greaterThanOrEqualToConstant: AppMetrics.minimumTapSize
-      ),
+      stateView.topAnchor.constraint(equalTo: topAnchor),
+      stateView.leadingAnchor.constraint(equalTo: leadingAnchor),
+      stateView.trailingAnchor.constraint(equalTo: trailingAnchor),
+      stateView.bottomAnchor.constraint(equalTo: bottomAnchor),
     ])
-  }
-
-  @objc private func retry() {
-    onRetry?()
   }
 }
