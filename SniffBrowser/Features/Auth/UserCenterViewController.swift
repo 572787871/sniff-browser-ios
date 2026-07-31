@@ -349,6 +349,7 @@ private final class UserProfileHeaderView: UIView {
         }
         actionButton.configuration = buttonConfiguration
         actionButton.addTarget(self, action: #selector(actionPressed), for: .touchUpInside)
+        actionButton.isAccessibilityElement = true
         actionButton.accessibilityIdentifier = "userCenter.primaryAction"
         actionButton.accessibilityHint = "打开登录和账户页面"
 
