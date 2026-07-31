@@ -5,7 +5,7 @@ final class DownloadManagerViewController: BaseViewController {
     var onBrowseForDownloads: (() -> Void)? {
         didSet { updateEmptyStateActions() }
     }
-    var onOpenDownloadSettings: (() -> Void)? {
+    var onRoute: ((AppRoute) -> Void)? {
         didSet { updateEmptyStateActions() }
     }
 
@@ -152,7 +152,7 @@ final class DownloadManagerViewController: BaseViewController {
                 secondaryActionTitle: "下载设置"
             ),
             action: actionWithFeedback(onBrowseForDownloads),
-            secondaryAction: actionWithFeedback(onOpenDownloadSettings)
+            secondaryAction: routeActionWithFeedback(.downloadSettings)
         )
     }
 
@@ -161,6 +161,14 @@ final class DownloadManagerViewController: BaseViewController {
         return {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             action()
+        }
+    }
+
+    private func routeActionWithFeedback(_ route: AppRoute) -> (() -> Void)? {
+        guard let onRoute else { return nil }
+        return {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            onRoute(route)
         }
     }
 

@@ -10,7 +10,7 @@ enum BrowserQuickAction: CaseIterable, Equatable {
     switch self {
     case .newTab: return "新建标签"
     case .share: return "分享"
-    case .favorite: return "收藏夹"
+    case .favorite: return "添加收藏"
     case .reload: return "刷新"
     }
   }
@@ -58,14 +58,30 @@ struct BrowserMoreMenuState: Equatable {
   var downloadSummary: String?
   var fileSummary: String?
   var accountSummary: String?
+  var favoriteActionState = FavoriteActionState(
+    isEnabled: false,
+    isFavorite: false
+  )
 
   func isEnabled(_ action: BrowserQuickAction) -> Bool {
     switch action {
-    case .newTab, .favorite:
+    case .newTab:
       return true
+    case .favorite:
+      return favoriteActionState.isEnabled
     case .share, .reload:
       return hasCurrentPage
     }
+  }
+
+  func title(for action: BrowserQuickAction) -> String {
+    action == .favorite ? favoriteActionState.title : action.title
+  }
+
+  func symbolName(for action: BrowserQuickAction) -> String {
+    action == .favorite
+      ? favoriteActionState.systemImageName
+      : action.symbolName
   }
 
   func detail(for destination: BrowserMenuDestination) -> String? {
@@ -252,7 +268,11 @@ private final class BrowserQuickActionsView: UIView {
       $0.removeFromSuperview()
     }
     BrowserQuickAction.allCases.forEach { action in
-      let button = BrowserQuickActionButton(action: action)
+      let button = BrowserQuickActionButton(
+        action: action,
+        title: state.title(for: action),
+        symbolName: state.symbolName(for: action)
+      )
       button.isEnabled = state.isEnabled(action)
       button.addAction(
         UIAction { [weak self] _ in
@@ -286,10 +306,14 @@ private final class BrowserQuickActionButton: UIControl {
   private let imageView = UIImageView()
   private let titleLabel = UILabel()
 
-  init(action: BrowserQuickAction) {
+  init(
+    action: BrowserQuickAction,
+    title: String,
+    symbolName: String
+  ) {
     self.action = action
     super.init(frame: .zero)
-    configureView()
+    configureView(title: title, symbolName: symbolName)
   }
 
   required init?(coder: NSCoder) {
@@ -326,9 +350,9 @@ private final class BrowserQuickActionButton: UIControl {
     }
   }
 
-  private func configureView() {
+  private func configureView(title: String, symbolName: String) {
     isAccessibilityElement = true
-    accessibilityLabel = action.title
+    accessibilityLabel = title
     accessibilityTraits = .button
 
     symbolBackground.translatesAutoresizingMaskIntoConstraints = false
@@ -339,7 +363,7 @@ private final class BrowserQuickActionButton: UIControl {
 
     imageView.translatesAutoresizingMaskIntoConstraints = false
     imageView.image = UIImage(
-      systemName: action.symbolName,
+      systemName: symbolName,
       withConfiguration: UIImage.SymbolConfiguration(
         pointSize: AppMetrics.navigationIconSize,
         weight: .medium
@@ -349,7 +373,7 @@ private final class BrowserQuickActionButton: UIControl {
     imageView.contentMode = .scaleAspectFit
 
     titleLabel.translatesAutoresizingMaskIntoConstraints = false
-    titleLabel.text = action.title
+    titleLabel.text = title
     titleLabel.font = AppTypography.caption
     titleLabel.adjustsFontForContentSizeCategory = true
     titleLabel.textColor = AppColors.primaryText

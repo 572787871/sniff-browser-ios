@@ -29,6 +29,8 @@ final class AddressBarView: UIView {
   private let progressView = UIProgressView(progressViewStyle: .bar)
   private var state = AddressBarState()
   private var isCompact = false
+  private var pageThemeColor: UIColor?
+  private var pageThemeForegroundStyle: BrowserChromeForegroundStyle?
 
   var isEditing: Bool {
     textField.isFirstResponder
@@ -79,6 +81,16 @@ final class AddressBarView: UIView {
   func beginEditing() {
     setCompact(false, animated: false)
     textField.becomeFirstResponder()
+  }
+
+  func applyPageTheme(
+    _ theme: WebPageThemeColor?,
+    foregroundStyle: BrowserChromeForegroundStyle?
+  ) {
+    pageThemeColor = theme?.uiColor
+    pageThemeForegroundStyle = foregroundStyle
+    updateResolvedColors()
+    updateSecurityIcon(for: state.url)
   }
 
   func setCompact(_ compact: Bool, animated: Bool) {
@@ -243,9 +255,27 @@ final class AddressBarView: UIView {
   }
 
   private func updateResolvedColors() {
-    materialView.layer.borderColor = AppColors.separator
-      .resolvedColor(with: traitCollection)
-      .cgColor
+    let foreground = pageThemeForegroundStyle?.color
+    let borderColor = foreground?.withAlphaComponent(0.16)
+      ?? AppColors.separator.resolvedColor(with: traitCollection)
+    materialView.layer.borderColor = borderColor.cgColor
+    materialView.contentView.backgroundColor = pageThemeColor?
+      .withAlphaComponent(
+        pageThemeForegroundStyle == .light ? 0.28 : 0.16
+      ) ?? .clear
+    textField.textColor = foreground ?? AppColors.primaryText
+    textField.tintColor = foreground ?? AppColors.accent
+    trailingButton.tintColor = foreground ?? AppColors.secondaryText
+    progressView.progressTintColor = foreground ?? AppColors.accent
+    if let foreground {
+      textField.attributedPlaceholder = NSAttributedString(
+        string: "搜索或输入网址",
+        attributes: [.foregroundColor: foreground.withAlphaComponent(0.58)]
+      )
+    } else {
+      textField.attributedPlaceholder = nil
+      textField.placeholder = "搜索或输入网址"
+    }
     layer.shadowColor = UIColor.black.cgColor
   }
 
@@ -260,7 +290,7 @@ final class AddressBarView: UIView {
     switch url?.scheme?.lowercased() {
     case "https":
       symbol = "lock.fill"
-      color = AppColors.secondaryText
+      color = pageThemeForegroundStyle?.color ?? AppColors.secondaryText
       securityImageView.accessibilityLabel = "安全连接"
     case "http":
       symbol = "exclamationmark.triangle.fill"
@@ -268,7 +298,7 @@ final class AddressBarView: UIView {
       securityImageView.accessibilityLabel = "连接不安全"
     default:
       symbol = "globe"
-      color = AppColors.secondaryText
+      color = pageThemeForegroundStyle?.color ?? AppColors.secondaryText
       securityImageView.accessibilityLabel = "新标签页"
     }
     securityImageView.image = UIImage(systemName: symbol)

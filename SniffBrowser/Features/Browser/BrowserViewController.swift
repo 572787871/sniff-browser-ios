@@ -20,9 +20,11 @@ final class BrowserViewController: UIViewController {
 
   let viewModel: BrowserViewModel
   let tabManager: BrowserTabManager
+  let favoriteService: FavoriteService
   let addressBar = AddressBarView()
   let toolbar = BrowserToolbar(frame: .zero)
   let contentView = UIView()
+  let topChromeBackgroundView = UIView()
   let newTabView = NewTabView()
   let errorView = BrowserErrorView()
   lazy var externalURLHandler = ExternalURLHandler(presenter: self)
@@ -32,6 +34,7 @@ final class BrowserViewController: UIViewController {
   var lastFailedURLs: [UUID: URL] = [:]
   var lastRequestedURLs: [UUID: URL] = [:]
   weak var tabOverviewController: TabOverviewViewController?
+  var pageChromeForegroundStyle: BrowserChromeForegroundStyle?
   private var lifecycleObservers: [NSObjectProtocol] = []
 
   var activeTab: BrowserTab? {
@@ -44,16 +47,19 @@ final class BrowserViewController: UIViewController {
 
   init(
     viewModel: BrowserViewModel? = nil,
-    tabManager: BrowserTabManager? = nil
+    tabManager: BrowserTabManager? = nil,
+    favoriteService: FavoriteService = .shared
   ) {
     self.viewModel = viewModel ?? BrowserViewModel()
     self.tabManager = tabManager ?? BrowserTabManager()
+    self.favoriteService = favoriteService
     super.init(nibName: nil, bundle: nil)
   }
 
   required init?(coder: NSCoder) {
     viewModel = BrowserViewModel()
     tabManager = BrowserTabManager()
+    favoriteService = .shared
     super.init(coder: coder)
   }
 
@@ -73,6 +79,15 @@ final class BrowserViewController: UIViewController {
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     updateActiveWebViewInsets()
+  }
+
+  override var preferredStatusBarStyle: UIStatusBarStyle {
+    if let pageChromeForegroundStyle {
+      return pageChromeForegroundStyle.statusBarStyle
+    }
+    return traitCollection.userInterfaceStyle == .dark
+      ? .lightContent
+      : .darkContent
   }
 
   override func didReceiveMemoryWarning() {
@@ -143,6 +158,10 @@ final class BrowserViewController: UIViewController {
     view.addSubview(contentView)
     contentView.addSubview(newTabView)
     contentView.addSubview(errorView)
+    topChromeBackgroundView.backgroundColor = AppColors.background
+    topChromeBackgroundView.isUserInteractionEnabled = false
+    topChromeBackgroundView.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(topChromeBackgroundView)
     view.addSubview(addressBar)
     view.addSubview(toolbar)
 
@@ -163,6 +182,14 @@ final class BrowserViewController: UIViewController {
       errorView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
       errorView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
       errorView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
+      topChromeBackgroundView.topAnchor.constraint(equalTo: view.topAnchor),
+      topChromeBackgroundView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      topChromeBackgroundView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      topChromeBackgroundView.bottomAnchor.constraint(
+        equalTo: addressBar.bottomAnchor,
+        constant: AppSpacing.xxs
+      ),
 
       addressBar.topAnchor.constraint(
         equalTo: view.safeAreaLayoutGuide.topAnchor,
@@ -248,6 +275,14 @@ final class BrowserViewController: UIViewController {
     webView.allowsLinkPreview = true
     webView.scrollView.keyboardDismissMode = .interactive
     webView.scrollView.contentInsetAdjustmentBehavior = .never
+    let userContentController = webView.configuration.userContentController
+    userContentController.removeScriptMessageHandler(
+      forName: WebPageThemeColorService.messageHandlerName
+    )
+    userContentController.add(
+      WeakScriptMessageHandler(delegate: self),
+      name: WebPageThemeColorService.messageHandlerName
+    )
 
     if webView.scrollView.refreshControl == nil {
       let refreshControl = UIRefreshControl()
@@ -271,6 +306,7 @@ final class BrowserViewController: UIViewController {
     guard let tab = activeTab else { return }
     tab.activate()
     guard let webView = tab.webView else { return }
+    applyPageTheme(tab.pageThemeColor, animated: false)
     configureWebView(webView)
     webView.translatesAutoresizingMaskIntoConstraints = false
     contentView.insertSubview(webView, at: 0)
@@ -309,7 +345,13 @@ final class BrowserViewController: UIViewController {
         Task { @MainActor in self?.synchronizeActiveState() }
       },
       webView.observe(\.url, options: [.new]) { [weak self] _, _ in
-        Task { @MainActor in self?.synchronizeActiveState() }
+        Task { @MainActor in
+          guard let self else { return }
+          self.synchronizeActiveState()
+          if let activeWebView = self.activeWebView {
+            WebPageThemeColorService.requestCurrentTheme(in: activeWebView)
+          }
+        }
       },
       webView.observe(\.estimatedProgress, options: [.new]) { [weak self] _, _ in
         Task { @MainActor in self?.synchronizeActiveState() }
@@ -380,6 +422,48 @@ final class BrowserViewController: UIViewController {
       canGoForward: state.canGoForward,
       tabCount: tabManager.count
     )
+  }
+
+  func applyPageTheme(
+    _ color: WebPageThemeColor?,
+    animated: Bool
+  ) {
+    let foregroundStyle = color.map {
+      ContrastColorResolver.foregroundStyle(for: $0)
+    }
+    pageChromeForegroundStyle = foregroundStyle
+    let resolvedBackground = color?.uiColor ?? AppColors.background
+
+    let changes = {
+      self.view.backgroundColor = resolvedBackground
+      self.topChromeBackgroundView.backgroundColor = resolvedBackground
+      self.addressBar.applyPageTheme(
+        color,
+        foregroundStyle: foregroundStyle
+      )
+      self.setNeedsStatusBarAppearanceUpdate()
+    }
+    guard animated, !UIAccessibility.isReduceMotionEnabled else {
+      changes()
+      return
+    }
+    UIView.animate(
+      withDuration: 0.2,
+      delay: 0,
+      options: [.allowUserInteraction, .beginFromCurrentState],
+      animations: changes
+    )
+  }
+
+  func resetPageTheme(for webView: WKWebView) {
+    guard let tab = tabManager.tabs.first(where: { $0.webView === webView })
+    else {
+      return
+    }
+    tab.updatePageThemeColor(nil)
+    if webView === activeWebView {
+      applyPageTheme(nil, animated: true)
+    }
   }
 
   private func navigate(to input: String) {

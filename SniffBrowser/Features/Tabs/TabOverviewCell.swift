@@ -9,7 +9,7 @@ final class TabOverviewCell: UICollectionViewCell {
     private static let selectedBorderColor = UIColor { traits in
         UIColor.systemBlue
             .resolvedColor(with: traits)
-            .withAlphaComponent(traits.userInterfaceStyle == .dark ? 0.52 : 0.34)
+            .withAlphaComponent(traits.userInterfaceStyle == .dark ? 0.42 : 0.28)
     }
 
     private let previewContainer = UIView()
@@ -87,7 +87,7 @@ final class TabOverviewCell: UICollectionViewCell {
 
     func updateResolvedColors() {
         contentView.layer.borderWidth = displaysSelection
-            ? 1.5
+            ? 1
             : AppMetrics.separatorHeight
         contentView.layer.borderColor = (
             displaysSelection ? Self.selectedBorderColor : AppColors.separator
@@ -117,20 +117,20 @@ final class TabOverviewCell: UICollectionViewCell {
 
         placeholderImageView.tintColor = AppColors.tertiaryText
         placeholderImageView.preferredSymbolConfiguration =
-            UIImage.SymbolConfiguration(pointSize: 30, weight: .regular)
+            UIImage.SymbolConfiguration(pointSize: 24, weight: .regular)
         placeholderImageView.translatesAutoresizingMaskIntoConstraints = false
         placeholderImageView.isAccessibilityElement = false
         previewContainer.addSubview(placeholderImageView)
 
         var closeConfiguration = UIButton.Configuration.plain()
         closeConfiguration.image = UIImage(
-            systemName: "xmark.circle.fill",
+            systemName: "xmark",
             withConfiguration: UIImage.SymbolConfiguration(
-                pointSize: 30,
-                weight: .regular
+                pointSize: 22,
+                weight: .semibold
             )
         )
-        closeConfiguration.baseForegroundColor = AppColors.secondaryText
+        closeConfiguration.baseForegroundColor = UIColor.label.withAlphaComponent(0.86)
         closeConfiguration.contentInsets = .zero
         closeButton.configuration = closeConfiguration
         closeButton.accessibilityLabel = "关闭标签页"
@@ -144,7 +144,7 @@ final class TabOverviewCell: UICollectionViewCell {
 
         selectedBadge.tintColor = AppColors.accent
         selectedBadge.backgroundColor = AppColors.surface
-        selectedBadge.layer.cornerRadius = 9
+        selectedBadge.layer.cornerRadius = 8
         selectedBadge.clipsToBounds = true
         selectedBadge.isAccessibilityElement = false
         selectedBadge.translatesAutoresizingMaskIntoConstraints = false
@@ -172,8 +172,8 @@ final class TabOverviewCell: UICollectionViewCell {
             previewContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             previewContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             previewContainer.heightAnchor.constraint(
-                equalTo: previewContainer.widthAnchor,
-                multiplier: 0.68
+                equalTo: contentView.heightAnchor,
+                multiplier: TabOverviewGridLayoutMetrics.previewHeightRatio
             ),
 
             previewImageView.topAnchor.constraint(equalTo: previewContainer.topAnchor),
@@ -203,18 +203,18 @@ final class TabOverviewCell: UICollectionViewCell {
 
             selectedBadge.leadingAnchor.constraint(
                 equalTo: previewContainer.leadingAnchor,
-                constant: AppSpacing.sm
+                constant: AppSpacing.xs
             ),
             selectedBadge.topAnchor.constraint(
                 equalTo: previewContainer.topAnchor,
-                constant: AppSpacing.sm
+                constant: AppSpacing.xs
             ),
-            selectedBadge.widthAnchor.constraint(equalToConstant: 18),
+            selectedBadge.widthAnchor.constraint(equalToConstant: 16),
             selectedBadge.heightAnchor.constraint(equalTo: selectedBadge.widthAnchor),
 
             labels.topAnchor.constraint(
                 equalTo: previewContainer.bottomAnchor,
-                constant: AppSpacing.sm
+                constant: AppSpacing.xs
             ),
             labels.leadingAnchor.constraint(
                 equalTo: contentView.leadingAnchor,
@@ -226,7 +226,7 @@ final class TabOverviewCell: UICollectionViewCell {
             ),
             labels.bottomAnchor.constraint(
                 equalTo: contentView.bottomAnchor,
-                constant: -AppSpacing.sm
+                constant: -AppSpacing.xs
             )
         ])
     }

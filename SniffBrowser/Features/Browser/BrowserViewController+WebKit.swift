@@ -41,10 +41,18 @@ extension BrowserViewController: WKNavigationDelegate {
     _ webView: WKWebView,
     didStartProvisionalNavigation navigation: WKNavigation?
   ) {
+    resetPageTheme(for: webView)
     guard webView === activeWebView else { return }
     errorView.isHidden = true
     chromeScrollController.reset()
     applyChromeState(.expanded, animated: true)
+  }
+
+  func webView(
+    _ webView: WKWebView,
+    didCommit navigation: WKNavigation?
+  ) {
+    WebPageThemeColorService.requestCurrentTheme(in: webView)
   }
 
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
@@ -58,6 +66,7 @@ extension BrowserViewController: WKNavigationDelegate {
       title: webView.title,
       url: webView.url
     )
+    WebPageThemeColorService.requestCurrentTheme(in: webView)
     if webView === activeWebView {
       synchronizeActiveState()
       Task { [weak self] in
@@ -113,6 +122,35 @@ extension BrowserViewController: WKNavigationDelegate {
     guard webView === activeWebView else { return }
     errorView.apply(BrowserErrorMapper.map(error))
     errorView.isHidden = false
+  }
+}
+
+extension BrowserViewController: WKScriptMessageHandler {
+  func userContentController(
+    _ userContentController: WKUserContentController,
+    didReceive message: WKScriptMessage
+  ) {
+    guard message.name == WebPageThemeColorService.messageHandlerName,
+          message.frameInfo.isMainFrame,
+          let webView = message.webView,
+          let tab = tabManager.tabs.first(where: { $0.webView === webView })
+    else {
+      return
+    }
+
+    let candidates: [String]
+    if let array = message.body as? [String] {
+      candidates = array
+    } else if let value = message.body as? String {
+      candidates = [value]
+    } else {
+      candidates = []
+    }
+    let color = WebPageThemeColorParser.firstUsable(in: candidates)
+    tab.updatePageThemeColor(color)
+    if webView === activeWebView {
+      applyPageTheme(color, animated: true)
+    }
   }
 }
 

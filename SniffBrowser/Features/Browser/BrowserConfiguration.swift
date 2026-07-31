@@ -1,5 +1,6 @@
 import WebKit
 
+@MainActor
 enum BrowserConfiguration {
   static func makeWebViewConfiguration(
     isPrivate: Bool = false
@@ -9,6 +10,9 @@ enum BrowserConfiguration {
     configuration.defaultWebpagePreferences.allowsContentJavaScript = true
     configuration.allowsInlineMediaPlayback = true
     configuration.preferences.isElementFullscreenEnabled = true
+    configuration.userContentController.addUserScript(
+      WebPageThemeColorService.userScript
+    )
     return configuration
   }
 }

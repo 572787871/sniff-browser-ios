@@ -24,6 +24,7 @@ final class BrowserTab: Identifiable {
     private(set) var canGoForward = false
     private(set) var estimatedProgress = 0.0
     private(set) var isLoading = false
+    private(set) var pageThemeColor: WebPageThemeColor?
 
     private let webViewFactory: WebViewFactory
 
@@ -98,6 +99,10 @@ final class BrowserTab: Identifiable {
 
     func updateSnapshot(_ snapshot: UIImage?) {
         self.snapshot = snapshot
+    }
+
+    func updatePageThemeColor(_ color: WebPageThemeColor?) {
+        pageThemeColor = color
     }
 
     private func synchronizeNavigationState() {

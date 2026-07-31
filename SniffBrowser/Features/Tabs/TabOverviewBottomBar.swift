@@ -2,7 +2,6 @@ import UIKit
 
 @MainActor
 final class TabOverviewBottomBar: UIView {
-    var onModeChange: ((TabOverviewMode) -> Void)?
     var onNewTab: ((TabOverviewMode) -> Void)?
     var onDone: (() -> Void)?
 
@@ -16,9 +15,7 @@ final class TabOverviewBottomBar: UIView {
         style: .systemChromeMaterial,
         fallbackColor: AppColors.chromeFallback
     )
-    private let modeControl = UISegmentedControl(
-        items: TabOverviewMode.allCases.map(\.title)
-    )
+    private let modeLabel = UILabel()
     private let newTabButton = UIButton(type: .system)
     private let doneButton = UIButton(type: .system)
 
@@ -51,11 +48,11 @@ final class TabOverviewBottomBar: UIView {
         materialView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(materialView)
 
-        configureModeControl()
+        configureModeLabel()
         configureNewTabButton()
         configureDoneButton()
 
-        materialView.contentView.addSubview(modeControl)
+        materialView.contentView.addSubview(modeLabel)
         materialView.contentView.addSubview(newTabButton)
         materialView.contentView.addSubview(doneButton)
 
@@ -65,16 +62,14 @@ final class TabOverviewBottomBar: UIView {
             materialView.trailingAnchor.constraint(equalTo: trailingAnchor),
             materialView.bottomAnchor.constraint(equalTo: bottomAnchor),
 
-            modeControl.leadingAnchor.constraint(
+            modeLabel.leadingAnchor.constraint(
                 equalTo: materialView.contentView.leadingAnchor,
                 constant: AppSpacing.sm
             ),
-            modeControl.centerYAnchor.constraint(
+            modeLabel.centerYAnchor.constraint(
                 equalTo: materialView.contentView.centerYAnchor
             ),
-            modeControl.heightAnchor.constraint(greaterThanOrEqualToConstant: 36),
-            modeControl.widthAnchor.constraint(lessThanOrEqualToConstant: 132),
-            modeControl.trailingAnchor.constraint(
+            modeLabel.trailingAnchor.constraint(
                 lessThanOrEqualTo: newTabButton.leadingAnchor,
                 constant: -AppSpacing.xs
             ),
@@ -111,31 +106,15 @@ final class TabOverviewBottomBar: UIView {
         updateResolvedColors()
     }
 
-    private func configureModeControl() {
-        modeControl.selectedSegmentTintColor = AppColors.elevatedSurface
-        modeControl.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        modeControl.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-        modeControl.setTitleTextAttributes(
-            [
-                .font: AppTypography.caption,
-                .foregroundColor: AppColors.secondaryText
-            ],
-            for: .normal
+    private func configureModeLabel() {
+        AppTypography.configure(modeLabel, style: .subheadline, weight: .medium)
+        modeLabel.textColor = AppColors.secondaryText
+        modeLabel.setContentHuggingPriority(.required, for: .horizontal)
+        modeLabel.setContentCompressionResistancePriority(
+            .required,
+            for: .horizontal
         )
-        modeControl.setTitleTextAttributes(
-            [
-                .font: AppTypography.caption,
-                .foregroundColor: AppColors.primaryText
-            ],
-            for: .selected
-        )
-        modeControl.addTarget(
-            self,
-            action: #selector(modeControlChanged),
-            for: .valueChanged
-        )
-        modeControl.accessibilityLabel = "标签页模式"
-        modeControl.translatesAutoresizingMaskIntoConstraints = false
+        modeLabel.translatesAutoresizingMaskIntoConstraints = false
     }
 
     private func configureNewTabButton() {
@@ -181,7 +160,7 @@ final class TabOverviewBottomBar: UIView {
     }
 
     private func updateMode() {
-        modeControl.selectedSegmentIndex = mode.rawValue
+        modeLabel.text = mode.title
         newTabButton.accessibilityLabel = mode.isPrivate
             ? "新建无痕标签页"
             : "新建普通标签页"
@@ -206,17 +185,6 @@ final class TabOverviewBottomBar: UIView {
         ]) { (bar: TabOverviewBottomBar, _) in
             bar.invalidateIntrinsicContentSize()
         }
-    }
-
-    @objc
-    private func modeControlChanged() {
-        guard let selectedMode = TabOverviewMode(
-            rawValue: modeControl.selectedSegmentIndex
-        ) else {
-            return
-        }
-        mode = selectedMode
-        onModeChange?(selectedMode)
     }
 
     @objc

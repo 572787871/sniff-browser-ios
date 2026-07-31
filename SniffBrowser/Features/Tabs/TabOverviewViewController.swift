@@ -10,41 +10,42 @@ final class TabOverviewViewController: BaseViewController {
     var onCloseAllNormalTabs: (() -> Void)?
     var onCopyTabURL: ((UUID, URL) -> Void)?
     var onShareTab: ((UUID, URL?) -> Void)?
-    var onOpenFavorites: ((UUID) -> Void)?
+    var favoriteActionStateProvider: ((URL?) -> FavoriteActionState)?
+    var onToggleFavorite: ((UUID) -> Void)?
     var onModeChanged: ((Bool) -> Void)?
     var onDone: (() -> Void)?
 
-    private enum Section {
-        case tabs
+    private struct PendingTransition {
+        let mode: TabOverviewMode
+        let animated: Bool
+        let notifyDelegate: Bool
     }
 
     private var allItems: [TabOverviewItem]
-    private var selectedMode: TabOverviewMode
-
-    private var visibleItems: [TabOverviewItem] {
-        allItems.filter { $0.isPrivate == selectedMode.isPrivate }
-    }
+    private var pagingState: TabOverviewPagingState
+    private var isPageTransitionInFlight = false
+    private var queuedTransition: PendingTransition?
 
     private let privacyTintView = UIView()
-    private lazy var collectionView = UICollectionView(
-        frame: .zero,
-        collectionViewLayout: makeLayout()
-    )
-    private lazy var dataSource = makeDataSource()
-    private let emptyView = EmptyStateView(
-        configuration: .init(
-            symbolName: "square.on.square",
-            title: "没有打开的标签页",
-            message: "新建标签页后，可以在这里快速切换和管理网页。"
-        )
+    private let modeControl = UISegmentedControl(
+        items: TabOverviewMode.allCases.map(\.title)
     )
     private let bottomBar = TabOverviewBottomBar()
+    private lazy var standardPage = makePage(for: .standard)
+    private lazy var privatePage = makePage(for: .privateBrowsing)
+    private lazy var pageViewController = UIPageViewController(
+        transitionStyle: .scroll,
+        navigationOrientation: .horizontal,
+        options: nil
+    )
 
     init(items: [TabOverviewItem]) {
         allItems = items
-        selectedMode = items.first(where: \.isSelected)?.isPrivate == true
-            ? .privateBrowsing
-            : .standard
+        let initialMode: TabOverviewMode =
+            items.first(where: \.isSelected)?.isPrivate == true
+                ? .privateBrowsing
+                : .standard
+        pagingState = TabOverviewPagingState(selectedMode: initialMode)
         super.init(title: "标签页", prefersLargeTitle: false)
     }
 
@@ -57,9 +58,10 @@ final class TabOverviewViewController: BaseViewController {
         configureNavigation()
         configureBackground()
         configureBottomBar()
-        configureCollectionView()
+        configurePageController()
         registerForEnvironmentChanges()
-        updateContent(animated: false)
+        updatePages(animated: false)
+        applyModeAppearance(animated: false)
     }
 
     override func viewWillTransition(
@@ -67,33 +69,67 @@ final class TabOverviewViewController: BaseViewController {
         with coordinator: UIViewControllerTransitionCoordinator
     ) {
         super.viewWillTransition(to: size, with: coordinator)
+        saveScrollOffset(for: pagingState.selectedMode)
         coordinator.animate { [weak self] _ in
-            self?.collectionView.collectionViewLayout.invalidateLayout()
+            self?.standardPage.invalidateGridLayout()
+            self?.privatePage.invalidateGridLayout()
+        } completion: { [weak self] _ in
+            guard let self else { return }
+            self.restoreScrollOffset(for: self.pagingState.selectedMode)
         }
     }
 
     func update(items: [TabOverviewItem]) {
         allItems = items
         guard isViewLoaded else { return }
-        updateContent(animated: true)
+        updatePages(animated: true)
     }
 
     func selectMode(isPrivate: Bool, animated: Bool = true) {
         let mode: TabOverviewMode = isPrivate ? .privateBrowsing : .standard
-        guard selectedMode != mode else { return }
-        selectedMode = mode
-        guard isViewLoaded else { return }
-        updateContent(animated: animated)
+        guard isViewLoaded else {
+            pagingState.selectMode(mode)
+            return
+        }
+        requestMode(
+            mode,
+            animated: animated,
+            notifyDelegate: false
+        )
     }
 
     private func configureNavigation() {
-        navigationItem.title = "标签页"
         navigationItem.largeTitleDisplayMode = .never
         navigationItem.backButtonDisplayMode = .minimal
+        modeControl.selectedSegmentIndex = pagingState.selectedMode.rawValue
+        modeControl.selectedSegmentTintColor = AppColors.elevatedSurface
+        modeControl.setTitleTextAttributes(
+            [
+                .font: AppTypography.subheadline,
+                .foregroundColor: AppColors.secondaryText
+            ],
+            for: .normal
+        )
+        modeControl.setTitleTextAttributes(
+            [
+                .font: AppTypography.subheadline,
+                .foregroundColor: AppColors.primaryText
+            ],
+            for: .selected
+        )
+        modeControl.addTarget(
+            self,
+            action: #selector(modeControlChanged),
+            for: .valueChanged
+        )
+        modeControl.accessibilityLabel = "普通与无痕标签组"
+        modeControl.accessibilityIdentifier = "tabs.modeControl"
+        navigationItem.titleView = modeControl
     }
 
     private func configureBackground() {
-        privacyTintView.backgroundColor = UIColor.systemIndigo.withAlphaComponent(0.045)
+        privacyTintView.backgroundColor =
+            UIColor.systemIndigo.withAlphaComponent(0.045)
         privacyTintView.isUserInteractionEnabled = false
         privacyTintView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(privacyTintView)
@@ -106,60 +142,10 @@ final class TabOverviewViewController: BaseViewController {
         ])
     }
 
-    private func configureCollectionView() {
-        collectionView.backgroundColor = .clear
-        collectionView.alwaysBounceVertical = true
-        collectionView.keyboardDismissMode = .onDrag
-        collectionView.contentInset = UIEdgeInsets(
-            top: AppSpacing.sm,
-            left: 0,
-            bottom: 84,
-            right: 0
-        )
-        collectionView.verticalScrollIndicatorInsets.bottom = 82
-        collectionView.register(
-            TabOverviewCell.self,
-            forCellWithReuseIdentifier: TabOverviewCell.reuseIdentifier
-        )
-        collectionView.delegate = self
-        collectionView.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(collectionView)
-
-        emptyView.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(emptyView)
-        contentView.bringSubviewToFront(bottomBar)
-
-        NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(
-                equalTo: contentView.safeAreaLayoutGuide.topAnchor
-            ),
-            collectionView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            collectionView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            collectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-
-            emptyView.topAnchor.constraint(
-                equalTo: contentView.safeAreaLayoutGuide.topAnchor
-            ),
-            emptyView.leadingAnchor.constraint(
-                equalTo: view.layoutMarginsGuide.leadingAnchor
-            ),
-            emptyView.trailingAnchor.constraint(
-                equalTo: view.layoutMarginsGuide.trailingAnchor
-            ),
-            emptyView.bottomAnchor.constraint(
-                equalTo: bottomBar.topAnchor,
-                constant: -AppSpacing.xs
-            )
-        ])
-    }
-
     private func configureBottomBar() {
         bottomBar.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(bottomBar)
-        bottomBar.mode = selectedMode
-        bottomBar.onModeChange = { [weak self] mode in
-            self?.changeMode(mode, notifyDelegate: true)
-        }
+        bottomBar.mode = pagingState.selectedMode
         bottomBar.onNewTab = { [weak self] mode in
             self?.createTab(isPrivate: mode.isPrivate)
         }
@@ -181,112 +167,198 @@ final class TabOverviewViewController: BaseViewController {
         ])
     }
 
-    private func makeLayout() -> UICollectionViewLayout {
-        UICollectionViewCompositionalLayout { [weak self] _, environment in
-            let width = environment.container.effectiveContentSize.width
-            let isAccessibilitySize =
-                self?.traitCollection.preferredContentSizeCategory.isAccessibilityCategory
-                == true
-            let columns = isAccessibilitySize ? 1 : (width >= 700 ? 3 : 2)
+    private func configurePageController() {
+        pageViewController.dataSource = self
+        pageViewController.delegate = self
+        pageViewController.view.backgroundColor = .clear
 
-            let itemSize = NSCollectionLayoutSize(
-                widthDimension: .fractionalWidth(1),
-                heightDimension: .estimated(columns == 1 ? 330 : 250)
+        addChild(pageViewController)
+        pageViewController.view.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(pageViewController.view)
+        NSLayoutConstraint.activate([
+            pageViewController.view.topAnchor.constraint(
+                equalTo: contentView.safeAreaLayoutGuide.topAnchor
+            ),
+            pageViewController.view.leadingAnchor.constraint(
+                equalTo: contentView.leadingAnchor
+            ),
+            pageViewController.view.trailingAnchor.constraint(
+                equalTo: contentView.trailingAnchor
+            ),
+            pageViewController.view.bottomAnchor.constraint(
+                equalTo: bottomBar.topAnchor,
+                constant: -AppSpacing.xs
             )
-            let item = NSCollectionLayoutItem(layoutSize: itemSize)
-            let groupSize = NSCollectionLayoutSize(
-                widthDimension: .fractionalWidth(1),
-                heightDimension: .estimated(columns == 1 ? 330 : 250)
-            )
-            let group = NSCollectionLayoutGroup.horizontal(
-                layoutSize: groupSize,
-                repeatingSubitem: item,
-                count: columns
-            )
-            group.interItemSpacing = .fixed(AppSpacing.sm)
-
-            let section = NSCollectionLayoutSection(group: group)
-            section.interGroupSpacing = AppSpacing.sm
-            section.contentInsets = NSDirectionalEdgeInsets(
-                top: AppSpacing.xs,
-                leading: AppSpacing.md,
-                bottom: AppSpacing.md,
-                trailing: AppSpacing.md
-            )
-            return section
-        }
-    }
-
-    private func makeDataSource()
-        -> UICollectionViewDiffableDataSource<Section, UUID>
-    {
-        UICollectionViewDiffableDataSource<Section, UUID>(
-            collectionView: collectionView
-        ) { [weak self] collectionView, indexPath, itemID in
-            guard
-                let self,
-                let item = self.allItems.first(where: { $0.id == itemID }),
-                let cell = collectionView.dequeueReusableCell(
-                    withReuseIdentifier: TabOverviewCell.reuseIdentifier,
-                    for: indexPath
-                ) as? TabOverviewCell
-            else {
-                return UICollectionViewCell()
-            }
-
-            cell.configure(with: item)
-            cell.onClose = { [weak self] in
-                self?.close(itemID: itemID)
-            }
-            return cell
-        }
-    }
-
-    private func updateContent(animated: Bool) {
-        let identifiers = visibleItems.map(\.id)
-        let previousIdentifiers = Set(dataSource.snapshot().itemIdentifiers)
-
-        var snapshot = NSDiffableDataSourceSnapshot<Section, UUID>()
-        snapshot.appendSections([.tabs])
-        snapshot.appendItems(identifiers)
-        snapshot.reloadItems(identifiers.filter(previousIdentifiers.contains))
-        dataSource.apply(
-            snapshot,
-            animatingDifferences: animated && view.window != nil
+        ])
+        pageViewController.didMove(toParent: self)
+        pageViewController.setViewControllers(
+            [page(for: pagingState.selectedMode)],
+            direction: .forward,
+            animated: false
         )
 
-        let isEmpty = identifiers.isEmpty
-        collectionView.isHidden = isEmpty
-        emptyView.isHidden = !isEmpty
-        configureEmptyState()
-        updateModeAppearance(animated: animated)
-        bottomBar.mode = selectedMode
+        pageViewController.view.subviews
+            .compactMap { $0 as? UIScrollView }
+            .forEach {
+                $0.directionalLockEnabled = true
+                $0.showsHorizontalScrollIndicator = false
+            }
+        contentView.bringSubviewToFront(bottomBar)
     }
 
-    private func configureEmptyState() {
-        if selectedMode.isPrivate {
-            emptyView.configure(
-                .init(
-                    symbolName: "eye.slash",
-                    title: "没有无痕标签页",
-                    message: "无痕标签不会保存在浏览历史或下次会话中。"
-                )
+    private func makePage(
+        for mode: TabOverviewMode
+    ) -> TabOverviewPageViewController {
+        let controller = TabOverviewPageViewController(mode: mode)
+        controller.onSelectItem = { [weak self] itemID in
+            self?.onSelectTab?(itemID)
+        }
+        controller.onCloseItem = { [weak self] itemID in
+            self?.close(itemID: itemID)
+        }
+        controller.contextMenuProvider = {
+            [weak self] item, sourceView, sourceRect in
+            self?.makeContextMenu(
+                for: item,
+                sourceView: sourceView,
+                sourceRect: sourceRect
             )
-        } else {
-            emptyView.configure(
-                .init(
-                    symbolName: "square.on.square",
-                    title: "没有打开的标签页",
-                    message: "新建标签页后，可以在这里快速切换和管理网页。"
-                )
+        }
+        controller.onScrollOffsetChange = { [weak self] offset in
+            self?.pagingState.saveScrollOffset(offset, for: mode)
+        }
+        return controller
+    }
+
+    private func page(
+        for mode: TabOverviewMode
+    ) -> TabOverviewPageViewController {
+        mode.isPrivate ? privatePage : standardPage
+    }
+
+    private func updatePages(animated: Bool) {
+        standardPage.update(
+            items: allItems.filter { !$0.isPrivate },
+            animated: animated
+        )
+        privatePage.update(
+            items: allItems.filter(\.isPrivate),
+            animated: animated
+        )
+    }
+
+    private func requestMode(
+        _ mode: TabOverviewMode,
+        animated: Bool,
+        notifyDelegate: Bool
+    ) {
+        guard mode != pagingState.selectedMode || isPageTransitionInFlight else {
+            applyModeAppearance(animated: false)
+            return
+        }
+
+        if isPageTransitionInFlight {
+            queuedTransition = PendingTransition(
+                mode: mode,
+                animated: animated,
+                notifyDelegate: notifyDelegate
             )
+            bottomBar.mode = pagingState.selectedMode
+            return
+        }
+
+        saveScrollOffset(for: pagingState.selectedMode)
+        let direction: UIPageViewController.NavigationDirection =
+            mode.rawValue > pagingState.selectedMode.rawValue
+                ? .forward
+                : .reverse
+        let shouldAnimate = animated && !UIAccessibility.isReduceMotionEnabled
+
+        guard shouldAnimate else {
+            pageViewController.setViewControllers(
+                [page(for: mode)],
+                direction: direction,
+                animated: false
+            )
+            commitMode(mode, notifyDelegate: notifyDelegate)
+            drainQueuedTransitionIfNeeded()
+            return
+        }
+
+        isPageTransitionInFlight = true
+        bottomBar.mode = mode
+        pageViewController.setViewControllers(
+            [page(for: mode)],
+            direction: direction,
+            animated: true
+        ) { [weak self] completed in
+            guard let self else { return }
+            self.isPageTransitionInFlight = false
+            let visibleMode = self.visiblePageMode
+            if completed, visibleMode == mode {
+                self.commitMode(mode, notifyDelegate: notifyDelegate)
+            } else {
+                self.showSelectedPageWithoutAnimation()
+                self.applyModeAppearance(animated: false)
+            }
+            self.drainQueuedTransitionIfNeeded()
         }
     }
 
-    private func updateModeAppearance(animated: Bool) {
-        navigationItem.title = selectedMode.isPrivate ? "无痕标签页" : "标签页"
+    private func commitMode(
+        _ mode: TabOverviewMode,
+        notifyDelegate: Bool
+    ) {
+        let didChange = pagingState.selectMode(mode)
+        restoreScrollOffset(for: mode)
+        applyModeAppearance(animated: true)
+        if didChange, notifyDelegate {
+            onModeChanged?(mode.isPrivate)
+        }
+    }
+
+    private func drainQueuedTransitionIfNeeded() {
+        guard let queuedTransition else { return }
+        self.queuedTransition = nil
+        requestMode(
+            queuedTransition.mode,
+            animated: queuedTransition.animated,
+            notifyDelegate: queuedTransition.notifyDelegate
+        )
+    }
+
+    private var visiblePageMode: TabOverviewMode? {
+        (pageViewController.viewControllers?.first as? TabOverviewPageViewController)?
+            .mode
+    }
+
+    private func saveScrollOffset(for mode: TabOverviewMode) {
+        guard isViewLoaded else { return }
+        pagingState.saveScrollOffset(page(for: mode).scrollOffsetY, for: mode)
+    }
+
+    private func restoreScrollOffset(for mode: TabOverviewMode?) {
+        guard let mode else { return }
+        page(for: mode).restoreScrollOffset(
+            pagingState.scrollOffset(for: mode)
+        )
+    }
+
+    private func showSelectedPageWithoutAnimation() {
+        pageViewController.setViewControllers(
+            [page(for: pagingState.selectedMode)],
+            direction: .forward,
+            animated: false
+        )
+        restoreScrollOffset(for: pagingState.selectedMode)
+    }
+
+    private func applyModeAppearance(animated: Bool) {
+        let mode = pagingState.selectedMode
+        modeControl.selectedSegmentIndex = mode.rawValue
+        bottomBar.mode = mode
         let changes = {
-            self.privacyTintView.alpha = self.selectedMode.isPrivate ? 1 : 0
+            self.privacyTintView.alpha = mode.isPrivate ? 1 : 0
         }
         if animated {
             AppAppearance.animate(animations: changes)
@@ -299,10 +371,8 @@ final class TabOverviewViewController: BaseViewController {
         registerForTraitChanges([
             UITraitPreferredContentSizeCategory.self
         ]) { (controller: TabOverviewViewController, _) in
-            controller.collectionView.collectionViewLayout.invalidateLayout()
-            controller.dataSource.applySnapshotUsingReloadData(
-                controller.dataSource.snapshot()
-            )
+            controller.standardPage.invalidateGridLayout()
+            controller.privatePage.invalidateGridLayout()
         }
     }
 
@@ -315,7 +385,7 @@ final class TabOverviewViewController: BaseViewController {
         guard allItems.contains(where: { $0.id == itemID }) else { return }
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         allItems.removeAll { $0.id == itemID }
-        updateContent(animated: true)
+        updatePages(animated: true)
         onCloseTab?(itemID)
     }
 
@@ -324,14 +394,14 @@ final class TabOverviewViewController: BaseViewController {
         allItems.removeAll {
             $0.isPrivate == item.isPrivate && $0.id != item.id
         }
-        updateContent(animated: true)
+        updatePages(animated: true)
         onCloseOtherTabs?(item.id)
     }
 
     private func closeAllNormalTabs() {
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         allItems.removeAll { !$0.isPrivate }
-        updateContent(animated: true)
+        updatePages(animated: true)
         onCloseAllNormalTabs?()
     }
 
@@ -342,7 +412,11 @@ final class TabOverviewViewController: BaseViewController {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
-    private func share(_ item: TabOverviewItem, sourceRect: CGRect) {
+    private func share(
+        _ item: TabOverviewItem,
+        sourceView: UIView,
+        sourceRect: CGRect
+    ) {
         if let onShareTab {
             onShareTab(item.id, item.url)
             return
@@ -352,16 +426,20 @@ final class TabOverviewViewController: BaseViewController {
             activityItems: [url],
             applicationActivities: nil
         )
-        activityController.popoverPresentationController?.sourceView = collectionView
+        activityController.popoverPresentationController?.sourceView = sourceView
         activityController.popoverPresentationController?.sourceRect = sourceRect
         present(activityController, animated: true)
     }
 
-    private func openFavorites(_ item: TabOverviewItem) {
-        onOpenFavorites?(item.id)
+    private func toggleFavorite(_ item: TabOverviewItem) {
+        onToggleFavorite?(item.id)
     }
 
-    private func makeContextMenu(for item: TabOverviewItem) -> UIMenu {
+    private func makeContextMenu(
+        for item: TabOverviewItem,
+        sourceView: UIView,
+        sourceRect: CGRect
+    ) -> UIMenu {
         let copy = UIAction(
             title: "复制链接",
             image: UIImage(systemName: "doc.on.doc"),
@@ -373,20 +451,27 @@ final class TabOverviewViewController: BaseViewController {
             title: "分享",
             image: UIImage(systemName: "square.and.arrow.up"),
             attributes: item.url == nil ? [.disabled] : []
-        ) { [weak self] _ in
-            guard let self else { return }
-            let indexPath = self.dataSource.indexPath(for: item.id)
-            let sourceRect = indexPath
-                .flatMap { self.collectionView.layoutAttributesForItem(at: $0)?.frame }
-                ?? self.collectionView.bounds
-            self.share(item, sourceRect: sourceRect)
+        ) { [weak self, weak sourceView] _ in
+            guard let self, let sourceView else { return }
+            self.share(
+                item,
+                sourceView: sourceView,
+                sourceRect: sourceRect
+            )
         }
+        let favoriteState = favoriteActionStateProvider?(item.url)
+            ?? FavoriteActionState(
+                isEnabled: false,
+                isFavorite: false
+            )
         let favorite = UIAction(
-            title: "打开收藏夹",
-            image: UIImage(systemName: "star"),
-            attributes: onOpenFavorites == nil ? [.disabled] : []
+            title: favoriteState.title,
+            image: UIImage(systemName: favoriteState.systemImageName),
+            attributes: favoriteState.isEnabled && onToggleFavorite != nil
+                ? []
+                : [.disabled]
         ) { [weak self] _ in
-            self?.openFavorites(item)
+            self?.toggleFavorite(item)
         }
 
         let closeCurrent = UIAction(
@@ -396,13 +481,15 @@ final class TabOverviewViewController: BaseViewController {
         ) { [weak self] _ in
             self?.close(itemID: item.id)
         }
-        let sameModeCount = allItems.filter {
+        let sameModeCount = allItems.lazy.filter {
             $0.isPrivate == item.isPrivate
         }.count
         let closeOthers = UIAction(
             title: "关闭其他标签页",
             image: UIImage(systemName: "square.on.square.dashed"),
-            attributes: sameModeCount > 1 ? [.destructive] : [.disabled, .destructive]
+            attributes: sameModeCount > 1
+                ? [.destructive]
+                : [.disabled, .destructive]
         ) { [weak self] _ in
             self?.closeOtherTabs(keeping: item)
         }
@@ -410,7 +497,9 @@ final class TabOverviewViewController: BaseViewController {
         let closeAllNormal = UIAction(
             title: "关闭全部普通标签页",
             image: UIImage(systemName: "rectangle.stack.badge.minus"),
-            attributes: normalCount > 0 ? [.destructive] : [.disabled, .destructive]
+            attributes: normalCount > 0
+                ? [.destructive]
+                : [.disabled, .destructive]
         ) { [weak self] _ in
             self?.closeAllNormalTabs()
         }
@@ -424,18 +513,6 @@ final class TabOverviewViewController: BaseViewController {
         ])
     }
 
-    private func changeMode(
-        _ mode: TabOverviewMode,
-        notifyDelegate: Bool
-    ) {
-        guard selectedMode != mode else { return }
-        selectedMode = mode
-        updateContent(animated: true)
-        if notifyDelegate {
-            onModeChanged?(mode.isPrivate)
-        }
-    }
-
     private func finish() {
         if let onDone {
             onDone()
@@ -445,34 +522,88 @@ final class TabOverviewViewController: BaseViewController {
             navigationController?.popViewController(animated: true)
         }
     }
+
+    @objc
+    private func modeControlChanged() {
+        guard let mode = TabOverviewMode(
+            rawValue: modeControl.selectedSegmentIndex
+        ) else {
+            return
+        }
+        requestMode(
+            mode,
+            animated: !UIAccessibility.isReduceMotionEnabled,
+            notifyDelegate: true
+        )
+    }
 }
 
-extension TabOverviewViewController: UICollectionViewDelegate {
-    func collectionView(
-        _ collectionView: UICollectionView,
-        didSelectItemAt indexPath: IndexPath
-    ) {
-        guard let itemID = dataSource.itemIdentifier(for: indexPath) else { return }
-        onSelectTab?(itemID)
-    }
-
-    func collectionView(
-        _ collectionView: UICollectionView,
-        contextMenuConfigurationForItemAt indexPath: IndexPath,
-        point: CGPoint
-    ) -> UIContextMenuConfiguration? {
+extension TabOverviewViewController: UIPageViewControllerDataSource {
+    func pageViewController(
+        _ pageViewController: UIPageViewController,
+        viewControllerBefore viewController: UIViewController
+    ) -> UIViewController? {
         guard
-            let itemID = dataSource.itemIdentifier(for: indexPath),
-            let item = allItems.first(where: { $0.id == itemID })
+            let page = viewController as? TabOverviewPageViewController,
+            page.mode == .privateBrowsing
         else {
             return nil
         }
+        return standardPage
+    }
 
-        return UIContextMenuConfiguration(
-            identifier: itemID.uuidString as NSString,
-            previewProvider: nil
-        ) { [weak self] _ in
-            self?.makeContextMenu(for: item)
+    func pageViewController(
+        _ pageViewController: UIPageViewController,
+        viewControllerAfter viewController: UIViewController
+    ) -> UIViewController? {
+        guard
+            let page = viewController as? TabOverviewPageViewController,
+            page.mode == .standard
+        else {
+            return nil
         }
+        return privatePage
+    }
+}
+
+extension TabOverviewViewController: UIPageViewControllerDelegate {
+    func pageViewController(
+        _ pageViewController: UIPageViewController,
+        willTransitionTo pendingViewControllers: [UIViewController]
+    ) {
+        guard
+            let pendingPage = pendingViewControllers.first
+                as? TabOverviewPageViewController
+        else {
+            return
+        }
+        isPageTransitionInFlight = true
+        saveScrollOffset(for: pagingState.selectedMode)
+        pagingState.beginInteractiveTransition(to: pendingPage.mode)
+    }
+
+    func pageViewController(
+        _ pageViewController: UIPageViewController,
+        didFinishAnimating finished: Bool,
+        previousViewControllers: [UIViewController],
+        transitionCompleted completed: Bool
+    ) {
+        let expectedMode = pagingState.pendingInteractiveMode
+        let transitionCompleted =
+            completed && visiblePageMode == expectedMode
+        let didChange = pagingState.finishInteractiveTransition(
+            completed: transitionCompleted
+        )
+        isPageTransitionInFlight = false
+
+        if !transitionCompleted {
+            showSelectedPageWithoutAnimation()
+        }
+        restoreScrollOffset(for: pagingState.selectedMode)
+        applyModeAppearance(animated: didChange)
+        if didChange {
+            onModeChanged?(pagingState.selectedMode.isPrivate)
+        }
+        drainQueuedTransitionIfNeeded()
     }
 }

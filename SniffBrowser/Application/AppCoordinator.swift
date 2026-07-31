@@ -5,13 +5,27 @@ final class AppCoordinator: NSObject, BrowserRouting {
   private let window: UIWindow
   private let navigationController: UINavigationController
   private let websiteDataManager = WebsiteDataManager()
+  private let favoriteService = FavoriteService.shared
   private weak var browserViewController: BrowserViewController?
+  private weak var userCenterViewController: UserCenterViewController?
+  private var favoriteChangeObserver: NSObjectProtocol?
 
   init(window: UIWindow) {
     self.window = window
     navigationController = UINavigationController()
     super.init()
     navigationController.delegate = self
+    favoriteChangeObserver = favoriteService.observeChanges { [weak self] in
+      Task { @MainActor in
+        self?.refreshUserCenterCounts()
+      }
+    }
+  }
+
+  deinit {
+    if let favoriteChangeObserver {
+      favoriteService.removeChangeObserver(favoriteChangeObserver)
+    }
   }
 
   func start() {
@@ -48,6 +62,24 @@ final class AppCoordinator: NSObject, BrowserRouting {
     controller.onStartBrowsing = { [weak self] in
       self?.returnToBrowser()
     }
+    controller.onOpenFavorite = { [weak self] item in
+      guard self?.browserViewController?.openFavoriteURL(
+        item.url,
+        inNewNormalTab: false
+      ) == true else {
+        return
+      }
+      self?.returnToBrowser()
+    }
+    controller.onOpenFavoriteInNewTab = { [weak self] item in
+      guard self?.browserViewController?.openFavoriteURL(
+        item.url,
+        inNewNormalTab: true
+      ) == true else {
+        return
+      }
+      self?.returnToBrowser()
+    }
     push(controller)
   }
 
@@ -71,8 +103,8 @@ final class AppCoordinator: NSObject, BrowserRouting {
     controller.onBrowseForDownloads = { [weak self] in
       self?.returnToBrowser()
     }
-    controller.onOpenDownloadSettings = { [weak self] in
-      self?.showSettings()
+    controller.onRoute = { [weak self] route in
+      self?.navigate(to: route)
     }
     push(controller)
   }
@@ -90,12 +122,10 @@ final class AppCoordinator: NSObject, BrowserRouting {
   }
 
   func showUserCenter() {
-    let controller = UserCenterViewController(counts: UserCenterCounts())
+    let controller = UserCenterViewController(counts: currentUserCenterCounts())
+    userCenterViewController = controller
     controller.onLogin = { [weak self] in
       self?.push(LoginViewController())
-    }
-    controller.onOpenSettings = { [weak self] in
-      self?.showSettings()
     }
     controller.onSelectDestination = { [weak self] destination in
       switch destination {
@@ -111,15 +141,26 @@ final class AppCoordinator: NSObject, BrowserRouting {
         self?.showFavorites()
       case .history:
         self?.showHistory()
-      case .settings, .privacy, .about:
+      case .privacy, .about:
         self?.showSettings()
       }
     }
     push(controller)
   }
 
+  private func currentUserCenterCounts() -> UserCenterCounts {
+    UserCenterCounts(favorites: (try? favoriteService.count()) ?? 0)
+  }
+
+  private func refreshUserCenterCounts() {
+    userCenterViewController?.update(counts: currentUserCenterCounts())
+  }
+
   func showSettings() {
     let controller = SettingsViewController()
+    controller.onRoute = { [weak self] route in
+      self?.navigate(to: route)
+    }
     controller.onClearBrowsingData = { [weak self, weak controller] in
       guard let self else { return }
       Task { @MainActor in
@@ -129,6 +170,13 @@ final class AppCoordinator: NSObject, BrowserRouting {
       }
     }
     push(controller)
+  }
+
+  func navigate(to route: AppRoute) {
+    switch route {
+    case .downloadSettings:
+      push(DownloadSettingsViewController())
+    }
   }
 
   private func push(_ controller: UIViewController) {

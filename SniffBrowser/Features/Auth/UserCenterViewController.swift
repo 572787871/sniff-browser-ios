@@ -8,14 +8,12 @@ final class UserCenterViewController: BaseViewController {
         case files
         case favorites
         case history
-        case settings
         case privacy
         case about
     }
 
     var onSelectDestination: ((Destination) -> Void)?
     var onLogin: (() -> Void)?
-    var onOpenSettings: (() -> Void)?
 
     private var session: AuthSession?
     private var counts: UserCenterCounts
@@ -37,8 +35,8 @@ final class UserCenterViewController: BaseViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        profileHeader.configure(session: session, counts: counts)
         configureTable()
-        updateProfile()
     }
 
     override func viewDidLayoutSubviews() {
@@ -49,13 +47,15 @@ final class UserCenterViewController: BaseViewController {
     func update(session: AuthSession?) {
         self.session = session
         guard isViewLoaded else { return }
-        updateProfile()
+        profileHeader.update(session: session)
+        tableView.reloadData()
+        updateHeaderLayout()
     }
 
     func update(counts: UserCenterCounts) {
         self.counts = counts
         guard isViewLoaded else { return }
-        updateProfile()
+        profileHeader.update(counts: counts)
     }
 
     private func configureTable() {
@@ -72,7 +72,13 @@ final class UserCenterViewController: BaseViewController {
         tableView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(tableView)
 
-        profileHeader.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: 178)
+        let initialWidth = max(view.bounds.width, 1)
+        profileHeader.frame = CGRect(
+            x: 0,
+            y: 0,
+            width: initialWidth,
+            height: profileHeader.fittingHeight(forWidth: initialWidth)
+        )
         profileHeader.onPrimaryAction = { [weak self] in
             guard let self else { return }
             self.route(to: self.session == nil ? .login : .sync)
@@ -90,38 +96,23 @@ final class UserCenterViewController: BaseViewController {
         ])
     }
 
-    private func updateProfile() {
-        profileHeader.configure(session: session, counts: counts)
-        tableView.reloadData()
-        updateHeaderLayout()
-    }
-
     private func updateHeaderLayout() {
         guard tableView.bounds.width > 0 else { return }
         let targetWidth = tableView.bounds.width
         if abs(profileHeader.frame.width - targetWidth) > 0.5 {
             profileHeader.frame.size.width = targetWidth
         }
-        let fittingSize = profileHeader.systemLayoutSizeFitting(
-            CGSize(width: targetWidth, height: UIView.layoutFittingCompressedSize.height),
-            withHorizontalFittingPriority: .required,
-            verticalFittingPriority: .fittingSizeLevel
-        )
-        guard fittingSize.height > 0,
-              abs(profileHeader.frame.height - fittingSize.height) > 0.5 else {
+        let fittingHeight = profileHeader.fittingHeight(forWidth: targetWidth)
+        guard abs(profileHeader.frame.height - fittingHeight) > 0.5 else {
             return
         }
-        profileHeader.frame.size.height = fittingSize.height
+        profileHeader.frame.size.height = fittingHeight
         tableView.tableHeaderView = profileHeader
     }
 
     private func route(to destination: Destination) {
         if destination == .login, let onLogin {
             onLogin()
-            return
-        }
-        if destination == .settings, let onOpenSettings {
-            onOpenSettings()
             return
         }
         if destination == .sync, session == nil {
@@ -147,8 +138,6 @@ final class UserCenterViewController: BaseViewController {
             viewController = FavoritesViewController()
         case .history:
             viewController = HistoryViewController()
-        case .settings:
-            viewController = SettingsViewController()
         case .privacy, .about:
             viewController = SettingsViewController()
         }
@@ -181,7 +170,6 @@ extension UserCenterViewController: UITableViewDataSource, UITableViewDelegate {
                     symbol: "arrow.triangle.2.circlepath",
                     destination: .sync
                 ),
-                Row(title: "浏览器设置", subtitle: "搜索、外观与下载", symbol: "gearshape", destination: .settings),
                 Row(title: "隐私与安全", subtitle: "网站权限与浏览数据", symbol: "hand.raised", destination: .privacy),
                 Row(title: "关于嗅探浏览器", subtitle: "版本与许可信息", symbol: "info.circle", destination: .about)
             ])
@@ -239,6 +227,26 @@ private final class UserProfileHeaderView: UIView {
     private let subtitleLabel = UILabel()
     private let actionButton = UIButton(type: .system)
     private let summaryStack = UIStackView()
+    private let downloadSummary = UserSummaryCard(
+        title: "下载",
+        value: 0,
+        symbol: "arrow.down.circle"
+    )
+    private let fileSummary = UserSummaryCard(
+        title: "文件",
+        value: 0,
+        symbol: "folder"
+    )
+    private let favoriteSummary = UserSummaryCard(
+        title: "收藏",
+        value: 0,
+        symbol: "star"
+    )
+    private let historySummary = UserSummaryCard(
+        title: "历史",
+        value: 0,
+        symbol: "clock"
+    )
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -250,6 +258,11 @@ private final class UserProfileHeaderView: UIView {
     }
 
     func configure(session: AuthSession?, counts: UserCenterCounts) {
+        update(session: session)
+        update(counts: counts)
+    }
+
+    func update(session: AuthSession?) {
         if let session {
             titleLabel.text = session.user.displayName
                 ?? session.user.email
@@ -263,38 +276,28 @@ private final class UserProfileHeaderView: UIView {
             actionButton.configuration?.title = "登录或注册"
             actionButton.accessibilityLabel = "登录或注册"
         }
+    }
 
-        let summaries: [
-            (
-                title: String,
-                value: Int,
-                symbol: String,
-                destination: UserCenterViewController.Destination
-            )
-        ] = [
-            ("下载", counts.downloads, "arrow.down.circle", .downloads),
-            ("文件", counts.files, "folder", .files),
-            ("收藏", counts.favorites, "star", .favorites),
-            ("历史", counts.history, "clock", .history)
-        ]
-        summaryStack.arrangedSubviews.forEach {
-            summaryStack.removeArrangedSubview($0)
-            $0.removeFromSuperview()
-        }
-        summaries.forEach { summary in
-            let card = UserSummaryCard(
-                title: summary.title,
-                value: summary.value,
-                symbol: summary.symbol
-            )
-            card.addAction(
-                UIAction { [weak self] _ in
-                    self?.onSelectSummary?(summary.destination)
-                },
-                for: .touchUpInside
-            )
-            summaryStack.addArrangedSubview(card)
-        }
+    func update(counts: UserCenterCounts) {
+        downloadSummary.setValue(counts.downloads)
+        fileSummary.setValue(counts.files)
+        favoriteSummary.setValue(counts.favorites)
+        historySummary.setValue(counts.history)
+    }
+
+    func fittingHeight(forWidth width: CGFloat) -> CGFloat {
+        frame.size = CGSize(width: width, height: max(frame.height, 260))
+        setNeedsLayout()
+        layoutIfNeeded()
+        let fittingSize = systemLayoutSizeFitting(
+            CGSize(
+                width: width,
+                height: UIView.layoutFittingCompressedSize.height
+            ),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        )
+        return max(260, ceil(fittingSize.height))
     }
 
     private func configureView() {
@@ -315,6 +318,7 @@ private final class UserProfileHeaderView: UIView {
         avatarView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 27)
         avatarView.contentMode = .center
         avatarView.isAccessibilityElement = false
+        avatarView.accessibilityIdentifier = "userCenter.avatar"
         avatarView.translatesAutoresizingMaskIntoConstraints = false
         avatarContainer.addSubview(avatarView)
         avatarView.setContentHuggingPriority(.required, for: .horizontal)
@@ -345,6 +349,7 @@ private final class UserProfileHeaderView: UIView {
         }
         actionButton.configuration = buttonConfiguration
         actionButton.addTarget(self, action: #selector(actionPressed), for: .touchUpInside)
+        actionButton.accessibilityIdentifier = "userCenter.primaryAction"
         actionButton.accessibilityHint = "打开登录和账户页面"
 
         let identityRow = UIStackView(arrangedSubviews: [avatarContainer, labels])
@@ -356,6 +361,28 @@ private final class UserProfileHeaderView: UIView {
         summaryStack.alignment = .fill
         summaryStack.distribution = .fillEqually
         summaryStack.spacing = AppSpacing.xs
+        let summaries: [
+            (
+                card: UserSummaryCard,
+                destination: UserCenterViewController.Destination,
+                accessibilityIdentifier: String
+            )
+        ] = [
+            (downloadSummary, .downloads, "userCenter.summary.downloads"),
+            (fileSummary, .files, "userCenter.summary.files"),
+            (favoriteSummary, .favorites, "userCenter.summary.favorites"),
+            (historySummary, .history, "userCenter.summary.history")
+        ]
+        summaries.forEach { summary in
+            summary.card.accessibilityIdentifier = summary.accessibilityIdentifier
+            summary.card.addAction(
+                UIAction { [weak self] _ in
+                    self?.onSelectSummary?(summary.destination)
+                },
+                for: .touchUpInside
+            )
+            summaryStack.addArrangedSubview(summary.card)
+        }
 
         let stack = UIStackView(
             arrangedSubviews: [identityRow, actionButton, summaryStack]
@@ -397,7 +424,7 @@ private final class UserProfileHeaderView: UIView {
                 greaterThanOrEqualToConstant: AppMetrics.minimumTapSize
             ),
             summaryStack.heightAnchor.constraint(
-                greaterThanOrEqualToConstant: 72
+                greaterThanOrEqualToConstant: 76
             )
         ])
     }
@@ -422,6 +449,11 @@ private final class UserSummaryCard: UIControl {
 
     required init?(coder: NSCoder) {
         return nil
+    }
+
+    func setValue(_ value: Int) {
+        valueLabel.text = "\(max(0, value))"
+        accessibilityLabel = "\(titleLabel.text ?? "")，\(valueLabel.text ?? "0")"
     }
 
     override var isHighlighted: Bool {

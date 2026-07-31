@@ -22,12 +22,29 @@ final class BrowserPresentationModelTests: XCTestCase {
     )
 
     XCTAssertTrue(state.isEnabled(.newTab))
-    XCTAssertTrue(state.isEnabled(.favorite))
+    XCTAssertFalse(state.isEnabled(.favorite))
     XCTAssertFalse(state.isEnabled(.share))
     XCTAssertFalse(state.isEnabled(.reload))
     XCTAssertNil(state.detail(for: .downloads))
     XCTAssertNil(state.detail(for: .files))
     XCTAssertEqual(state.detail(for: .userCenter), "游客模式")
+  }
+
+  func testFavoriteQuickActionReflectsCurrentPageState() {
+    let state = BrowserMoreMenuState(
+      hasCurrentPage: true,
+      downloadSummary: nil,
+      fileSummary: nil,
+      accountSummary: "游客模式",
+      favoriteActionState: FavoriteActionState(
+        isEnabled: true,
+        isFavorite: true
+      )
+    )
+
+    XCTAssertTrue(state.isEnabled(.favorite))
+    XCTAssertEqual(state.title(for: .favorite), "取消收藏")
+    XCTAssertEqual(state.symbolName(for: .favorite), "star.fill")
   }
 
   func testChromeRequiresStableScrollDirectionBeforeTransition() {

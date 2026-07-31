@@ -61,8 +61,15 @@ extension BrowserViewController {
     controller.onShareTab = { [weak self] id, url in
       self?.shareTab(id: id, url: url)
     }
-    controller.onOpenFavorites = { [weak self] _ in
-      self?.router?.showFavorites()
+    controller.favoriteActionStateProvider = { [weak self] url in
+      guard let self else {
+        return FavoriteActionState(isEnabled: false, isFavorite: false)
+      }
+      return (try? self.favoriteService.actionState(for: url))
+        ?? FavoriteActionState(isEnabled: false, isFavorite: false)
+    }
+    controller.onToggleFavorite = { [weak self] id in
+      self?.toggleTabFavorite(id: id)
     }
     controller.onDone = { [weak self] in
       self?.router?.returnToBrowser()
@@ -155,6 +162,64 @@ extension BrowserViewController {
     presentShare(title: viewModel.state.title, url: url)
   }
 
+  @discardableResult
+  func openFavoriteURL(
+    _ url: URL,
+    inNewNormalTab: Bool
+  ) -> Bool {
+    if inNewNormalTab {
+      return openNewTab(with: url, isPrivate: false)
+    }
+
+    if activeTab?.isPrivate == true {
+      guard let normalTab = tabManager.tabs
+        .filter({ !$0.isPrivate })
+        .max(by: { $0.lastVisitedDate < $1.lastVisitedDate })
+      else {
+        return openNewTab(with: url, isPrivate: false)
+      }
+      selectTab(id: normalTab.id, returnsToBrowser: false)
+    }
+    load(url)
+    return true
+  }
+
+  func toggleTabFavorite(id: UUID) {
+    guard let tab = tabManager.tabs.first(where: { $0.id == id }) else {
+      return
+    }
+    do {
+      let result = try favoriteService.toggleFavorite(
+        title: tab.title,
+        url: tab.url
+      )
+      let message: String
+      switch result {
+      case .added:
+        message = tab.isPrivate
+          ? "已主动保存到收藏夹；不会写入浏览历史"
+          : "已添加到收藏夹"
+      case .removed:
+        message = "已从收藏夹移除"
+      }
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      UIAccessibility.post(
+        notification: .announcement,
+        argument: message
+      )
+    } catch {
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+      let alert = UIAlertController(
+        title: "无法更新收藏夹",
+        message: error.localizedDescription,
+        preferredStyle: .alert
+      )
+      alert.addAction(UIAlertAction(title: "好", style: .default))
+      let presenter = navigationController?.topViewController ?? self
+      presenter.present(alert, animated: true)
+    }
+  }
+
   func presentShare(title: String, url: URL) {
     let controller = UIActivityViewController(
       activityItems: [title, url],
@@ -165,12 +230,17 @@ extension BrowserViewController {
   }
 
   func presentMoreMenu() {
+    let favoriteURL = currentPageURLForFavorite()
+    let favoriteActionState = (
+      try? favoriteService.actionState(for: favoriteURL)
+    ) ?? FavoriteActionState(isEnabled: false, isFavorite: false)
     let controller = BrowserMoreMenuViewController(
       state: BrowserMoreMenuState(
         hasCurrentPage: viewModel.state.url != nil,
         downloadSummary: nil,
         fileSummary: nil,
-        accountSummary: "游客模式"
+        accountSummary: "游客模式",
+        favoriteActionState: favoriteActionState
       )
     )
     controller.onQuickAction = { [weak self] action in
@@ -178,7 +248,7 @@ extension BrowserViewController {
       switch action {
       case .newTab: self.openNewTab()
       case .share: self.shareCurrentPage()
-      case .favorite: self.router?.showFavorites()
+      case .favorite: self.toggleFavoriteForCurrentPage()
       case .reload: self.activeWebView?.reload()
       }
     }
@@ -198,6 +268,133 @@ extension BrowserViewController {
       sheet.prefersScrollingExpandsWhenScrolledToEdge = false
     }
     present(controller, animated: true)
+  }
+
+  func currentPageURLForFavorite() -> URL? {
+    guard errorView.isHidden,
+          newTabView.isHidden,
+          let url = viewModel.state.url
+    else {
+      return nil
+    }
+    return url
+  }
+
+  func toggleFavoriteForCurrentPage() {
+    do {
+      let result = try favoriteService.toggleFavorite(
+        title: viewModel.state.title,
+        url: currentPageURLForFavorite()
+      )
+      let message: String
+      switch result {
+      case .added:
+        message = activeTab?.isPrivate == true
+          ? "已主动保存到收藏夹；不会写入浏览历史"
+          : "已添加到收藏夹"
+      case .removed:
+        message = "已从收藏夹移除"
+      }
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      showTransientBrowserFeedback(message)
+    } catch {
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+      let alert = UIAlertController(
+        title: "无法更新收藏夹",
+        message: error.localizedDescription,
+        preferredStyle: .alert
+      )
+      alert.addAction(UIAlertAction(title: "好", style: .default))
+      present(alert, animated: true)
+    }
+  }
+
+  func showTransientBrowserFeedback(_ message: String) {
+    let feedbackView = AppMaterialView(
+      style: .systemMaterial,
+      fallbackColor: AppColors.chromeFallback
+    )
+    feedbackView.layer.cornerRadius = AppRadius.control
+    feedbackView.layer.cornerCurve = .continuous
+    feedbackView.clipsToBounds = true
+    feedbackView.translatesAutoresizingMaskIntoConstraints = false
+
+    let imageView = UIImageView(image: UIImage(systemName: "checkmark.circle.fill"))
+    imageView.tintColor = AppColors.success
+    imageView.contentMode = .scaleAspectFit
+    imageView.translatesAutoresizingMaskIntoConstraints = false
+
+    let label = UILabel()
+    label.text = message
+    label.font = AppTypography.subheadline
+    label.textColor = AppColors.primaryText
+    label.adjustsFontForContentSizeCategory = true
+    label.translatesAutoresizingMaskIntoConstraints = false
+
+    feedbackView.contentView.addSubview(imageView)
+    feedbackView.contentView.addSubview(label)
+    view.addSubview(feedbackView)
+    NSLayoutConstraint.activate([
+      feedbackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      feedbackView.topAnchor.constraint(
+        equalTo: addressBar.bottomAnchor,
+        constant: AppSpacing.sm
+      ),
+      feedbackView.leadingAnchor.constraint(
+        greaterThanOrEqualTo: view.leadingAnchor,
+        constant: AppSpacing.lg
+      ),
+      feedbackView.trailingAnchor.constraint(
+        lessThanOrEqualTo: view.trailingAnchor,
+        constant: -AppSpacing.lg
+      ),
+      feedbackView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+      imageView.leadingAnchor.constraint(
+        equalTo: feedbackView.contentView.leadingAnchor,
+        constant: AppSpacing.sm
+      ),
+      imageView.centerYAnchor.constraint(
+        equalTo: feedbackView.contentView.centerYAnchor
+      ),
+      imageView.widthAnchor.constraint(equalToConstant: 19),
+      imageView.heightAnchor.constraint(equalTo: imageView.widthAnchor),
+      label.leadingAnchor.constraint(
+        equalTo: imageView.trailingAnchor,
+        constant: AppSpacing.xs
+      ),
+      label.trailingAnchor.constraint(
+        equalTo: feedbackView.contentView.trailingAnchor,
+        constant: -AppSpacing.sm
+      ),
+      label.topAnchor.constraint(
+        equalTo: feedbackView.contentView.topAnchor,
+        constant: AppSpacing.xs
+      ),
+      label.bottomAnchor.constraint(
+        equalTo: feedbackView.contentView.bottomAnchor,
+        constant: -AppSpacing.xs
+      ),
+    ])
+    feedbackView.alpha = 0
+    feedbackView.transform = CGAffineTransform(translationX: 0, y: -8)
+    UIAccessibility.post(notification: .announcement, argument: message)
+    AppAppearance.animate {
+      feedbackView.alpha = 1
+      feedbackView.transform = .identity
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+      AppAppearance.animate(
+        duration: AppAppearance.quickAnimationDuration,
+        animations: {
+          feedbackView.alpha = 0
+          feedbackView.transform = CGAffineTransform(
+            translationX: 0,
+            y: -6
+          )
+        },
+        completion: { _ in feedbackView.removeFromSuperview() }
+      )
+    }
   }
 
   func presentMaximumTabsMessage() {

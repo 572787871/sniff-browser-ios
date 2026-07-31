@@ -2,9 +2,12 @@ import UIKit
 
 final class SettingsViewController: BaseViewController {
     fileprivate static var appVersion: String {
-        Bundle.main.object(
+        if let version = Bundle.main.object(
             forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "0.2.0"
+        ) as? String {
+            return version
+        }
+        return "0.3.0"
     }
 
     enum Destination {
@@ -23,6 +26,7 @@ final class SettingsViewController: BaseViewController {
     }
 
     var onSelectDestination: ((Destination) -> Void)?
+    var onRoute: ((AppRoute) -> Void)?
     var onClearBrowsingData: (() -> Void)? {
         didSet {
             guard isViewLoaded else { return }
@@ -189,13 +193,26 @@ extension SettingsViewController: UITableViewDataSource, UITableViewDelegate {
             confirmClearBrowsingData()
             return
         }
+        if destination == .downloadPreferences {
+            if let onRoute {
+                onRoute(.downloadSettings)
+            } else {
+                navigationController?.pushViewController(
+                    DownloadSettingsViewController(),
+                    animated: true
+                )
+            }
+            return
+        }
         if let onSelectDestination {
             onSelectDestination(destination)
         } else {
-            navigationController?.pushViewController(
-                SettingsDetailViewController(destination: destination),
-                animated: true
-            )
+            guard let detail = SettingsDetailViewController(
+                destination: destination
+            ) else {
+                return
+            }
+            navigationController?.pushViewController(detail, animated: true)
         }
     }
 
@@ -227,8 +244,10 @@ extension SettingsViewController: UITableViewDataSource, UITableViewDelegate {
 private final class SettingsDetailViewController: BaseViewController {
     private let stateConfiguration: EmptyStateView.Configuration
 
-    init(destination: SettingsViewController.Destination) {
-        let content = Self.content(for: destination)
+    init?(destination: SettingsViewController.Destination) {
+        guard let content = Self.content(for: destination) else {
+            return nil
+        }
         stateConfiguration = .init(
             symbolName: content.symbol,
             title: content.title,
@@ -248,7 +267,7 @@ private final class SettingsDetailViewController: BaseViewController {
 
     private static func content(
         for destination: SettingsViewController.Destination
-    ) -> (title: String, symbol: String, message: String) {
+    ) -> (title: String, symbol: String, message: String)? {
         switch destination {
         case .searchEngine:
             return ("默认搜索引擎", "magnifyingglass", "当前默认使用 Google；后续版本将在此提供搜索引擎选择。")
@@ -263,7 +282,7 @@ private final class SettingsDetailViewController: BaseViewController {
         case .clearBrowsingData:
             return ("清除浏览数据", "trash", "此操作会清除 Cookie、网站存储与网页缓存，并重新载入当前网页。")
         case .downloadPreferences:
-            return ("下载设置", "arrow.down.circle", "后台下载模块接入后，此处将管理并发、网络与保存位置。")
+            return nil
         case .storage:
             return ("存储空间", "internaldrive", "文件资料库接入后，此处将显示下载、缓存和缩略图占用。")
         case .privacyPolicy:
