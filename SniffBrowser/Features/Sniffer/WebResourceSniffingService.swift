@@ -269,9 +269,10 @@ final class WebResourceSniffingService: ResourceSniffingService {
             return
         }
         let pageURL = batch.pageURLString.flatMap(URL.init(string:))
-        if !((contexts[tabID]?.webView.value?.isLoading) == true) {
-            contexts[tabID]?.expectedPageURL =
-                contexts[tabID]?.webView.value?.url ?? pageURL
+        if let context = contexts[tabID],
+           context.webView.value?.isLoading != true {
+            let resolvedPageURL = context.webView.value?.url ?? pageURL
+            contexts[tabID]?.expectedPageURL = resolvedPageURL
         }
         store.reconcilePageIfNeeded(
             tabID: tabID,
