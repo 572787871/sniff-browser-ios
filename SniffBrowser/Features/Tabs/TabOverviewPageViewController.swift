@@ -76,7 +76,7 @@ final class TabOverviewPageViewController: UIViewController {
         collectionView.alwaysBounceVertical = true
         collectionView.alwaysBounceHorizontal = false
         collectionView.showsHorizontalScrollIndicator = false
-        collectionView.directionalLockEnabled = true
+        collectionView.isDirectionalLockEnabled = true
         collectionView.keyboardDismissMode = .onDrag
         collectionView.contentInsetAdjustmentBehavior = .never
         collectionView.register(

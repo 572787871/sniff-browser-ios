@@ -200,7 +200,7 @@ final class TabOverviewViewController: BaseViewController {
         pageViewController.view.subviews
             .compactMap { $0 as? UIScrollView }
             .forEach {
-                $0.directionalLockEnabled = true
+                $0.isDirectionalLockEnabled = true
                 $0.showsHorizontalScrollIndicator = false
             }
         contentView.bringSubviewToFront(bottomBar)
