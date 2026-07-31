@@ -57,7 +57,10 @@ final class AppCoordinator: NSObject, BrowserRouting {
       self?.returnToBrowser()
     }
     controller.onOpenPrivateTab = { [weak self] in
-      self?.browserViewController?.openNewTab(isPrivate: true)
+      guard self?.browserViewController?.openNewTab(isPrivate: true) == true
+      else {
+        return
+      }
       self?.returnToBrowser()
     }
     push(controller)

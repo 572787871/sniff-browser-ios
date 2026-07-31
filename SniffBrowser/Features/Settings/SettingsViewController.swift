@@ -202,7 +202,7 @@ extension SettingsViewController: UITableViewDataSource, UITableViewDelegate {
     private func confirmClearBrowsingData() {
         let alert = UIAlertController(
             title: "清除浏览数据？",
-            message: "Cookie、网站存储与网页缓存将被清除，已打开的标签页会重新载入。",
+            message: "Cookie、网站存储与网页缓存将被清除，当前网页会重新载入。",
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))

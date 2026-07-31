@@ -7,8 +7,8 @@ final class BrowserTabManager {
         case maximumTabCountReached
     }
 
-    static let absoluteMaximumTabCount = 30
-    static let defaultMaximumResidentWebViewCount = 6
+    nonisolated static let absoluteMaximumTabCount = 30
+    nonisolated static let defaultMaximumResidentWebViewCount = 6
 
     private(set) var tabs: [BrowserTab] = []
     private(set) var selectedTabID: UUID?
@@ -46,8 +46,8 @@ final class BrowserTabManager {
         maximumTabCount: Int = BrowserTabManager.absoluteMaximumTabCount,
         maximumResidentWebViewCount: Int =
             BrowserTabManager.defaultMaximumResidentWebViewCount,
-        sessionStore: BrowserTabSessionStore = BrowserTabSessionStore(),
-        snapshotService: TabSnapshotProviding = TabSnapshotService(),
+        sessionStore: BrowserTabSessionStore? = nil,
+        snapshotService: TabSnapshotProviding? = nil,
         webViewFactory: @escaping BrowserTab.WebViewFactory = BrowserTab.makeWebView,
         restoresSession: Bool = true
     ) {
@@ -59,8 +59,8 @@ final class BrowserTabManager {
             max(1, maximumResidentWebViewCount),
             self.maximumTabCount
         )
-        self.sessionStore = sessionStore
-        self.snapshotService = snapshotService
+        self.sessionStore = sessionStore ?? BrowserTabSessionStore()
+        self.snapshotService = snapshotService ?? TabSnapshotService()
         self.webViewFactory = webViewFactory
 
         let didRestoreSession = restoresSession && restoreSession()
