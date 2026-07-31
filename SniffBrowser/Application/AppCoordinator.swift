@@ -4,6 +4,7 @@ import UIKit
 final class AppCoordinator: NSObject, BrowserRouting {
   private let window: UIWindow
   private let navigationController: UINavigationController
+  private let websiteDataManager = WebsiteDataManager()
   private weak var browserViewController: BrowserViewController?
 
   init(window: UIWindow) {
@@ -27,54 +28,104 @@ final class AppCoordinator: NSObject, BrowserRouting {
     let controller = ResourceSnifferViewController()
     controller.configurePage(title: pageTitle, url: pageURL)
     let navigation = sheetNavigation(root: controller)
+    controller.onReturnToPage = { [weak navigation] in
+      navigation?.dismiss(animated: true)
+    }
     presentSheet(navigation)
   }
 
-  func showTabs(currentItem: TabOverviewItem) {
-    let controller = TabOverviewViewController(items: [currentItem])
-    controller.onSelectTab = { [weak self] _ in
-      self?.navigationController.popViewController(animated: true)
-    }
-    controller.onCloseTab = { [weak self] _ in
-      self?.browserViewController?.openNewTab()
-      self?.navigationController.popViewController(animated: true)
-    }
-    controller.onNewTab = { [weak self] _ in
-      self?.browserViewController?.openNewTab()
-      self?.navigationController.popViewController(animated: true)
+  func showTabs(_ controller: TabOverviewViewController) {
+    push(controller)
+  }
+
+  func returnToBrowser() {
+    navigationController.popToRootViewController(animated: true)
+    navigationController.setNavigationBarHidden(true, animated: true)
+  }
+
+  func showFavorites() {
+    let controller = FavoritesViewController()
+    controller.onStartBrowsing = { [weak self] in
+      self?.returnToBrowser()
     }
     push(controller)
   }
 
-  func showFavorites() {
-    push(FavoritesViewController())
-  }
-
   func showHistory() {
-    push(HistoryViewController())
+    let controller = HistoryViewController()
+    controller.onStartBrowsing = { [weak self] in
+      self?.returnToBrowser()
+    }
+    controller.onOpenPrivateTab = { [weak self] in
+      self?.browserViewController?.openNewTab(isPrivate: true)
+      self?.returnToBrowser()
+    }
+    push(controller)
   }
 
   func showDownloads() {
-    push(DownloadManagerViewController())
+    let controller = DownloadManagerViewController()
+    controller.onBrowseForDownloads = { [weak self] in
+      self?.returnToBrowser()
+    }
+    controller.onOpenDownloadSettings = { [weak self] in
+      self?.showSettings()
+    }
+    push(controller)
   }
 
   func showFiles() {
-    push(FileManagerViewController())
+    let controller = FileManagerViewController()
+    // 文件仓储尚未实现，因此导入、建夹和排序操作保持禁用，避免伪造结果。
+    controller.onImportFiles = nil
+    controller.onCreateFolder = nil
+    controller.onSortOrderChanged = nil
+    controller.onReturnToBrowser = { [weak self] in
+      self?.returnToBrowser()
+    }
+    push(controller)
   }
 
   func showUserCenter() {
-    let controller = UserCenterViewController()
+    let controller = UserCenterViewController(counts: UserCenterCounts())
     controller.onLogin = { [weak self] in
       self?.push(LoginViewController())
     }
     controller.onOpenSettings = { [weak self] in
       self?.showSettings()
     }
+    controller.onSelectDestination = { [weak self] destination in
+      switch destination {
+      case .login:
+        self?.push(LoginViewController())
+      case .sync:
+        self?.push(LoginViewController())
+      case .downloads:
+        self?.showDownloads()
+      case .files:
+        self?.showFiles()
+      case .favorites:
+        self?.showFavorites()
+      case .history:
+        self?.showHistory()
+      case .settings, .privacy, .about:
+        self?.showSettings()
+      }
+    }
     push(controller)
   }
 
   func showSettings() {
-    push(SettingsViewController())
+    let controller = SettingsViewController()
+    controller.onClearBrowsingData = { [weak self, weak controller] in
+      guard let self else { return }
+      Task { @MainActor in
+        await self.websiteDataManager.clearAllWebsiteData()
+        self.browserViewController?.reloadActivePageAfterClearingWebsiteData()
+        controller?.showBrowsingDataClearCompleted()
+      }
+    }
+    push(controller)
   }
 
   private func push(_ controller: UIViewController) {

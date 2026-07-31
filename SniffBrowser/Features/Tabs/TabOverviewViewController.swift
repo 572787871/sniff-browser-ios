@@ -1,20 +1,36 @@
 import UIKit
 
+@MainActor
 final class TabOverviewViewController: BaseViewController {
     var onSelectTab: ((UUID) -> Void)?
     var onCloseTab: ((UUID) -> Void)?
     var onNewTab: ((Bool) -> Void)?
 
-    private var allItems: [TabOverviewItem]
-    private var visibleItems: [TabOverviewItem] {
-        allItems.filter { $0.isPrivate == (modeControl.selectedSegmentIndex == 1) }
+    var onCloseOtherTabs: ((UUID) -> Void)?
+    var onCloseAllNormalTabs: (() -> Void)?
+    var onCopyTabURL: ((UUID, URL) -> Void)?
+    var onShareTab: ((UUID, URL?) -> Void)?
+    var onOpenFavorites: ((UUID) -> Void)?
+    var onModeChanged: ((Bool) -> Void)?
+    var onDone: (() -> Void)?
+
+    private enum Section {
+        case tabs
     }
 
-    private let modeControl = UISegmentedControl(items: ["标签页", "无痕"])
+    private var allItems: [TabOverviewItem]
+    private var selectedMode: TabOverviewMode
+
+    private var visibleItems: [TabOverviewItem] {
+        allItems.filter { $0.isPrivate == selectedMode.isPrivate }
+    }
+
+    private let privacyTintView = UIView()
     private lazy var collectionView = UICollectionView(
         frame: .zero,
         collectionViewLayout: makeLayout()
     )
+    private lazy var dataSource = makeDataSource()
     private let emptyView = EmptyStateView(
         configuration: .init(
             symbolName: "square.on.square",
@@ -22,14 +38,13 @@ final class TabOverviewViewController: BaseViewController {
             message: "新建标签页后，可以在这里快速切换和管理网页。"
         )
     )
-    private let bottomBar = AppMaterialView(
-        style: .systemChromeMaterial,
-        fallbackColor: AppColors.chromeFallback
-    )
-    private let newTabButton = UIButton(type: .system)
+    private let bottomBar = TabOverviewBottomBar()
 
     init(items: [TabOverviewItem]) {
         allItems = items
+        selectedMode = items.first(where: \.isSelected)?.isPrivate == true
+            ? .privateBrowsing
+            : .standard
         super.init(title: "标签页", prefersLargeTitle: false)
     }
 
@@ -40,10 +55,11 @@ final class TabOverviewViewController: BaseViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         configureNavigation()
-        configureModeControl()
-        configureCollectionView()
+        configureBackground()
         configureBottomBar()
-        updateContent()
+        configureCollectionView()
+        registerForEnvironmentChanges()
+        updateContent(animated: false)
     }
 
     override func viewWillTransition(
@@ -52,330 +68,411 @@ final class TabOverviewViewController: BaseViewController {
     ) {
         super.viewWillTransition(to: size, with: coordinator)
         coordinator.animate { [weak self] _ in
-            self?.collectionView.setCollectionViewLayout(self?.makeLayout() ?? UICollectionViewFlowLayout(), animated: true)
+            self?.collectionView.collectionViewLayout.invalidateLayout()
         }
     }
 
     func update(items: [TabOverviewItem]) {
         allItems = items
         guard isViewLoaded else { return }
-        updateContent()
+        updateContent(animated: true)
+    }
+
+    func selectMode(isPrivate: Bool, animated: Bool = true) {
+        let mode: TabOverviewMode = isPrivate ? .privateBrowsing : .standard
+        guard selectedMode != mode else { return }
+        selectedMode = mode
+        guard isViewLoaded else { return }
+        updateContent(animated: animated)
     }
 
     private func configureNavigation() {
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            image: UIImage(systemName: "ellipsis.circle"),
-            menu: UIMenu(children: [
-                UIAction(
-                    title: "新建无痕标签页",
-                    image: UIImage(systemName: "eye.slash"),
-                    attributes: [.disabled]
-                ) { [weak self] _ in
-                    self?.createTab(isPrivate: true)
-                }
-            ])
-        )
-        navigationItem.rightBarButtonItem?.accessibilityLabel = "标签页更多操作"
+        navigationItem.title = "标签页"
+        navigationItem.largeTitleDisplayMode = .never
+        navigationItem.backButtonDisplayMode = .minimal
     }
 
-    private func configureModeControl() {
-        modeControl.selectedSegmentIndex = 0
-        modeControl.setEnabled(false, forSegmentAt: 1)
-        modeControl.addTarget(self, action: #selector(modeChanged), for: .valueChanged)
-        modeControl.translatesAutoresizingMaskIntoConstraints = false
-        modeControl.setContentHuggingPriority(.required, for: .vertical)
-        contentView.addSubview(modeControl)
+    private func configureBackground() {
+        privacyTintView.backgroundColor = UIColor.systemIndigo.withAlphaComponent(0.045)
+        privacyTintView.isUserInteractionEnabled = false
+        privacyTintView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(privacyTintView)
 
         NSLayoutConstraint.activate([
-            modeControl.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
-            modeControl.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            modeControl.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor)
+            privacyTintView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            privacyTintView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            privacyTintView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            privacyTintView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
     }
 
     private func configureCollectionView() {
         collectionView.backgroundColor = .clear
         collectionView.alwaysBounceVertical = true
-        collectionView.contentInset = UIEdgeInsets(top: 16, left: 0, bottom: 96, right: 0)
+        collectionView.keyboardDismissMode = .onDrag
+        collectionView.contentInset = UIEdgeInsets(
+            top: AppSpacing.sm,
+            left: 0,
+            bottom: 84,
+            right: 0
+        )
+        collectionView.verticalScrollIndicatorInsets.bottom = 82
         collectionView.register(
             TabOverviewCell.self,
             forCellWithReuseIdentifier: TabOverviewCell.reuseIdentifier
         )
-        collectionView.dataSource = self
         collectionView.delegate = self
         collectionView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(collectionView)
 
         emptyView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(emptyView)
+        contentView.bringSubviewToFront(bottomBar)
 
         NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(equalTo: modeControl.bottomAnchor),
-            collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            collectionView.topAnchor.constraint(
+                equalTo: contentView.safeAreaLayoutGuide.topAnchor
+            ),
+            collectionView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            collectionView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            collectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
 
-            emptyView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            emptyView.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            emptyView.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor)
+            emptyView.topAnchor.constraint(
+                equalTo: contentView.safeAreaLayoutGuide.topAnchor
+            ),
+            emptyView.leadingAnchor.constraint(
+                equalTo: view.layoutMarginsGuide.leadingAnchor
+            ),
+            emptyView.trailingAnchor.constraint(
+                equalTo: view.layoutMarginsGuide.trailingAnchor
+            ),
+            emptyView.bottomAnchor.constraint(
+                equalTo: bottomBar.topAnchor,
+                constant: -AppSpacing.xs
+            )
         ])
     }
 
     private func configureBottomBar() {
-        bottomBar.layer.cornerRadius = AppRadius.sheet
-        bottomBar.layer.cornerCurve = .continuous
-        bottomBar.clipsToBounds = true
         bottomBar.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(bottomBar)
-
-        var configuration = UIButton.Configuration.filled()
-        configuration.title = "新建标签页"
-        configuration.image = UIImage(systemName: "plus")
-        configuration.imagePadding = 8
-        configuration.cornerStyle = .medium
-        newTabButton.configuration = configuration
-        newTabButton.titleLabel?.font = UIFont.preferredFont(forTextStyle: .headline)
-        newTabButton.addTarget(self, action: #selector(newTabPressed), for: .touchUpInside)
-        newTabButton.accessibilityLabel = "新建标签页"
-        newTabButton.translatesAutoresizingMaskIntoConstraints = false
-        bottomBar.contentView.addSubview(newTabButton)
+        bottomBar.mode = selectedMode
+        bottomBar.onModeChange = { [weak self] mode in
+            self?.changeMode(mode, notifyDelegate: true)
+        }
+        bottomBar.onNewTab = { [weak self] mode in
+            self?.createTab(isPrivate: mode.isPrivate)
+        }
+        bottomBar.onDone = { [weak self] in
+            self?.finish()
+        }
 
         NSLayoutConstraint.activate([
-            bottomBar.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            bottomBar.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
-            bottomBar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
-
-            newTabButton.topAnchor.constraint(equalTo: bottomBar.contentView.topAnchor, constant: 10),
-            newTabButton.leadingAnchor.constraint(equalTo: bottomBar.contentView.leadingAnchor, constant: 10),
-            newTabButton.trailingAnchor.constraint(equalTo: bottomBar.contentView.trailingAnchor, constant: -10),
-            newTabButton.bottomAnchor.constraint(equalTo: bottomBar.contentView.bottomAnchor, constant: -10),
-            newTabButton.heightAnchor.constraint(
-                greaterThanOrEqualToConstant: AppMetrics.minimumTapSize
+            bottomBar.leadingAnchor.constraint(
+                equalTo: view.layoutMarginsGuide.leadingAnchor
+            ),
+            bottomBar.trailingAnchor.constraint(
+                equalTo: view.layoutMarginsGuide.trailingAnchor
+            ),
+            bottomBar.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -AppSpacing.sm
             )
         ])
     }
 
     private func makeLayout() -> UICollectionViewLayout {
         UICollectionViewCompositionalLayout { [weak self] _, environment in
-            let usesSingleColumn = environment.container.effectiveContentSize.width < 360
-                || self?.traitCollection.preferredContentSizeCategory.isAccessibilityCategory == true
-            let columns = usesSingleColumn ? 1 : 2
+            let width = environment.container.effectiveContentSize.width
+            let isAccessibilitySize =
+                self?.traitCollection.preferredContentSizeCategory.isAccessibilityCategory
+                == true
+            let columns = isAccessibilitySize ? 1 : (width >= 700 ? 3 : 2)
+
             let itemSize = NSCollectionLayoutSize(
-                widthDimension: .fractionalWidth(1.0 / CGFloat(columns)),
-                heightDimension: .estimated(250)
+                widthDimension: .fractionalWidth(1),
+                heightDimension: .estimated(columns == 1 ? 330 : 250)
             )
             let item = NSCollectionLayoutItem(layoutSize: itemSize)
-            item.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6)
-
             let groupSize = NSCollectionLayoutSize(
                 widthDimension: .fractionalWidth(1),
-                heightDimension: .estimated(250)
+                heightDimension: .estimated(columns == 1 ? 330 : 250)
             )
-            let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
+            let group = NSCollectionLayoutGroup.horizontal(
+                layoutSize: groupSize,
+                repeatingSubitem: item,
+                count: columns
+            )
+            group.interItemSpacing = .fixed(AppSpacing.sm)
+
             let section = NSCollectionLayoutSection(group: group)
-            section.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 10)
+            section.interGroupSpacing = AppSpacing.sm
+            section.contentInsets = NSDirectionalEdgeInsets(
+                top: AppSpacing.xs,
+                leading: AppSpacing.md,
+                bottom: AppSpacing.md,
+                trailing: AppSpacing.md
+            )
             return section
         }
     }
 
-    private func updateContent() {
-        collectionView.reloadData()
-        let isEmpty = visibleItems.isEmpty
+    private func makeDataSource()
+        -> UICollectionViewDiffableDataSource<Section, UUID>
+    {
+        UICollectionViewDiffableDataSource<Section, UUID>(
+            collectionView: collectionView
+        ) { [weak self] collectionView, indexPath, itemID in
+            guard
+                let self,
+                let item = self.allItems.first(where: { $0.id == itemID }),
+                let cell = collectionView.dequeueReusableCell(
+                    withReuseIdentifier: TabOverviewCell.reuseIdentifier,
+                    for: indexPath
+                ) as? TabOverviewCell
+            else {
+                return UICollectionViewCell()
+            }
+
+            cell.configure(with: item)
+            cell.onClose = { [weak self] in
+                self?.close(itemID: itemID)
+            }
+            return cell
+        }
+    }
+
+    private func updateContent(animated: Bool) {
+        let identifiers = visibleItems.map(\.id)
+        let previousIdentifiers = Set(dataSource.snapshot().itemIdentifiers)
+
+        var snapshot = NSDiffableDataSourceSnapshot<Section, UUID>()
+        snapshot.appendSections([.tabs])
+        snapshot.appendItems(identifiers)
+        snapshot.reloadItems(identifiers.filter(previousIdentifiers.contains))
+        dataSource.apply(
+            snapshot,
+            animatingDifferences: animated && view.window != nil
+        )
+
+        let isEmpty = identifiers.isEmpty
         collectionView.isHidden = isEmpty
         emptyView.isHidden = !isEmpty
+        configureEmptyState()
+        updateModeAppearance(animated: animated)
+        bottomBar.mode = selectedMode
+    }
+
+    private func configureEmptyState() {
+        if selectedMode.isPrivate {
+            emptyView.configure(
+                .init(
+                    symbolName: "eye.slash",
+                    title: "没有无痕标签页",
+                    message: "无痕标签不会保存在浏览历史或下次会话中。"
+                )
+            )
+        } else {
+            emptyView.configure(
+                .init(
+                    symbolName: "square.on.square",
+                    title: "没有打开的标签页",
+                    message: "新建标签页后，可以在这里快速切换和管理网页。"
+                )
+            )
+        }
+    }
+
+    private func updateModeAppearance(animated: Bool) {
+        navigationItem.title = selectedMode.isPrivate ? "无痕标签页" : "标签页"
+        let changes = {
+            self.privacyTintView.alpha = self.selectedMode.isPrivate ? 1 : 0
+        }
+        if animated {
+            AppAppearance.animate(animations: changes)
+        } else {
+            changes()
+        }
+    }
+
+    private func registerForEnvironmentChanges() {
+        registerForTraitChanges([
+            UITraitPreferredContentSizeCategory.self
+        ]) { (controller: TabOverviewViewController, _) in
+            controller.collectionView.collectionViewLayout.invalidateLayout()
+            controller.dataSource.applySnapshotUsingReloadData(
+                controller.dataSource.snapshot()
+            )
+        }
     }
 
     private func createTab(isPrivate: Bool) {
-        let feedback = UIImpactFeedbackGenerator(style: .light)
-        feedback.impactOccurred()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         onNewTab?(isPrivate)
     }
 
-    @objc private func modeChanged() {
-        updateContent()
-    }
-
-    @objc private func newTabPressed() {
-        createTab(isPrivate: false)
-    }
-}
-
-extension TabOverviewViewController: UICollectionViewDataSource, UICollectionViewDelegate {
-    func collectionView(
-        _ collectionView: UICollectionView,
-        numberOfItemsInSection section: Int
-    ) -> Int {
-        visibleItems.count
-    }
-
-    func collectionView(
-        _ collectionView: UICollectionView,
-        cellForItemAt indexPath: IndexPath
-    ) -> UICollectionViewCell {
-        guard let cell = collectionView.dequeueReusableCell(
-            withReuseIdentifier: TabOverviewCell.reuseIdentifier,
-            for: indexPath
-        ) as? TabOverviewCell else {
-            return UICollectionViewCell()
-        }
-        let item = visibleItems[indexPath.item]
-        cell.configure(with: item)
-        cell.onClose = { [weak self] in
-            self?.close(itemID: item.id)
-        }
-        return cell
-    }
-
-    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        onSelectTab?(visibleItems[indexPath.item].id)
-    }
-
     private func close(itemID: UUID) {
-        let feedback = UIImpactFeedbackGenerator(style: .soft)
-        feedback.impactOccurred()
+        guard allItems.contains(where: { $0.id == itemID }) else { return }
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         allItems.removeAll { $0.id == itemID }
-        updateContent()
+        updateContent(animated: true)
         onCloseTab?(itemID)
     }
-}
 
-private final class TabOverviewCell: UICollectionViewCell {
-    static let reuseIdentifier = "TabOverviewCell"
-
-    var onClose: (() -> Void)?
-
-    private let previewContainer = UIView()
-    private let previewImageView = UIImageView()
-    private let placeholderImageView = UIImageView(image: UIImage(systemName: "globe"))
-    private let closeButton = UIButton(type: .system)
-    private let selectedBadge = UIImageView(image: UIImage(systemName: "checkmark.circle.fill"))
-    private let titleLabel = UILabel()
-    private let domainLabel = UILabel()
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        configureView()
+    private func closeOtherTabs(keeping item: TabOverviewItem) {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        allItems.removeAll {
+            $0.isPrivate == item.isPrivate && $0.id != item.id
+        }
+        updateContent(animated: true)
+        onCloseOtherTabs?(item.id)
     }
 
-    required init?(coder: NSCoder) {
-        return nil
+    private func closeAllNormalTabs() {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        allItems.removeAll { !$0.isPrivate }
+        updateContent(animated: true)
+        onCloseAllNormalTabs?()
     }
 
-    override func prepareForReuse() {
-        super.prepareForReuse()
-        onClose = nil
-        previewImageView.image = nil
+    private func copyURL(for item: TabOverviewItem) {
+        guard let url = item.url else { return }
+        UIPasteboard.general.url = url
+        onCopyTabURL?(item.id, url)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
-    func configure(with item: TabOverviewItem) {
-        titleLabel.text = item.title.isEmpty ? "新标签页" : item.title
-        domainLabel.text = item.url?.host ?? "嗅探浏览器"
-        previewImageView.image = item.thumbnail
-        placeholderImageView.isHidden = item.thumbnail != nil
-        selectedBadge.isHidden = !item.isSelected
-        contentView.layer.borderWidth = item.isSelected ? 2 : 0.5
-        contentView.layer.borderColor = (
-            item.isSelected ? AppColors.accent : AppColors.separator
-        ).cgColor
-        accessibilityLabel = "\(titleLabel.text ?? "标签页")，\(domainLabel.text ?? "")"
-        accessibilityValue = item.isSelected ? "当前标签页" : nil
-        accessibilityCustomActions = [
-            UIAccessibilityCustomAction(
-                name: "关闭标签页",
-                target: self,
-                selector: #selector(accessibilityClose)
+    private func share(_ item: TabOverviewItem, sourceRect: CGRect) {
+        if let onShareTab {
+            onShareTab(item.id, item.url)
+            return
+        }
+        guard let url = item.url else { return }
+        let activityController = UIActivityViewController(
+            activityItems: [url],
+            applicationActivities: nil
+        )
+        activityController.popoverPresentationController?.sourceView = collectionView
+        activityController.popoverPresentationController?.sourceRect = sourceRect
+        present(activityController, animated: true)
+    }
+
+    private func openFavorites(_ item: TabOverviewItem) {
+        onOpenFavorites?(item.id)
+    }
+
+    private func makeContextMenu(for item: TabOverviewItem) -> UIMenu {
+        let copy = UIAction(
+            title: "复制链接",
+            image: UIImage(systemName: "doc.on.doc"),
+            attributes: item.url == nil ? [.disabled] : []
+        ) { [weak self] _ in
+            self?.copyURL(for: item)
+        }
+        let share = UIAction(
+            title: "分享",
+            image: UIImage(systemName: "square.and.arrow.up"),
+            attributes: item.url == nil ? [.disabled] : []
+        ) { [weak self] _ in
+            guard let self else { return }
+            let indexPath = self.dataSource.indexPath(for: item.id)
+            let sourceRect = indexPath
+                .flatMap { self.collectionView.layoutAttributesForItem(at: $0)?.frame }
+                ?? self.collectionView.bounds
+            self.share(item, sourceRect: sourceRect)
+        }
+        let favorite = UIAction(
+            title: "打开收藏夹",
+            image: UIImage(systemName: "star"),
+            attributes: onOpenFavorites == nil ? [.disabled] : []
+        ) { [weak self] _ in
+            self?.openFavorites(item)
+        }
+
+        let closeCurrent = UIAction(
+            title: "关闭标签页",
+            image: UIImage(systemName: "xmark"),
+            attributes: [.destructive]
+        ) { [weak self] _ in
+            self?.close(itemID: item.id)
+        }
+        let sameModeCount = allItems.filter {
+            $0.isPrivate == item.isPrivate
+        }.count
+        let closeOthers = UIAction(
+            title: "关闭其他标签页",
+            image: UIImage(systemName: "square.on.square.dashed"),
+            attributes: sameModeCount > 1 ? [.destructive] : [.disabled, .destructive]
+        ) { [weak self] _ in
+            self?.closeOtherTabs(keeping: item)
+        }
+        let normalCount = allItems.lazy.filter { !$0.isPrivate }.count
+        let closeAllNormal = UIAction(
+            title: "关闭全部普通标签页",
+            image: UIImage(systemName: "rectangle.stack.badge.minus"),
+            attributes: normalCount > 0 ? [.destructive] : [.disabled, .destructive]
+        ) { [weak self] _ in
+            self?.closeAllNormalTabs()
+        }
+
+        return UIMenu(children: [
+            UIMenu(options: .displayInline, children: [copy, share, favorite]),
+            UIMenu(
+                options: .displayInline,
+                children: [closeCurrent, closeOthers, closeAllNormal]
             )
-        ]
-    }
-
-    private func configureView() {
-        isAccessibilityElement = true
-        contentView.backgroundColor = AppColors.surface
-        contentView.layer.cornerRadius = AppRadius.card
-        contentView.layer.cornerCurve = .continuous
-        contentView.layer.masksToBounds = true
-
-        previewContainer.backgroundColor = AppColors.background
-        previewContainer.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(previewContainer)
-
-        previewImageView.contentMode = .scaleAspectFill
-        previewImageView.clipsToBounds = true
-        previewImageView.translatesAutoresizingMaskIntoConstraints = false
-        previewContainer.addSubview(previewImageView)
-
-        placeholderImageView.tintColor = AppColors.tertiaryText
-        placeholderImageView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 30)
-        placeholderImageView.translatesAutoresizingMaskIntoConstraints = false
-        previewContainer.addSubview(placeholderImageView)
-
-        closeButton.setImage(UIImage(systemName: "xmark"), for: .normal)
-        closeButton.tintColor = AppColors.secondaryText
-        closeButton.backgroundColor = AppColors.elevatedSurface
-        closeButton.layer.cornerRadius = AppRadius.card
-        closeButton.accessibilityLabel = "关闭标签页"
-        closeButton.addTarget(self, action: #selector(closePressed), for: .touchUpInside)
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-        previewContainer.addSubview(closeButton)
-
-        selectedBadge.tintColor = AppColors.accent
-        selectedBadge.backgroundColor = .systemBackground
-        selectedBadge.layer.cornerRadius = AppRadius.control
-        selectedBadge.translatesAutoresizingMaskIntoConstraints = false
-        previewContainer.addSubview(selectedBadge)
-
-        titleLabel.font = UIFont.preferredFont(forTextStyle: .headline)
-        titleLabel.adjustsFontForContentSizeCategory = true
-        titleLabel.numberOfLines = 2
-
-        domainLabel.font = UIFont.preferredFont(forTextStyle: .caption1)
-        domainLabel.adjustsFontForContentSizeCategory = true
-        domainLabel.textColor = AppColors.secondaryText
-        domainLabel.numberOfLines = 1
-
-        let labels = UIStackView(arrangedSubviews: [titleLabel, domainLabel])
-        labels.axis = .vertical
-        labels.spacing = 4
-        labels.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(labels)
-
-        NSLayoutConstraint.activate([
-            previewContainer.topAnchor.constraint(equalTo: contentView.topAnchor),
-            previewContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            previewContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            previewContainer.heightAnchor.constraint(equalTo: previewContainer.widthAnchor, multiplier: 0.72),
-
-            previewImageView.topAnchor.constraint(equalTo: previewContainer.topAnchor),
-            previewImageView.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor),
-            previewImageView.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor),
-            previewImageView.bottomAnchor.constraint(equalTo: previewContainer.bottomAnchor),
-
-            placeholderImageView.centerXAnchor.constraint(equalTo: previewContainer.centerXAnchor),
-            placeholderImageView.centerYAnchor.constraint(equalTo: previewContainer.centerYAnchor),
-
-            closeButton.topAnchor.constraint(equalTo: previewContainer.topAnchor, constant: 10),
-            closeButton.trailingAnchor.constraint(equalTo: previewContainer.trailingAnchor, constant: -10),
-            closeButton.widthAnchor.constraint(equalToConstant: 32),
-            closeButton.heightAnchor.constraint(equalToConstant: 32),
-
-            selectedBadge.leadingAnchor.constraint(equalTo: previewContainer.leadingAnchor, constant: 10),
-            selectedBadge.topAnchor.constraint(equalTo: previewContainer.topAnchor, constant: 10),
-            selectedBadge.widthAnchor.constraint(equalToConstant: 20),
-            selectedBadge.heightAnchor.constraint(equalToConstant: 20),
-
-            labels.topAnchor.constraint(equalTo: previewContainer.bottomAnchor, constant: 12),
-            labels.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
-            labels.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
-            labels.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -14)
         ])
     }
 
-    @objc private func closePressed() {
-        onClose?()
+    private func changeMode(
+        _ mode: TabOverviewMode,
+        notifyDelegate: Bool
+    ) {
+        guard selectedMode != mode else { return }
+        selectedMode = mode
+        updateContent(animated: true)
+        if notifyDelegate {
+            onModeChanged?(mode.isPrivate)
+        }
     }
 
-    @objc private func accessibilityClose() -> Bool {
-        onClose?()
-        return true
+    private func finish() {
+        if let onDone {
+            onDone()
+        } else if presentingViewController != nil {
+            dismiss(animated: true)
+        } else {
+            navigationController?.popViewController(animated: true)
+        }
+    }
+}
+
+extension TabOverviewViewController: UICollectionViewDelegate {
+    func collectionView(
+        _ collectionView: UICollectionView,
+        didSelectItemAt indexPath: IndexPath
+    ) {
+        guard let itemID = dataSource.itemIdentifier(for: indexPath) else { return }
+        onSelectTab?(itemID)
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        contextMenuConfigurationForItemAt indexPath: IndexPath,
+        point: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        guard
+            let itemID = dataSource.itemIdentifier(for: indexPath),
+            let item = allItems.first(where: { $0.id == itemID })
+        else {
+            return nil
+        }
+
+        return UIContextMenuConfiguration(
+            identifier: itemID.uuidString as NSString,
+            previewProvider: nil
+        ) { [weak self] _ in
+            self?.makeContextMenu(for: item)
+        }
     }
 }

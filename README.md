@@ -13,14 +13,19 @@
 
 首轮即建立统一 `AppColors`、`AppTypography`、`AppSpacing`、`AppRadius`、`AppShadow`、`AppMetrics` 和 `AppAppearance`。支持浅色/深色模式、Dynamic Type、VoiceOver、Reduce Motion 与 Reduce Transparency。完整规范见 [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md)。
 
+第二轮根据 iPhone 截图收紧浏览器控件：地址栏与底部工具栏使用更轻的动态玻璃材质，滚动时采用稳定的两段式紧凑状态；标签管理使用自适应两列卡片和轻量底部工具栏，避免以装饰挤占网页空间。
+
 ## 当前完成情况
 
 - XcodeGen 工程配置。
 - UIKit 应用与 Coordinator。
-- WKWebView 浏览器、原生新标签页。
+- WKWebView 浏览器、原生新标签页和真正的多标签管理。
 - 地址输入、关键词搜索、前进后退、刷新停止、加载进度、下拉刷新。
 - 外部链接与错误处理基础。
-- 资源、标签页、收藏、历史、下载、文件、用户与设置的正式页面骨架。
+- 独立 `WKWebView` 标签、真实切换与关闭、普通标签基础恢复、无痕标签和内存休眠策略。
+- 自适应两列标签管理、原生 Bottom Sheet 更多菜单和紧凑磨砂浏览器控件。
+- 资源、收藏、历史、下载、文件、用户与设置的统一正式页面骨架和可执行空状态。
+- 用户中心使用可注入的本地数量模型；仓库尚未接入时诚实显示 0，不填充示例数据。
 - 资源、下载、认证协议与基础安全服务。
 - XCTest 单元测试。
 - GitHub Actions Simulator、测试、iphoneos Release 与未签名 IPA。
@@ -122,18 +127,17 @@ xcodebuild test \
 
 ## 真机验证状态
 
-当前开发环境为 Linux，没有 macOS Simulator 与 iPhone 真机。本项目不会声称已经真机验证。GitHub Actions 成功只证明工程生成、编译和自动测试通过；签名安装、键盘、手势、WebKit 站点兼容、后台下载、媒体播放、内存和性能仍需用户在 iPhone 验证。
+当前开发环境为 Linux，没有 Xcode、macOS Simulator 与 iPhone 真机。本项目不会声称已经真机验证。本地只进行静态检查，本轮工程生成、编译与自动测试结果以对应的 GitHub Actions 为准。工作流成功也只证明工程生成、编译和自动测试通过；签名安装、键盘、滚动收缩手感、标签切换内存、WebKit 站点兼容和横屏布局仍需用户在 iPhone 验证。
 
 ## 后续开发路线
 
-1. 根据真机截图调整首轮 UI。
-2. 完成独立 WKWebView 多标签页和会话恢复。
-3. 完成历史、收藏与持久化。
-4. 实现公开 API 范围的资源嗅探引擎。
-5. 实现后台下载与断点续传。
-6. 实现文件管理、AVPlayer 和音频播放器。
-7. 接入 Supabase Auth 与 Sign in with Apple。
-8. 完善内容过滤、站点权限、隐私和上线资料。
+1. 根据第二轮真机截图微调安全区、键盘、紧凑工具栏和标签卡片。
+2. 完成收藏与历史持久化。
+3. 实现公开 API 范围的第一阶段资源嗅探和真实资源列表。
+4. 实现普通文件下载、后台任务与断点续传。
+5. 实现文件管理、AVPlayer 和音频播放器。
+6. 接入 Supabase Auth 与 Sign in with Apple。
+7. 完善内容过滤、站点权限、隐私和上线资料。
 
 ## 已知限制
 
@@ -141,6 +145,8 @@ xcodebuild test \
 - 不绕过付费、登录或账户权限。
 - Blob、跨域、加密 HLS 不保证可下载。
 - WKWebView 行为不与 Safari 完全相同。
+- 休眠标签恢复时会重新加载 URL，不保证精确恢复滚动位置和网页脚本内存状态。
+- 本轮资源、下载、文件与登录页面仍是正式交互骨架，不伪造未接入的业务结果。
 - 未签名 IPA 不能直接作为 App Store 包使用。
 
 ## 资源下载合规说明

@@ -8,6 +8,22 @@ enum AppColors {
     /// 管理页面的分组背景。
     static let background = UIColor.systemGroupedBackground
     static let canvas = background
+    static let privateBrowsingBackground = UIColor { traits in
+        if traits.userInterfaceStyle == .dark {
+            return UIColor(
+                red: 0.075,
+                green: 0.075,
+                blue: 0.09,
+                alpha: 1
+            )
+        }
+        return UIColor(
+            red: 0.92,
+            green: 0.92,
+            blue: 0.95,
+            alpha: 1
+        )
+    }
 
     /// 普通卡片与列表分组背景。
     static let surface = UIColor.secondarySystemGroupedBackground

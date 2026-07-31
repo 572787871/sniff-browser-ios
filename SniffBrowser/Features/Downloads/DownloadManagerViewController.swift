@@ -2,6 +2,12 @@ import UIKit
 
 final class DownloadManagerViewController: BaseViewController {
     var onError: ((Error) -> Void)?
+    var onBrowseForDownloads: (() -> Void)? {
+        didSet { updateEmptyStateActions() }
+    }
+    var onOpenDownloadSettings: (() -> Void)? {
+        didSet { updateEmptyStateActions() }
+    }
 
     private enum Scope: Int, CaseIterable {
         case all
@@ -38,7 +44,9 @@ final class DownloadManagerViewController: BaseViewController {
         configuration: .init(
             symbolName: "arrow.down.circle",
             title: "暂无下载任务",
-            message: "从网页资源列表开始下载后，任务状态会显示在这里。"
+            message: "从网页资源列表开始下载后，任务状态会显示在这里。",
+            actionTitle: "返回浏览器",
+            secondaryActionTitle: "下载设置"
         )
     )
 
@@ -126,10 +134,34 @@ final class DownloadManagerViewController: BaseViewController {
         contentView.addSubview(emptyState)
 
         NSLayoutConstraint.activate([
-            emptyState.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 30),
-            emptyState.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor, constant: 12),
-            emptyState.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor, constant: -12)
+            emptyState.topAnchor.constraint(equalTo: scopeControl.bottomAnchor, constant: AppSpacing.xs),
+            emptyState.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            emptyState.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            emptyState.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
+        updateEmptyStateActions()
+    }
+
+    private func updateEmptyStateActions() {
+        emptyState.configure(
+            .init(
+                symbolName: "arrow.down.circle",
+                title: "暂无下载任务",
+                message: "从网页资源列表开始下载后，任务状态会显示在这里。",
+                actionTitle: "返回浏览器",
+                secondaryActionTitle: "下载设置"
+            ),
+            action: actionWithFeedback(onBrowseForDownloads),
+            secondaryAction: actionWithFeedback(onOpenDownloadSettings)
+        )
+    }
+
+    private func actionWithFeedback(_ action: (() -> Void)?) -> (() -> Void)? {
+        guard let action else { return nil }
+        return {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            action()
+        }
     }
 
     private func reloadTasks() {

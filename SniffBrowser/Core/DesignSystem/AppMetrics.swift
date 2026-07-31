@@ -10,8 +10,9 @@ enum AppMetrics {
     static let toolbarIconSize: CGFloat = 21
     static let stateSymbolSize: CGFloat = 44
 
-    static let addressBarHeight: CGFloat = 48
-    static let toolbarHeight: CGFloat = 58
+    static let addressBarHeight: CGFloat = 46
+    static let compactAddressBarVisualHeight: CGFloat = 36
+    static let toolbarHeight: CGFloat = 54
     static let progressHeight: CGFloat = 2
     static let separatorHeight: CGFloat = 1 / UIScreen.main.scale
 

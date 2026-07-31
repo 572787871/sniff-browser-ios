@@ -4,7 +4,8 @@ import WebKit
 @MainActor
 protocol BrowserRouting: AnyObject {
   func showResources(pageTitle: String, pageURL: URL?)
-  func showTabs(currentItem: TabOverviewItem)
+  func showTabs(_ controller: TabOverviewViewController)
+  func returnToBrowser()
   func showFavorites()
   func showHistory()
   func showDownloads()
@@ -17,44 +18,116 @@ protocol BrowserRouting: AnyObject {
 final class BrowserViewController: UIViewController {
   weak var router: BrowserRouting?
 
-  private let viewModel: BrowserViewModel
-  private let addressBar = AddressBarView()
-  private let toolbar = BrowserToolbar(frame: .zero)
-  private let contentView = UIView()
-  private let newTabView = NewTabView()
-  private let errorView = BrowserErrorView()
-  private lazy var webView = WKWebView(
-    frame: .zero,
-    configuration: BrowserConfiguration.makeWebViewConfiguration()
-  )
-  private lazy var externalURLHandler = ExternalURLHandler(presenter: self)
-  private let refreshControl = UIRefreshControl()
-  private var observations: [NSKeyValueObservation] = []
-  private let tabID = UUID()
-  private var lastFailedURL: URL?
-  private var lastRequestedURL: URL?
+  let viewModel: BrowserViewModel
+  let tabManager: BrowserTabManager
+  let addressBar = AddressBarView()
+  let toolbar = BrowserToolbar(frame: .zero)
+  let contentView = UIView()
+  let newTabView = NewTabView()
+  let errorView = BrowserErrorView()
+  lazy var externalURLHandler = ExternalURLHandler(presenter: self)
 
-  init(viewModel: BrowserViewModel? = nil) {
+  var observations: [NSKeyValueObservation] = []
+  var chromeScrollController = BrowserChromeScrollController()
+  var lastFailedURLs: [UUID: URL] = [:]
+  var lastRequestedURLs: [UUID: URL] = [:]
+  weak var tabOverviewController: TabOverviewViewController?
+  private var lifecycleObservers: [NSObjectProtocol] = []
+
+  var activeTab: BrowserTab? {
+    tabManager.selectedTab
+  }
+
+  var activeWebView: WKWebView? {
+    activeTab?.webView
+  }
+
+  init(
+    viewModel: BrowserViewModel? = nil,
+    tabManager: BrowserTabManager? = nil
+  ) {
     self.viewModel = viewModel ?? BrowserViewModel()
+    self.tabManager = tabManager ?? BrowserTabManager()
     super.init(nibName: nil, bundle: nil)
   }
 
   required init?(coder: NSCoder) {
     viewModel = BrowserViewModel()
+    tabManager = BrowserTabManager()
     super.init(coder: coder)
+  }
+
+  deinit {
+    let center = NotificationCenter.default
+    lifecycleObservers.forEach { center.removeObserver($0) }
   }
 
   override func viewDidLoad() {
     super.viewDidLoad()
     configureView()
-    configureWebView()
     configureActions()
-    bindWebView()
-    showNewTab(replacingWebView: false)
+    configureLifecycleObservers()
+    attachSelectedTab()
   }
 
-  func openNewTab() {
-    showNewTab(replacingWebView: true)
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    updateActiveWebViewInsets()
+  }
+
+  override func didReceiveMemoryWarning() {
+    super.didReceiveMemoryWarning()
+    Task { [weak self] in
+      await self?.tabManager.handleMemoryPressure()
+      self?.refreshTabOverview()
+    }
+  }
+
+  @discardableResult
+  func openNewTab(isPrivate: Bool = false) -> Bool {
+    createNewTab(isPrivate: isPrivate, initialURL: nil)
+  }
+
+  @discardableResult
+  func openNewTab(with url: URL, isPrivate: Bool) -> Bool {
+    createNewTab(isPrivate: isPrivate, initialURL: url)
+  }
+
+  @discardableResult
+  private func createNewTab(
+    isPrivate: Bool,
+    initialURL: URL?
+  ) -> Bool {
+    let previousID = activeTab?.id
+    do {
+      let newTab = try tabManager.createTab(isPrivate: isPrivate)
+      UIImpactFeedbackGenerator(style: .light).impactOccurred()
+      attachSelectedTab()
+      if let initialURL {
+        load(initialURL)
+      }
+      Task { [weak self] in
+        guard let self else { return }
+        if let previousID, previousID != newTab.id {
+          await self.tabManager.captureSnapshot(for: previousID)
+        }
+        await self.tabManager.enforceResidentWebViewLimit()
+      }
+      return true
+    } catch BrowserTabManager.ManagerError.maximumTabCountReached {
+      presentMaximumTabsMessage()
+    } catch {
+      presentMaximumTabsMessage()
+    }
+    return false
+  }
+
+  func showPrivateTabFromExternalRoute() {
+    _ = openNewTab(isPrivate: true)
+  }
+
+  func reloadActivePageAfterClearingWebsiteData() {
+    activeWebView?.reload()
   }
 
   private func configureView() {
@@ -63,60 +136,23 @@ final class BrowserViewController: UIViewController {
     contentView.translatesAutoresizingMaskIntoConstraints = false
     contentView.backgroundColor = AppColors.background
     contentView.clipsToBounds = true
-    webView.translatesAutoresizingMaskIntoConstraints = false
     newTabView.translatesAutoresizingMaskIntoConstraints = false
     errorView.translatesAutoresizingMaskIntoConstraints = false
     errorView.isHidden = true
 
-    view.addSubview(addressBar)
     view.addSubview(contentView)
-    view.addSubview(toolbar)
-    contentView.addSubview(webView)
     contentView.addSubview(newTabView)
     contentView.addSubview(errorView)
+    view.addSubview(addressBar)
+    view.addSubview(toolbar)
 
     NSLayoutConstraint.activate([
-      addressBar.topAnchor.constraint(
-        equalTo: view.safeAreaLayoutGuide.topAnchor,
-        constant: AppSpacing.xs
-      ),
-      addressBar.leadingAnchor.constraint(
-        equalTo: view.leadingAnchor,
-        constant: AppSpacing.sm
-      ),
-      addressBar.trailingAnchor.constraint(
-        equalTo: view.trailingAnchor,
-        constant: -AppSpacing.sm
-      ),
-
       contentView.topAnchor.constraint(
-        equalTo: addressBar.bottomAnchor,
-        constant: AppSpacing.xs
+        equalTo: view.safeAreaLayoutGuide.topAnchor
       ),
       contentView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
       contentView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-      contentView.bottomAnchor.constraint(
-        equalTo: toolbar.topAnchor,
-        constant: -AppSpacing.xs
-      ),
-
-      toolbar.leadingAnchor.constraint(
-        equalTo: view.leadingAnchor,
-        constant: AppSpacing.sm
-      ),
-      toolbar.trailingAnchor.constraint(
-        equalTo: view.trailingAnchor,
-        constant: -AppSpacing.sm
-      ),
-      toolbar.bottomAnchor.constraint(
-        equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-        constant: -AppSpacing.xs
-      ),
-
-      webView.topAnchor.constraint(equalTo: contentView.topAnchor),
-      webView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-      webView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-      webView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+      contentView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
       newTabView.topAnchor.constraint(equalTo: contentView.topAnchor),
       newTabView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -127,26 +163,46 @@ final class BrowserViewController: UIViewController {
       errorView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
       errorView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
       errorView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
+      addressBar.topAnchor.constraint(
+        equalTo: view.safeAreaLayoutGuide.topAnchor,
+        constant: AppSpacing.xxs
+      ),
+      addressBar.leadingAnchor.constraint(
+        equalTo: view.leadingAnchor,
+        constant: AppSpacing.md
+      ),
+      addressBar.trailingAnchor.constraint(
+        equalTo: view.trailingAnchor,
+        constant: -AppSpacing.md
+      ),
+
+      toolbar.leadingAnchor.constraint(
+        equalTo: view.leadingAnchor,
+        constant: AppSpacing.md
+      ),
+      toolbar.trailingAnchor.constraint(
+        equalTo: view.trailingAnchor,
+        constant: -AppSpacing.md
+      ),
+      toolbar.bottomAnchor.constraint(
+        equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+        constant: -AppSpacing.xxs
+      ),
     ])
-  }
 
-  private func configureWebView() {
-    webView.navigationDelegate = self
-    webView.uiDelegate = self
-    webView.allowsBackForwardNavigationGestures = true
-    webView.allowsLinkPreview = true
-    webView.scrollView.keyboardDismissMode = .interactive
-    webView.scrollView.contentInsetAdjustmentBehavior = .never
-
-    refreshControl.tintColor = AppColors.secondaryText
-    refreshControl.accessibilityLabel = "重新载入网页"
-    refreshControl.addTarget(self, action: #selector(refresh), for: .valueChanged)
-    webView.scrollView.refreshControl = refreshControl
+    let dismissEditingGesture = UITapGestureRecognizer(
+      target: self,
+      action: #selector(contentTapped)
+    )
+    dismissEditingGesture.cancelsTouchesInView = false
+    contentView.addGestureRecognizer(dismissEditingGesture)
   }
 
   private func configureActions() {
     addressBar.delegate = self
     toolbar.toolbarDelegate = self
+    toolbar.setSnifferState(resourceCount: 0, isScanning: false)
     newTabView.delegate = self
     errorView.onRetry = { [weak self] in
       self?.retryLastRequest()
@@ -154,41 +210,160 @@ final class BrowserViewController: UIViewController {
     viewModel.onStateChange = { [weak self] state in
       self?.render(state)
     }
-    toolbar.setMoreMenu(makeMoreMenu())
+    tabManager.onTabsChanged = { [weak self] in
+      guard let self else { return }
+      self.toolbar.update(
+        canGoBack: self.viewModel.state.canGoBack,
+        canGoForward: self.viewModel.state.canGoForward,
+        tabCount: self.tabManager.count
+      )
+      self.refreshTabOverview()
+    }
   }
 
-  private func bindWebView() {
+  private func configureLifecycleObservers() {
+    let center = NotificationCenter.default
+    lifecycleObservers.append(
+      center.addObserver(
+        forName: UIApplication.didEnterBackgroundNotification,
+        object: nil,
+        queue: .main
+      ) { [weak self] _ in
+        Task { @MainActor in
+          guard let self else { return }
+          self.tabManager.synchronizeSelectedTabFromWebView()
+          if let id = self.activeTab?.id {
+            await self.tabManager.captureSnapshot(for: id)
+          }
+          self.tabManager.persistSession()
+        }
+      }
+    )
+  }
+
+  func configureWebView(_ webView: WKWebView) {
+    webView.navigationDelegate = self
+    webView.uiDelegate = self
+    webView.allowsBackForwardNavigationGestures = true
+    webView.allowsLinkPreview = true
+    webView.scrollView.keyboardDismissMode = .interactive
+    webView.scrollView.contentInsetAdjustmentBehavior = .never
+
+    if webView.scrollView.refreshControl == nil {
+      let refreshControl = UIRefreshControl()
+      refreshControl.tintColor = AppColors.secondaryText
+      refreshControl.accessibilityLabel = "重新载入网页"
+      refreshControl.addTarget(
+        self,
+        action: #selector(refreshControlChanged(_:)),
+        for: .valueChanged
+      )
+      webView.scrollView.refreshControl = refreshControl
+    }
+  }
+
+  func attachSelectedTab() {
+    observations.removeAll()
+    contentView.subviews.compactMap { $0 as? WKWebView }.forEach {
+      $0.removeFromSuperview()
+    }
+
+    guard let tab = activeTab else { return }
+    tab.activate()
+    guard let webView = tab.webView else { return }
+    configureWebView(webView)
+    webView.translatesAutoresizingMaskIntoConstraints = false
+    contentView.insertSubview(webView, at: 0)
+    NSLayoutConstraint.activate([
+      webView.topAnchor.constraint(equalTo: contentView.topAnchor),
+      webView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+      webView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+      webView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+    ])
+
+    bindActiveWebView(webView)
+    newTabView.setPrivateMode(tab.isPrivate)
+    applyChromeState(.expanded, animated: false)
+    chromeScrollController.reset()
+
+    let hasPage = tab.url != nil || webView.url != nil
+    webView.isHidden = !hasPage
+    newTabView.isHidden = hasPage
+    errorView.isHidden = true
+    if webView.url == nil, !webView.isLoading, let restoredURL = tab.url {
+      lastRequestedURLs[tab.id] = restoredURL
+      webView.load(URLRequest(url: restoredURL))
+    }
+    toolbar.update(
+      canGoBack: webView.canGoBack,
+      canGoForward: webView.canGoForward,
+      tabCount: tabManager.count
+    )
+    synchronizeActiveState()
+    view.setNeedsLayout()
+  }
+
+  private func bindActiveWebView(_ webView: WKWebView) {
     observations = [
       webView.observe(\.title, options: [.new]) { [weak self] _, _ in
-        Task { @MainActor in self?.synchronizeState() }
+        Task { @MainActor in self?.synchronizeActiveState() }
       },
       webView.observe(\.url, options: [.new]) { [weak self] _, _ in
-        Task { @MainActor in self?.synchronizeState() }
+        Task { @MainActor in self?.synchronizeActiveState() }
       },
       webView.observe(\.estimatedProgress, options: [.new]) { [weak self] _, _ in
-        Task { @MainActor in self?.synchronizeState() }
+        Task { @MainActor in self?.synchronizeActiveState() }
       },
       webView.observe(\.canGoBack, options: [.new]) { [weak self] _, _ in
-        Task { @MainActor in self?.synchronizeState() }
+        Task { @MainActor in self?.synchronizeActiveState() }
       },
       webView.observe(\.canGoForward, options: [.new]) { [weak self] _, _ in
-        Task { @MainActor in self?.synchronizeState() }
+        Task { @MainActor in self?.synchronizeActiveState() }
       },
       webView.observe(\.isLoading, options: [.new]) { [weak self] _, _ in
-        Task { @MainActor in self?.synchronizeState() }
+        Task { @MainActor in self?.synchronizeActiveState() }
+      },
+      webView.scrollView.observe(\.contentOffset, options: [.new]) {
+        [weak self, weak webView] _, _ in
+        // UIScrollView 的 contentOffset 由 UIKit 在主线程更新。直接在
+        // MainActor 隔离域处理，避免高速滚动时为每一帧创建 Task。
+        MainActor.assumeIsolated {
+          guard let self, let webView, webView === self.activeWebView else {
+            return
+          }
+          self.handleScroll(in: webView)
+        }
       },
     ]
   }
 
-  private func synchronizeState() {
+  func synchronizeActiveState() {
+    guard let tab = activeTab, let webView = tab.webView else {
+      viewModel.resetToNewTab()
+      return
+    }
+    tab.synchronizeFromWebView()
+    if tab.url == nil, webView.url == nil, !webView.isLoading {
+      viewModel.resetToNewTab()
+      toolbar.update(
+        canGoBack: false,
+        canGoForward: false,
+        tabCount: tabManager.count
+      )
+      return
+    }
     viewModel.update(
       title: webView.title,
-      url: webView.url,
+      url: webView.url ?? tab.url,
       isLoading: webView.isLoading,
       progress: webView.estimatedProgress,
       canGoBack: webView.canGoBack,
       canGoForward: webView.canGoForward
     )
+    if webView.isLoading {
+      applyChromeState(.expanded, animated: true)
+      chromeScrollController.reset()
+    }
   }
 
   private func render(_ state: BrowserViewState) {
@@ -197,13 +372,13 @@ final class BrowserViewController: UIViewController {
         url: state.url,
         isLoading: state.isLoading,
         progress: state.progress,
-        isEditing: false
+        isEditing: addressBar.isEditing
       )
     )
     toolbar.update(
       canGoBack: state.canGoBack,
       canGoForward: state.canGoForward,
-      tabCount: 1
+      tabCount: tabManager.count
     )
   }
 
@@ -215,144 +390,78 @@ final class BrowserViewController: UIViewController {
     load(url)
   }
 
-  private func load(_ url: URL) {
-    lastRequestedURL = url
-    lastFailedURL = nil
+  func load(_ url: URL) {
+    guard let tab = activeTab, let webView = tab.webView else { return }
+    lastRequestedURLs[tab.id] = url
+    lastFailedURLs[tab.id] = nil
     errorView.isHidden = true
     newTabView.isHidden = true
     webView.isHidden = false
+    applyChromeState(.expanded, animated: true)
     webView.load(URLRequest(url: url))
   }
 
-  private func showNewTab(replacingWebView: Bool = true) {
-    if replacingWebView {
-      replaceWebView()
-    }
-    webView.stopLoading()
-    webView.isHidden = true
-    errorView.isHidden = true
-    newTabView.isHidden = false
-    viewModel.resetToNewTab()
-    toolbar.setMoreMenu(makeMoreMenu())
-  }
-
-  private func replaceWebView() {
-    observations.removeAll()
-    webView.stopLoading()
-    webView.navigationDelegate = nil
-    webView.uiDelegate = nil
-    webView.removeFromSuperview()
-
-    webView = WKWebView(
-      frame: .zero,
-      configuration: BrowserConfiguration.makeWebViewConfiguration()
-    )
-    webView.translatesAutoresizingMaskIntoConstraints = false
-    contentView.insertSubview(webView, at: 0)
-    NSLayoutConstraint.activate([
-      webView.topAnchor.constraint(equalTo: contentView.topAnchor),
-      webView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-      webView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-      webView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-    ])
-    configureWebView()
-    bindWebView()
-  }
-
   private func retryLastRequest() {
-    if let lastFailedURL {
-      load(lastFailedURL)
+    guard let tab = activeTab, let webView = tab.webView else { return }
+    if let failedURL = lastFailedURLs[tab.id] {
+      load(failedURL)
     } else {
       webView.reload()
     }
   }
 
-  private func makeMoreMenu() -> UIMenu {
-    let hasPage = viewModel.state.url != nil
-    return UIMenu(children: [
-      UIMenu(options: .displayInline, children: [
-        UIAction(
-          title: "新建标签页",
-          image: UIImage(systemName: "plus.square")
-        ) { [weak self] _ in
-          UIImpactFeedbackGenerator(style: .light).impactOccurred()
-          self?.showNewTab()
-        },
-        UIAction(
-          title: "分享当前网页",
-          image: UIImage(systemName: "square.and.arrow.up"),
-          attributes: hasPage ? [] : [.disabled]
-        ) { [weak self] _ in
-          self?.shareCurrentPage()
-        },
-        UIAction(
-          title: "添加收藏",
-          image: UIImage(systemName: "star"),
-          attributes: hasPage ? [] : [.disabled]
-        ) { [weak self] _ in
-          self?.router?.showFavorites()
-        },
-      ]),
-      UIMenu(options: .displayInline, children: [
-        UIAction(
-          title: "历史记录",
-          image: UIImage(systemName: "clock.arrow.circlepath")
-        ) { [weak self] _ in self?.router?.showHistory() },
-        UIAction(
-          title: "下载管理",
-          image: UIImage(systemName: "arrow.down.circle")
-        ) { [weak self] _ in self?.router?.showDownloads() },
-        UIAction(
-          title: "文件管理",
-          image: UIImage(systemName: "folder")
-        ) { [weak self] _ in self?.router?.showFiles() },
-      ]),
-      UIMenu(options: .displayInline, children: [
-        UIAction(
-          title: "用户中心",
-          image: UIImage(systemName: "person.crop.circle")
-        ) { [weak self] _ in self?.router?.showUserCenter() },
-        UIAction(
-          title: "设置",
-          image: UIImage(systemName: "gearshape")
-        ) { [weak self] _ in self?.router?.showSettings() },
-      ]),
-    ])
+  private func updateActiveWebViewInsets() {
+    guard let scrollView = activeWebView?.scrollView else { return }
+    let target = UIEdgeInsets(
+      top: AppMetrics.addressBarHeight + AppSpacing.sm,
+      left: 0,
+      bottom: AppMetrics.toolbarHeight
+        + view.safeAreaInsets.bottom
+        + AppSpacing.sm,
+      right: 0
+    )
+    guard scrollView.contentInset != target else { return }
+    let wasAtTop = scrollView.contentOffset.y
+      <= -scrollView.adjustedContentInset.top + 2
+    scrollView.contentInset = target
+    scrollView.verticalScrollIndicatorInsets = target
+    if wasAtTop {
+      scrollView.setContentOffset(
+        CGPoint(x: scrollView.contentOffset.x, y: -target.top),
+        animated: false
+      )
+    }
   }
 
-  private func shareCurrentPage() {
-    guard let url = viewModel.state.url else { return }
-    let controller = UIActivityViewController(
-      activityItems: [viewModel.state.title, url],
-      applicationActivities: nil
-    )
-    present(controller, animated: true)
-  }
-
-  private func showTabs() {
-    let item = TabOverviewItem(
-      id: tabID,
-      title: viewModel.state.title,
-      url: viewModel.state.url,
-      isSelected: true,
-      isPrivate: false
-    )
-    guard !webView.isHidden else {
-      router?.showTabs(currentItem: item)
+  private func handleScroll(in webView: WKWebView) {
+    let canCollapse = viewModel.state.url != nil
+      && !viewModel.state.isLoading
+      && !addressBar.isEditing
+    guard let state = chromeScrollController.update(
+      contentOffsetY: webView.scrollView.contentOffset.y,
+      adjustedTopInset: webView.scrollView.adjustedContentInset.top,
+      canCollapse: canCollapse
+    ) else {
       return
     }
-    webView.takeSnapshot(with: nil) { [weak self] image, _ in
-      Task { @MainActor in
-        guard let self else { return }
-        var snapshot = item
-        snapshot.thumbnail = image
-        self.router?.showTabs(currentItem: snapshot)
-      }
-    }
+    applyChromeState(state, animated: true)
   }
 
-  @objc private func refresh() {
-    webView.reload()
+  func applyChromeState(
+    _ state: BrowserChromeState,
+    animated: Bool
+  ) {
+    let isCompact = state == .compact
+    addressBar.setCompact(isCompact, animated: animated)
+    toolbar.setCollapsed(isCompact, animated: animated)
+  }
+
+  @objc private func contentTapped() {
+    view.endEditing(true)
+  }
+
+  @objc private func refreshControlChanged(_ sender: UIRefreshControl) {
+    activeWebView?.reload()
   }
 }
 
@@ -362,20 +471,25 @@ extension BrowserViewController: AddressBarDelegate {
   }
 
   func addressBarDidRequestReload(_ addressBar: AddressBarView) {
-    if webView.isHidden {
+    if activeWebView?.isHidden != false {
       addressBar.beginEditing()
     } else {
-      webView.reload()
+      activeWebView?.reload()
     }
   }
 
   func addressBarDidRequestStop(_ addressBar: AddressBarView) {
-    webView.stopLoading()
+    activeWebView?.stopLoading()
   }
 
-  func addressBarDidBeginEditing(_ addressBar: AddressBarView) {}
+  func addressBarDidBeginEditing(_ addressBar: AddressBarView) {
+    chromeScrollController.reset()
+    applyChromeState(.expanded, animated: true)
+  }
 
-  func addressBarDidEndEditing(_ addressBar: AddressBarView) {}
+  func addressBarDidEndEditing(_ addressBar: AddressBarView) {
+    chromeScrollController.reset()
+  }
 }
 
 extension BrowserViewController: NewTabViewDelegate {
@@ -392,9 +506,9 @@ extension BrowserViewController: BrowserToolbarDelegate {
   ) {
     switch action {
     case .back:
-      webView.goBack()
+      activeWebView?.goBack()
     case .forward:
-      webView.goForward()
+      activeWebView?.goForward()
     case .sniff:
       router?.showResources(
         pageTitle: viewModel.state.title,
@@ -403,171 +517,7 @@ extension BrowserViewController: BrowserToolbarDelegate {
     case .tabs:
       showTabs()
     case .more:
-      break
+      presentMoreMenu()
     }
-  }
-}
-
-extension BrowserViewController: WKNavigationDelegate {
-  func webView(
-    _ webView: WKWebView,
-    decidePolicyFor navigationAction: WKNavigationAction,
-    decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
-  ) {
-    guard let url = navigationAction.request.url,
-          let scheme = url.scheme?.lowercased()
-    else {
-      decisionHandler(.cancel)
-      return
-    }
-    if navigationAction.targetFrame?.isMainFrame == true {
-      lastRequestedURL = url
-    }
-    if ["about", "blob", "data"].contains(scheme) {
-      decisionHandler(.allow)
-      return
-    }
-    if ["http", "https"].contains(scheme) {
-      if let host = url.host,
-         ["apps.apple.com", "itunes.apple.com"].contains(host) {
-        externalURLHandler.requestOpen(url)
-        decisionHandler(.cancel)
-      } else {
-        decisionHandler(.allow)
-      }
-      return
-    }
-    externalURLHandler.requestOpen(url)
-    decisionHandler(.cancel)
-  }
-
-  func webView(_ webView: WKWebView, didStartProvisionalNavigation: WKNavigation?) {
-    errorView.isHidden = true
-  }
-
-  func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
-    refreshControl.endRefreshing()
-    toolbar.setMoreMenu(makeMoreMenu())
-  }
-
-  func webView(
-    _ webView: WKWebView,
-    didFailProvisionalNavigation navigation: WKNavigation?,
-    withError error: Error
-  ) {
-    refreshControl.endRefreshing()
-    if (error as? URLError)?.code == .cancelled {
-      return
-    }
-    let failingURL = (error as NSError)
-      .userInfo[NSURLErrorFailingURLErrorKey] as? URL
-    lastFailedURL = failingURL ?? lastRequestedURL ?? webView.url
-    errorView.apply(BrowserErrorMapper.map(error))
-    errorView.isHidden = false
-  }
-
-  func webView(
-    _ webView: WKWebView,
-    didFail navigation: WKNavigation?,
-    withError error: Error
-  ) {
-    self.webView(
-      webView,
-      didFailProvisionalNavigation: navigation,
-      withError: error
-    )
-  }
-
-  func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-    webView.reload()
-  }
-}
-
-extension BrowserViewController: WKUIDelegate {
-  func webView(
-    _ webView: WKWebView,
-    createWebViewWith configuration: WKWebViewConfiguration,
-    for navigationAction: WKNavigationAction,
-    windowFeatures: WKWindowFeatures
-  ) -> WKWebView? {
-    if navigationAction.targetFrame == nil,
-       let url = navigationAction.request.url {
-      load(url)
-    }
-    return nil
-  }
-
-  func webView(
-    _ webView: WKWebView,
-    runJavaScriptAlertPanelWithMessage message: String,
-    initiatedByFrame frame: WKFrameInfo,
-    completionHandler: @escaping () -> Void
-  ) {
-    guard presentedViewController == nil, view.window != nil else {
-      completionHandler()
-      return
-    }
-    let alert = UIAlertController(
-      title: webView.title ?? "网页提示",
-      message: message,
-      preferredStyle: .alert
-    )
-    alert.addAction(UIAlertAction(title: "好", style: .default) { _ in
-      completionHandler()
-    })
-    present(alert, animated: true)
-  }
-
-  func webView(
-    _ webView: WKWebView,
-    runJavaScriptConfirmPanelWithMessage message: String,
-    initiatedByFrame frame: WKFrameInfo,
-    completionHandler: @escaping (Bool) -> Void
-  ) {
-    guard presentedViewController == nil, view.window != nil else {
-      completionHandler(false)
-      return
-    }
-    let alert = UIAlertController(
-      title: webView.title ?? "网页确认",
-      message: message,
-      preferredStyle: .alert
-    )
-    alert.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in
-      completionHandler(false)
-    })
-    alert.addAction(UIAlertAction(title: "确定", style: .default) { _ in
-      completionHandler(true)
-    })
-    present(alert, animated: true)
-  }
-
-  func webView(
-    _ webView: WKWebView,
-    runJavaScriptTextInputPanelWithPrompt prompt: String,
-    defaultText: String?,
-    initiatedByFrame frame: WKFrameInfo,
-    completionHandler: @escaping (String?) -> Void
-  ) {
-    guard presentedViewController == nil, view.window != nil else {
-      completionHandler(nil)
-      return
-    }
-    let alert = UIAlertController(
-      title: webView.title ?? "网页输入",
-      message: prompt,
-      preferredStyle: .alert
-    )
-    alert.addTextField { textField in
-      textField.text = defaultText
-    }
-    alert.addAction(UIAlertAction(title: "取消", style: .cancel) { _ in
-      completionHandler(nil)
-    })
-    alert.addAction(UIAlertAction(title: "确定", style: .default) {
-      [weak alert] _ in
-      completionHandler(alert?.textFields?.first?.text)
-    })
-    present(alert, animated: true)
   }
 }

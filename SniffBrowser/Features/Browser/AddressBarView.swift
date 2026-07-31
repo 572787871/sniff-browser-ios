@@ -20,7 +20,7 @@ final class AddressBarView: UIView {
   weak var delegate: AddressBarDelegate?
 
   private let materialView = AppMaterialView(
-    style: .systemThinMaterial,
+    style: .systemUltraThinMaterial,
     fallbackColor: AppColors.chromeFallback
   )
   private let securityImageView = UIImageView()
@@ -28,6 +28,11 @@ final class AddressBarView: UIView {
   private let trailingButton = UIButton(type: .system)
   private let progressView = UIProgressView(progressViewStyle: .bar)
   private var state = AddressBarState()
+  private var isCompact = false
+
+  var isEditing: Bool {
+    textField.isFirstResponder
+  }
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -44,11 +49,21 @@ final class AddressBarView: UIView {
     updateResolvedColors()
   }
 
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    layer.shadowPath = UIBezierPath(
+      roundedRect: bounds,
+      cornerRadius: AppRadius.input
+    ).cgPath
+  }
+
   func apply(_ state: AddressBarState) {
     self.state = state
     if !textField.isFirstResponder {
       textField.text = displayText(for: state.url)
-      textField.textAlignment = state.url == nil ? .center : .left
+      textField.textAlignment = isCompact
+        ? .center
+        : (state.url == nil ? .center : .left)
     }
     updateSecurityIcon(for: state.url)
     updateTrailingButton()
@@ -62,7 +77,35 @@ final class AddressBarView: UIView {
   }
 
   func beginEditing() {
+    setCompact(false, animated: false)
     textField.becomeFirstResponder()
+  }
+
+  func setCompact(_ compact: Bool, animated: Bool) {
+    guard compact != isCompact else { return }
+    if compact, textField.isFirstResponder {
+      return
+    }
+    isCompact = compact
+    let changes = {
+      self.materialView.transform = compact
+        && !UIAccessibility.isReduceMotionEnabled
+        ? CGAffineTransform(scaleX: 0.74, y: 0.80)
+        : .identity
+      self.securityImageView.alpha = compact ? 0 : 1
+      self.trailingButton.alpha = compact ? 0 : 1
+      self.textField.textAlignment = compact ? .center : (
+        self.state.url == nil ? .center : .left
+      )
+      self.layer.shadowOpacity = compact ? 0.04 : AppShadow.floating.opacity
+    }
+    securityImageView.isUserInteractionEnabled = !compact
+    trailingButton.isUserInteractionEnabled = !compact
+    guard animated else {
+      changes()
+      return
+    }
+    AppAppearance.animate(duration: 0.24, animations: changes)
   }
 
   private func configure() {
@@ -80,6 +123,7 @@ final class AddressBarView: UIView {
     materialView.clipsToBounds = true
     materialView.layer.borderWidth = 0.5
     addSubview(materialView)
+    AppShadow.floating.apply(to: self)
 
     securityImageView.translatesAutoresizingMaskIntoConstraints = false
     securityImageView.tintColor = AppColors.secondaryText
@@ -202,6 +246,7 @@ final class AddressBarView: UIView {
     materialView.layer.borderColor = AppColors.separator
       .resolvedColor(with: traitCollection)
       .cgColor
+    layer.shadowColor = UIColor.black.cgColor
   }
 
   private func displayText(for url: URL?) -> String? {
@@ -261,6 +306,7 @@ final class AddressBarView: UIView {
 
 extension AddressBarView: UITextFieldDelegate {
   func textFieldDidBeginEditing(_ textField: UITextField) {
+    setCompact(false, animated: false)
     state.isEditing = true
     textField.text = state.url?.absoluteString
     textField.textAlignment = .left

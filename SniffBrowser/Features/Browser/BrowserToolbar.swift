@@ -21,7 +21,7 @@ final class BrowserToolbar: UIView {
   weak var toolbarDelegate: BrowserToolbarDelegate?
 
   private let materialView = AppMaterialView(
-    style: .systemChromeMaterial,
+    style: .systemUltraThinMaterial,
     fallbackColor: AppColors.chromeFallback
   )
   private let backButton = BrowserChromeButton(symbol: "chevron.backward")
@@ -32,6 +32,9 @@ final class BrowserToolbar: UIView {
   private let tabsButton = BrowserChromeButton(symbol: "square")
   private let moreButton = BrowserChromeButton(symbol: "ellipsis")
   private let tabCountLabel = UILabel()
+  private let resourceBadgeLabel = UILabel()
+  private let scanIndicator = UIActivityIndicatorView(style: .medium)
+  private var isCollapsed = false
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -55,19 +58,45 @@ final class BrowserToolbar: UIView {
     tabsButton.accessibilityLabel = "标签页，共 \(max(1, tabCount)) 个"
   }
 
-  func setMoreMenu(_ menu: UIMenu) {
-    moreButton.menu = menu
-    moreButton.showsMenuAsPrimaryAction = true
+  func setSnifferState(resourceCount: Int, isScanning: Bool) {
+    let count = max(0, resourceCount)
+    resourceBadgeLabel.text = count > 99 ? "99+" : "\(count)"
+    resourceBadgeLabel.isHidden = count == 0
+    scanIndicator.isHidden = !isScanning
+    isScanning ? scanIndicator.startAnimating() : scanIndicator.stopAnimating()
+    sniffButton.accessibilityValue = isScanning
+      ? "正在扫描"
+      : (count == 0 ? "未发现资源" : "发现 \(count) 项资源")
+  }
+
+  func setCollapsed(_ collapsed: Bool, animated: Bool) {
+    guard collapsed != isCollapsed else { return }
+    isCollapsed = collapsed
+    accessibilityElementsHidden = collapsed
+    isUserInteractionEnabled = !collapsed
+    let changes = {
+      self.transform = collapsed
+        && !UIAccessibility.isReduceMotionEnabled
+        ? CGAffineTransform(translationX: 0, y: AppMetrics.toolbarHeight + AppSpacing.lg)
+        : .identity
+      self.alpha = collapsed ? 0 : 1
+    }
+    guard animated else {
+      changes()
+      return
+    }
+    AppAppearance.animate(duration: 0.24, animations: changes)
   }
 
   private func configure() {
     translatesAutoresizingMaskIntoConstraints = false
     materialView.translatesAutoresizingMaskIntoConstraints = false
     materialView.layer.cornerCurve = .continuous
-    materialView.layer.cornerRadius = AppRadius.card
+    materialView.layer.cornerRadius = 20
     materialView.layer.borderWidth = 0.5
     materialView.clipsToBounds = true
     addSubview(materialView)
+    AppShadow.floating.apply(to: self)
 
     let definitions: [
       (button: BrowserChromeButton, action: BrowserToolbarAction, label: String)
@@ -87,21 +116,17 @@ final class BrowserToolbar: UIView {
       definition.button.heightAnchor.constraint(
         greaterThanOrEqualToConstant: AppMetrics.minimumTapSize
       ).isActive = true
-      if case .more = definition.action {
-        definition.button.showsMenuAsPrimaryAction = true
-      } else {
-        definition.button.addAction(
-          UIAction { [weak self, weak button = definition.button] _ in
-            guard let self, let button else { return }
-            self.toolbarDelegate?.browserToolbar(
-              self,
-              didSelect: definition.action,
-              sourceView: button
-            )
-          },
-          for: .touchUpInside
-        )
-      }
+      definition.button.addAction(
+        UIAction { [weak self, weak button = definition.button] _ in
+          guard let self, let button else { return }
+          self.toolbarDelegate?.browserToolbar(
+            self,
+            didSelect: definition.action,
+            sourceView: button
+          )
+        },
+        for: .touchUpInside
+      )
     }
     sniffButton.tintColor = AppColors.accent
 
@@ -117,13 +142,44 @@ final class BrowserToolbar: UIView {
       tabCountLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 18),
     ])
 
+    resourceBadgeLabel.translatesAutoresizingMaskIntoConstraints = false
+    resourceBadgeLabel.font = .monospacedDigitSystemFont(ofSize: 9, weight: .bold)
+    resourceBadgeLabel.textColor = .white
+    resourceBadgeLabel.backgroundColor = AppColors.accent
+    resourceBadgeLabel.layer.cornerRadius = 8
+    resourceBadgeLabel.clipsToBounds = true
+    resourceBadgeLabel.textAlignment = .center
+    resourceBadgeLabel.isHidden = true
+    resourceBadgeLabel.isAccessibilityElement = false
+    sniffButton.addSubview(resourceBadgeLabel)
+
+    scanIndicator.translatesAutoresizingMaskIntoConstraints = false
+    scanIndicator.color = AppColors.accent
+    scanIndicator.isHidden = true
+    sniffButton.addSubview(scanIndicator)
+
+    NSLayoutConstraint.activate([
+      resourceBadgeLabel.centerXAnchor.constraint(
+        equalTo: sniffButton.centerXAnchor,
+        constant: 13
+      ),
+      resourceBadgeLabel.centerYAnchor.constraint(
+        equalTo: sniffButton.centerYAnchor,
+        constant: -12
+      ),
+      resourceBadgeLabel.heightAnchor.constraint(equalToConstant: 16),
+      resourceBadgeLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 16),
+      scanIndicator.centerXAnchor.constraint(equalTo: sniffButton.centerXAnchor),
+      scanIndicator.centerYAnchor.constraint(equalTo: sniffButton.centerYAnchor),
+    ])
+
     let stack = UIStackView(
       arrangedSubviews: definitions.map(\.button)
     )
     stack.translatesAutoresizingMaskIntoConstraints = false
     stack.axis = .horizontal
     stack.alignment = .fill
-    stack.distribution = .equalSpacing
+    stack.distribution = .equalCentering
     materialView.contentView.addSubview(stack)
     NSLayoutConstraint.activate([
       heightAnchor.constraint(equalToConstant: AppMetrics.toolbarHeight),
@@ -150,12 +206,14 @@ final class BrowserToolbar: UIView {
       view.updateResolvedColors()
     }
     update(canGoBack: false, canGoForward: false, tabCount: 1)
+    setSnifferState(resourceCount: 0, isScanning: false)
   }
 
   private func updateResolvedColors() {
     materialView.layer.borderColor = AppColors.separator
       .resolvedColor(with: traitCollection)
       .cgColor
+    layer.shadowColor = UIColor.black.cgColor
   }
 }
 
@@ -167,7 +225,7 @@ private final class BrowserChromeButton: UIButton {
       UIImage(
         systemName: symbol,
         withConfiguration: UIImage.SymbolConfiguration(
-          pointSize: 20,
+          pointSize: AppMetrics.navigationIconSize,
           weight: .regular
         )
       ),

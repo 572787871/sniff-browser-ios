@@ -6,17 +6,20 @@ final class EmptyStateView: UIView {
         let title: String
         let message: String
         let actionTitle: String?
+        let secondaryActionTitle: String?
 
         init(
             symbolName: String,
             title: String,
             message: String,
-            actionTitle: String? = nil
+            actionTitle: String? = nil,
+            secondaryActionTitle: String? = nil
         ) {
             self.symbolName = symbolName
             self.title = title
             self.message = message
             self.actionTitle = actionTitle
+            self.secondaryActionTitle = secondaryActionTitle
         }
     }
 
@@ -25,18 +28,26 @@ final class EmptyStateView: UIView {
     private let titleLabel = UILabel()
     private let messageLabel = UILabel()
     private let actionButton = UIButton(type: .system)
+    private let secondaryActionButton = UIButton(type: .system)
+    private let actionStack = UIStackView()
     private let stackView = UIStackView()
     private let scrollView = UIScrollView()
     private let contentContainer = UIView()
     private var action: (() -> Void)?
+    private var secondaryAction: (() -> Void)?
 
     init(
         configuration: Configuration,
-        action: (() -> Void)? = nil
+        action: (() -> Void)? = nil,
+        secondaryAction: (() -> Void)? = nil
     ) {
         super.init(frame: .zero)
         buildView()
-        configure(configuration, action: action)
+        configure(
+            configuration,
+            action: action,
+            secondaryAction: secondaryAction
+        )
     }
 
     required init?(coder: NSCoder) {
@@ -46,9 +57,11 @@ final class EmptyStateView: UIView {
 
     func configure(
         _ configuration: Configuration,
-        action: (() -> Void)? = nil
+        action: (() -> Void)? = nil,
+        secondaryAction: (() -> Void)? = nil
     ) {
         self.action = action
+        self.secondaryAction = secondaryAction
 
         symbolView.image = UIImage(
             systemName: configuration.symbolName,
@@ -78,11 +91,45 @@ final class EmptyStateView: UIView {
         }
         actionButton.configuration = buttonConfiguration
         actionButton.isHidden = configuration.actionTitle == nil || action == nil
+        actionButton.isEnabled = action != nil
         actionButton.accessibilityLabel = configuration.actionTitle
+        actionButton.accessibilityHint = action == nil
+            ? "此操作当前不可用"
+            : nil
+
+        var secondaryConfiguration = UIButton.Configuration.tinted()
+        secondaryConfiguration.title = configuration.secondaryActionTitle
+        secondaryConfiguration.baseForegroundColor = AppColors.accent
+        secondaryConfiguration.cornerStyle = .medium
+        secondaryConfiguration.contentInsets = NSDirectionalEdgeInsets(
+            top: AppSpacing.sm,
+            leading: AppSpacing.lg,
+            bottom: AppSpacing.sm,
+            trailing: AppSpacing.lg
+        )
+        secondaryConfiguration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer {
+            var attributes = $0
+            attributes.font = AppTypography.headline
+            return attributes
+        }
+        secondaryActionButton.configuration = secondaryConfiguration
+        secondaryActionButton.isHidden =
+            configuration.secondaryActionTitle == nil || secondaryAction == nil
+        secondaryActionButton.isEnabled = secondaryAction != nil
+        secondaryActionButton.accessibilityLabel = configuration.secondaryActionTitle
+        secondaryActionButton.accessibilityHint = secondaryAction == nil
+            ? "此操作当前不可用"
+            : nil
+
+        actionStack.isHidden = actionButton.isHidden && secondaryActionButton.isHidden
+        updateActionAxis()
 
         var elements: [Any] = [titleLabel, messageLabel]
         if !actionButton.isHidden {
             elements.append(actionButton)
+        }
+        if !secondaryActionButton.isHidden {
+            elements.append(secondaryActionButton)
         }
         accessibilityElements = elements
     }
@@ -121,6 +168,22 @@ final class EmptyStateView: UIView {
         actionButton.translatesAutoresizingMaskIntoConstraints = false
         actionButton.accessibilityIdentifier = "emptyState.action"
 
+        secondaryActionButton.addTarget(
+            self,
+            action: #selector(secondaryActionPressed),
+            for: .touchUpInside
+        )
+        secondaryActionButton.translatesAutoresizingMaskIntoConstraints = false
+        secondaryActionButton.accessibilityIdentifier = "emptyState.secondaryAction"
+
+        actionStack.axis = .horizontal
+        actionStack.alignment = .fill
+        actionStack.distribution = .fillEqually
+        actionStack.spacing = AppSpacing.sm
+        actionStack.translatesAutoresizingMaskIntoConstraints = false
+        actionStack.addArrangedSubview(actionButton)
+        actionStack.addArrangedSubview(secondaryActionButton)
+
         stackView.axis = .vertical
         stackView.alignment = .center
         stackView.spacing = AppSpacing.sm
@@ -130,7 +193,7 @@ final class EmptyStateView: UIView {
         stackView.addArrangedSubview(titleLabel)
         stackView.addArrangedSubview(messageLabel)
         stackView.setCustomSpacing(AppSpacing.lg, after: messageLabel)
-        stackView.addArrangedSubview(actionButton)
+        stackView.addArrangedSubview(actionStack)
 
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.alwaysBounceVertical = false
@@ -184,6 +247,10 @@ final class EmptyStateView: UIView {
             symbolView.heightAnchor.constraint(equalTo: symbolView.widthAnchor),
 
             actionButton.heightAnchor.constraint(greaterThanOrEqualToConstant: AppMetrics.minimumTapSize),
+            secondaryActionButton.heightAnchor.constraint(
+                greaterThanOrEqualToConstant: AppMetrics.minimumTapSize
+            ),
+            actionStack.widthAnchor.constraint(lessThanOrEqualToConstant: 360),
 
             stackView.centerXAnchor.constraint(
                 equalTo: contentContainer.layoutMarginsGuide.centerXAnchor
@@ -208,5 +275,25 @@ final class EmptyStateView: UIView {
     @objc
     private func actionPressed() {
         action?()
+    }
+
+    @objc
+    private func secondaryActionPressed() {
+        secondaryAction?()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        updateActionAxis()
+    }
+
+    private func updateActionAxis() {
+        let shouldStackVertically = traitCollection.preferredContentSizeCategory
+            .isAccessibilityCategory || bounds.width < 380
+        let nextAxis: NSLayoutConstraint.Axis = shouldStackVertically
+            ? .vertical
+            : .horizontal
+        guard actionStack.axis != nextAxis else { return }
+        actionStack.axis = nextAxis
     }
 }

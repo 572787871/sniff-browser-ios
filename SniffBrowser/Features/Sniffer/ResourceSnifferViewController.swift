@@ -1,6 +1,9 @@
 import UIKit
 
 final class ResourceSnifferViewController: BaseViewController {
+    var onReturnToPage: (() -> Void)? {
+        didSet { updateAvailableActionsIfNeeded() }
+    }
     var sniffingService: ResourceSniffingService? {
         didSet {
             updateAvailableActionsIfNeeded()
@@ -56,6 +59,7 @@ final class ResourceSnifferViewController: BaseViewController {
     private var resources: [DetectedResource] = []
     private var selectedFilter = Filter.all
     private var scanTask: Task<Void, Never>?
+    private var activeScanID: UUID?
 
     private let summaryView = ResourcePageSummaryView()
     private let filterScrollView = UIScrollView()
@@ -66,9 +70,11 @@ final class ResourceSnifferViewController: BaseViewController {
             symbolName: "dot.radiowaves.left.and.right",
             title: "暂未发现可下载资源",
             message: "尝试播放网页中的视频或音频，然后重新扫描当前页面。",
-            actionTitle: "重新扫描"
+            actionTitle: "重新扫描",
+            secondaryActionTitle: "返回网页继续播放"
         ),
-        action: { [weak self] in self?.refreshResources() }
+        action: { [weak self] in self?.refreshResources() },
+        secondaryAction: { [weak self] in self?.onReturnToPage?() }
     )
     private let loadingIndicator = UIActivityIndicatorView(style: .medium)
 
@@ -108,6 +114,7 @@ final class ResourceSnifferViewController: BaseViewController {
         super.viewDidDisappear(animated)
         if isBeingDismissed || isMovingFromParent {
             scanTask?.cancel()
+            activeScanID = nil
         }
     }
 
@@ -116,13 +123,7 @@ final class ResourceSnifferViewController: BaseViewController {
     }
 
     private func configureNavigation() {
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            image: UIImage(systemName: "arrow.clockwise"),
-            style: .plain,
-            target: self,
-            action: #selector(refreshPressed)
-        )
-        navigationItem.rightBarButtonItem?.accessibilityLabel = "重新扫描当前页面"
+        restoreRefreshButton()
     }
 
     private func configureSummary() {
@@ -244,15 +245,17 @@ final class ResourceSnifferViewController: BaseViewController {
     private func updateAvailableActions() {
         let canScan = sniffingService != nil
         summaryView.setRefreshAvailable(canScan)
-        navigationItem.rightBarButtonItem?.isEnabled = canScan
+        restoreRefreshButton()
         emptyState.configure(
             .init(
                 symbolName: "dot.radiowaves.left.and.right",
                 title: "暂未发现可下载资源",
                 message: "尝试播放网页中的视频或音频，然后重新扫描当前页面。",
-                actionTitle: canScan ? "重新扫描" : nil
+                actionTitle: canScan ? "重新扫描" : nil,
+                secondaryActionTitle: "返回网页继续播放"
             ),
-            action: canScan ? { [weak self] in self?.refreshResources() } : nil
+            action: canScan ? { [weak self] in self?.refreshResources() } : nil,
+            secondaryAction: onReturnToPage
         )
         tableView.reloadData()
     }
@@ -274,6 +277,8 @@ final class ResourceSnifferViewController: BaseViewController {
             return
         }
         scanTask?.cancel()
+        let scanID = UUID()
+        activeScanID = scanID
         emptyState.isHidden = true
         tableView.isHidden = true
         loadingIndicator.startAnimating()
@@ -289,6 +294,8 @@ final class ResourceSnifferViewController: BaseViewController {
                 )
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
+                    guard self?.activeScanID == scanID else { return }
+                    self?.activeScanID = nil
                     self?.resources = detected
                     self?.restoreRefreshButton()
                     self?.updateContent()
@@ -297,9 +304,17 @@ final class ResourceSnifferViewController: BaseViewController {
                     )
                 }
             } catch is CancellationError {
+                await MainActor.run {
+                    guard self?.activeScanID == scanID else { return }
+                    self?.activeScanID = nil
+                    self?.restoreRefreshButton()
+                    self?.updateContent()
+                }
                 return
             } catch {
                 await MainActor.run {
+                    guard self?.activeScanID == scanID else { return }
+                    self?.activeScanID = nil
                     self?.restoreRefreshButton()
                     self?.updateContent()
                     UINotificationFeedbackGenerator().notificationOccurred(.error)
@@ -309,6 +324,10 @@ final class ResourceSnifferViewController: BaseViewController {
     }
 
     private func restoreRefreshButton() {
+        guard sniffingService != nil else {
+            navigationItem.rightBarButtonItem = nil
+            return
+        }
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "arrow.clockwise"),
             style: .plain,
@@ -316,7 +335,6 @@ final class ResourceSnifferViewController: BaseViewController {
             action: #selector(refreshPressed)
         )
         navigationItem.rightBarButtonItem?.accessibilityLabel = "重新扫描当前页面"
-        navigationItem.rightBarButtonItem?.isEnabled = sniffingService != nil
     }
 
     @objc private func refreshPressed() {

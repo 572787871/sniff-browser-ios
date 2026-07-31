@@ -25,9 +25,18 @@ final class FileManagerViewController: BaseViewController {
         case size
     }
 
-    var onImportFiles: (() -> Void)?
-    var onCreateFolder: (() -> Void)?
-    var onSortOrderChanged: ((SortOrder) -> Void)?
+    var onImportFiles: (() -> Void)? {
+        didSet { refreshAvailableActions() }
+    }
+    var onCreateFolder: (() -> Void)? {
+        didSet { refreshAvailableActions() }
+    }
+    var onReturnToBrowser: (() -> Void)? {
+        didSet { updateEmptyStateActions() }
+    }
+    var onSortOrderChanged: ((SortOrder) -> Void)? {
+        didSet { refreshAvailableActions() }
+    }
 
     private let searchController = UISearchController(searchResultsController: nil)
     private let categoryControl = UISegmentedControl(items: Category.allCases.map(\.title))
@@ -35,7 +44,9 @@ final class FileManagerViewController: BaseViewController {
         configuration: .init(
             symbolName: "folder",
             title: "文件库为空",
-            message: "下载完成的文件会安全地保存在应用资料库中，并按类型整理。"
+            message: "下载完成的文件会安全地保存在应用资料库中，并按类型整理。",
+            actionTitle: "从“文件”导入",
+            secondaryActionTitle: "前往浏览器"
         )
     )
 
@@ -61,18 +72,28 @@ final class FileManagerViewController: BaseViewController {
         navigationItem.searchController = searchController
         navigationItem.hidesSearchBarWhenScrolling = false
 
-        navigationItem.rightBarButtonItems = [
-            UIBarButtonItem(
+        updateNavigationActions()
+    }
+
+    private func updateNavigationActions() {
+        var items: [UIBarButtonItem] = []
+        if onCreateFolder != nil || onImportFiles != nil {
+            let actionsItem = UIBarButtonItem(
                 image: UIImage(systemName: "ellipsis.circle"),
                 menu: makeActionsMenu()
-            ),
-            UIBarButtonItem(
+            )
+            actionsItem.accessibilityLabel = "文件操作"
+            items.append(actionsItem)
+        }
+        if onSortOrderChanged != nil {
+            let sortItem = UIBarButtonItem(
                 image: UIImage(systemName: "arrow.up.arrow.down"),
                 menu: makeSortMenu()
             )
-        ]
-        navigationItem.rightBarButtonItems?.first?.accessibilityLabel = "文件操作"
-        navigationItem.rightBarButtonItems?.last?.accessibilityLabel = "文件排序"
+            sortItem.accessibilityLabel = "文件排序"
+            items.append(sortItem)
+        }
+        navigationItem.rightBarButtonItems = items.isEmpty ? nil : items
     }
 
     private func configureCategoryControl() {
@@ -93,10 +114,43 @@ final class FileManagerViewController: BaseViewController {
         contentView.addSubview(emptyState)
 
         NSLayoutConstraint.activate([
-            emptyState.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 28),
-            emptyState.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor, constant: 12),
-            emptyState.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor, constant: -12)
+            emptyState.topAnchor.constraint(
+                equalTo: categoryControl.bottomAnchor,
+                constant: AppSpacing.xs
+            ),
+            emptyState.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            emptyState.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            emptyState.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
+        updateEmptyStateActions()
+    }
+
+    private func refreshAvailableActions() {
+        updateEmptyStateActions()
+        guard isViewLoaded else { return }
+        updateNavigationActions()
+    }
+
+    private func updateEmptyStateActions() {
+        emptyState.configure(
+            .init(
+                symbolName: "folder",
+                title: "文件库为空",
+                message: "下载完成的文件会安全地保存在应用资料库中，并按类型整理。",
+                actionTitle: "从“文件”导入",
+                secondaryActionTitle: "前往浏览器"
+            ),
+            action: actionWithFeedback(onImportFiles),
+            secondaryAction: actionWithFeedback(onReturnToBrowser)
+        )
+    }
+
+    private func actionWithFeedback(_ action: (() -> Void)?) -> (() -> Void)? {
+        guard let action else { return nil }
+        return {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            action()
+        }
     }
 
     private func makeActionsMenu() -> UIMenu {
@@ -113,6 +167,7 @@ final class FileManagerViewController: BaseViewController {
             image: UIImage(systemName: "square.and.arrow.down"),
             attributes: onImportFiles == nil ? [.disabled] : []
         ) { [weak self] _ in
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
             self?.onImportFiles?()
         }
         return UIMenu(children: [createFolder, importFiles])

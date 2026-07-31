@@ -41,6 +41,19 @@ final class NewTabView: UIView {
     textField.becomeFirstResponder()
   }
 
+  func setPrivateMode(_ isPrivate: Bool) {
+    backgroundColor = isPrivate
+      ? AppColors.privateBrowsingBackground
+      : AppColors.background
+    titleLabel.text = isPrivate ? "无痕浏览" : "嗅探浏览器"
+    welcomeLabel.text = isPrivate
+      ? "网页数据不会写入普通历史记录；关闭所有无痕标签后，会话将被清除。"
+      : "从一次安静、专注的浏览开始"
+    accessibilityLabel = isPrivate
+      ? "无痕浏览。无痕模式不会让你在网络上匿名。"
+      : nil
+  }
+
   private func configure() {
     translatesAutoresizingMaskIntoConstraints = false
     backgroundColor = AppColors.background

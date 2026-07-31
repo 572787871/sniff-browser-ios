@@ -56,6 +56,7 @@ struct DetectedResource: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+@MainActor
 protocol ResourceSniffingService: AnyObject {
     func scanResources(
         forPageURL pageURL: URL?,

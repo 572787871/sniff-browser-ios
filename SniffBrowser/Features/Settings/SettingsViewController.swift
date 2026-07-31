@@ -1,6 +1,12 @@
 import UIKit
 
 final class SettingsViewController: BaseViewController {
+    fileprivate static var appVersion: String {
+        Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString"
+        ) as? String ?? "0.2.0"
+    }
+
     enum Destination {
         case searchEngine
         case newTabBehavior
@@ -17,6 +23,12 @@ final class SettingsViewController: BaseViewController {
     }
 
     var onSelectDestination: ((Destination) -> Void)?
+    var onClearBrowsingData: (() -> Void)? {
+        didSet {
+            guard isViewLoaded else { return }
+            tableView.reloadData()
+        }
+    }
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
 
     private struct Row {
@@ -46,27 +58,27 @@ final class SettingsViewController: BaseViewController {
             title: "隐私与安全",
             footer: "网站权限始终由用户明确决定；应用不会绕过 HTTPS 证书验证。",
             rows: [
-                Row(title: "内容拦截", subtitle: nil, symbol: "shield.lefthalf.filled", destination: .contentBlocking),
-                Row(title: "网站权限", subtitle: nil, symbol: "hand.raised", destination: .websitePermissions),
-                Row(title: "清除浏览数据", subtitle: nil, symbol: "trash", destination: .clearBrowsingData)
+                Row(title: "内容拦截", subtitle: "规则与网站白名单", symbol: "shield.lefthalf.filled", destination: .contentBlocking),
+                Row(title: "网站权限", subtitle: "摄像头、麦克风与位置", symbol: "hand.raised", destination: .websitePermissions),
+                Row(title: "清除浏览数据", subtitle: "Cookie、网站数据与缓存", symbol: "trash", destination: .clearBrowsingData)
             ]
         ),
         Section(
             title: "下载与存储",
             footer: nil,
             rows: [
-                Row(title: "下载设置", subtitle: nil, symbol: "arrow.down.circle", destination: .downloadPreferences),
-                Row(title: "存储空间", subtitle: nil, symbol: "internaldrive", destination: .storage)
+                Row(title: "下载设置", subtitle: "网络、并发与保存位置", symbol: "arrow.down.circle", destination: .downloadPreferences),
+                Row(title: "存储空间", subtitle: "文件与缓存占用", symbol: "internaldrive", destination: .storage)
             ]
         ),
         Section(
             title: "关于",
             footer: "嗅探浏览器仅用于访问和管理用户有权获取的资源。",
             rows: [
-                Row(title: "隐私政策", subtitle: nil, symbol: "lock.shield", destination: .privacyPolicy),
-                Row(title: "使用条款", subtitle: nil, symbol: "doc.text", destination: .terms),
-                Row(title: "开源许可证", subtitle: nil, symbol: "chevron.left.forwardslash.chevron.right", destination: .openSourceLicenses),
-                Row(title: "关于嗅探浏览器", subtitle: nil, symbol: "info.circle", destination: .about)
+                Row(title: "隐私政策", subtitle: "了解数据处理方式", symbol: "lock.shield", destination: .privacyPolicy),
+                Row(title: "使用条款", subtitle: "使用范围与责任说明", symbol: "doc.text", destination: .terms),
+                Row(title: "开源许可证", subtitle: "第三方软件声明", symbol: "chevron.left.forwardslash.chevron.right", destination: .openSourceLicenses),
+                Row(title: "关于嗅探浏览器", subtitle: "版本 \(Self.appVersion)", symbol: "info.circle", destination: .about)
             ]
         )
     ]
@@ -85,8 +97,14 @@ final class SettingsViewController: BaseViewController {
     }
 
     private func configureTableView() {
-        tableView.backgroundColor = AppColors.background
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "SettingsCell")
+        tableView.backgroundColor = .clear
+        tableView.separatorStyle = .none
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 58
+        tableView.register(
+            GlassSummaryCell.self,
+            forCellReuseIdentifier: GlassSummaryCell.reuseIdentifier
+        )
         tableView.dataSource = self
         tableView.delegate = self
         tableView.translatesAutoresizingMaskIntoConstraints = false
@@ -127,30 +145,50 @@ extension SettingsViewController: UITableViewDataSource, UITableViewDelegate {
         _ tableView: UITableView,
         cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "SettingsCell", for: indexPath)
+        guard let cell = tableView.dequeueReusableCell(
+            withIdentifier: GlassSummaryCell.reuseIdentifier,
+            for: indexPath
+        ) as? GlassSummaryCell else {
+            return UITableViewCell()
+        }
         let row = sections[indexPath.section].rows[indexPath.row]
-        var configuration = cell.defaultContentConfiguration()
-        configuration.text = row.title
-        configuration.secondaryText = row.subtitle
-        configuration.image = UIImage(systemName: row.symbol)
-        configuration.imageProperties.tintColor = row.destination == .clearBrowsingData
-            ? AppColors.danger
-            : AppColors.accent
-        configuration.textProperties.color = row.destination == .clearBrowsingData
-            ? AppColors.danger
-            : AppColors.primaryText
-        configuration.textProperties.font = UIFont.preferredFont(forTextStyle: .body)
-        configuration.secondaryTextProperties.font = UIFont.preferredFont(forTextStyle: .subheadline)
-        cell.contentConfiguration = configuration
-        cell.accessoryType = .disclosureIndicator
-        cell.backgroundColor = AppColors.surface
-        cell.accessibilityLabel = [row.title, row.subtitle].compactMap { $0 }.joined(separator: "，")
+        let isClearAction = row.destination == .clearBrowsingData
+        let isEnabled = !isClearAction || onClearBrowsingData != nil
+        let tint = tintColor(for: row.destination)
+        cell.configure(
+            title: row.title,
+            subtitle: row.subtitle,
+            symbol: row.symbol,
+            tint: tint,
+            titleColor: isClearAction ? AppColors.danger : AppColors.primaryText,
+            isEnabled: isEnabled
+        )
         return cell
+    }
+
+    private func tintColor(for destination: Destination) -> UIColor {
+        switch destination {
+        case .searchEngine, .newTabBehavior, .appearance:
+            return AppColors.accent
+        case .contentBlocking, .websitePermissions:
+            return .systemIndigo
+        case .clearBrowsingData:
+            return AppColors.danger
+        case .downloadPreferences, .storage:
+            return .systemGreen
+        case .privacyPolicy, .terms, .openSourceLicenses, .about:
+            return .systemGray
+        }
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         let destination = sections[indexPath.section].rows[indexPath.row].destination
+        if destination == .clearBrowsingData {
+            guard onClearBrowsingData != nil else { return }
+            confirmClearBrowsingData()
+            return
+        }
         if let onSelectDestination {
             onSelectDestination(destination)
         } else {
@@ -159,6 +197,30 @@ extension SettingsViewController: UITableViewDataSource, UITableViewDelegate {
                 animated: true
             )
         }
+    }
+
+    private func confirmClearBrowsingData() {
+        let alert = UIAlertController(
+            title: "清除浏览数据？",
+            message: "Cookie、网站存储与网页缓存将被清除，已打开的标签页会重新载入。",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "清除", style: .destructive) { [weak self] _ in
+            self?.onClearBrowsingData?()
+        })
+        present(alert, animated: true)
+    }
+
+    func showBrowsingDataClearCompleted() {
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        let alert = UIAlertController(
+            title: "浏览数据已清除",
+            message: "Cookie、网站存储与网页缓存已移除。",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "好", style: .default))
+        present(alert, animated: true)
     }
 }
 
@@ -199,7 +261,7 @@ private final class SettingsDetailViewController: BaseViewController {
         case .websitePermissions:
             return ("网站权限", "hand.raised", "敏感权限将始终由系统询问，不会静默授权。")
         case .clearBrowsingData:
-            return ("清除浏览数据", "trash", "建立历史与网站数据存储后，此处将提供按范围清理与二次确认。")
+            return ("清除浏览数据", "trash", "此操作会清除 Cookie、网站存储与网页缓存，并重新载入当前网页。")
         case .downloadPreferences:
             return ("下载设置", "arrow.down.circle", "后台下载模块接入后，此处将管理并发、网络与保存位置。")
         case .storage:
@@ -211,7 +273,183 @@ private final class SettingsDetailViewController: BaseViewController {
         case .openSourceLicenses:
             return ("开源许可证", "chevron.left.forwardslash.chevron.right", "当前版本未引入第三方运行时依赖。")
         case .about:
-            return ("关于嗅探浏览器", "info.circle", "原生 Swift + UIKit 浏览器，当前版本 0.1.0。")
+            return (
+                "关于嗅探浏览器",
+                "info.circle",
+                "原生 Swift + UIKit 浏览器，当前版本 \(SettingsViewController.appVersion)。"
+            )
         }
+    }
+}
+
+/// 设置与用户中心共用的轻量玻璃摘要行。
+///
+/// 数据与操作状态由页面注入；该视图只负责一致的视觉、动态字体和辅助功能。
+final class GlassSummaryCell: UITableViewCell {
+    static let reuseIdentifier = "GlassSummaryCell"
+
+    private let materialView = AppMaterialView(
+        style: .systemMaterial,
+        fallbackColor: AppColors.chromeFallback
+    )
+    private let iconContainer = UIView()
+    private let iconView = UIImageView()
+    private let titleLabel = UILabel()
+    private let subtitleLabel = UILabel()
+    private let chevronView = UIImageView(image: UIImage(systemName: "chevron.forward"))
+    private let labelsStack = UIStackView()
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        configureView()
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
+    func configure(
+        title: String,
+        subtitle: String?,
+        symbol: String,
+        tint: UIColor = AppColors.accent,
+        titleColor: UIColor = AppColors.primaryText,
+        isEnabled: Bool = true
+    ) {
+        titleLabel.text = title
+        titleLabel.textColor = titleColor
+        subtitleLabel.text = subtitle
+        subtitleLabel.isHidden = subtitle?.isEmpty != false
+        iconView.image = UIImage(
+            systemName: symbol,
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .medium)
+        )
+        iconView.tintColor = tint
+        iconContainer.backgroundColor = tint.withAlphaComponent(0.12)
+
+        isUserInteractionEnabled = isEnabled
+        contentView.alpha = isEnabled ? 1 : 0.46
+        accessibilityLabel = [title, subtitle].compactMap { $0 }.joined(separator: "，")
+        accessibilityTraits = isEnabled ? [.button] : [.button, .notEnabled]
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        titleLabel.text = nil
+        subtitleLabel.text = nil
+        subtitleLabel.isHidden = true
+        contentView.alpha = 1
+        isUserInteractionEnabled = true
+        accessibilityTraits = [.button]
+    }
+
+    override func setHighlighted(_ highlighted: Bool, animated: Bool) {
+        super.setHighlighted(highlighted, animated: animated)
+        guard isUserInteractionEnabled else { return }
+        let updates = {
+            self.materialView.alpha = highlighted ? 0.72 : 1
+            self.contentView.transform = highlighted
+                ? CGAffineTransform(scaleX: 0.992, y: 0.992)
+                : .identity
+        }
+        if animated {
+            AppAppearance.animate(duration: AppAppearance.quickAnimationDuration, animations: updates)
+        } else {
+            updates()
+        }
+    }
+
+    private func configureView() {
+        backgroundColor = .clear
+        backgroundConfiguration = UIBackgroundConfiguration.clear()
+        selectionStyle = .none
+        isAccessibilityElement = true
+
+        materialView.layer.cornerRadius = AppRadius.control
+        materialView.layer.cornerCurve = .continuous
+        materialView.clipsToBounds = true
+        materialView.isUserInteractionEnabled = false
+        materialView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(materialView)
+        contentView.sendSubviewToBack(materialView)
+
+        iconContainer.layer.cornerRadius = AppRadius.small
+        iconContainer.layer.cornerCurve = .continuous
+        iconContainer.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(iconContainer)
+
+        iconView.contentMode = .center
+        iconView.isAccessibilityElement = false
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconContainer.addSubview(iconView)
+
+        AppTypography.configure(titleLabel, style: .body, weight: .medium)
+        titleLabel.textColor = AppColors.primaryText
+        titleLabel.numberOfLines = 0
+
+        AppTypography.configure(subtitleLabel, style: .caption1)
+        subtitleLabel.textColor = AppColors.secondaryText
+        subtitleLabel.numberOfLines = 0
+
+        labelsStack.axis = .vertical
+        labelsStack.alignment = .fill
+        labelsStack.spacing = AppSpacing.xxs
+        labelsStack.translatesAutoresizingMaskIntoConstraints = false
+        labelsStack.addArrangedSubview(titleLabel)
+        labelsStack.addArrangedSubview(subtitleLabel)
+        contentView.addSubview(labelsStack)
+
+        chevronView.tintColor = AppColors.tertiaryText
+        chevronView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+            pointSize: 13,
+            weight: .semibold
+        )
+        chevronView.setContentHuggingPriority(.required, for: .horizontal)
+        chevronView.isAccessibilityElement = false
+        chevronView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(chevronView)
+
+        NSLayoutConstraint.activate([
+            materialView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 2),
+            materialView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            materialView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            materialView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -2),
+
+            iconContainer.leadingAnchor.constraint(
+                equalTo: contentView.leadingAnchor,
+                constant: AppSpacing.sm
+            ),
+            iconContainer.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            iconContainer.widthAnchor.constraint(equalToConstant: 34),
+            iconContainer.heightAnchor.constraint(equalTo: iconContainer.widthAnchor),
+            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+
+            labelsStack.topAnchor.constraint(
+                greaterThanOrEqualTo: contentView.topAnchor,
+                constant: AppSpacing.sm
+            ),
+            labelsStack.leadingAnchor.constraint(
+                equalTo: iconContainer.trailingAnchor,
+                constant: AppSpacing.sm
+            ),
+            labelsStack.trailingAnchor.constraint(
+                equalTo: chevronView.leadingAnchor,
+                constant: -AppSpacing.sm
+            ),
+            labelsStack.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            labelsStack.bottomAnchor.constraint(
+                lessThanOrEqualTo: contentView.bottomAnchor,
+                constant: -AppSpacing.sm
+            ),
+
+            chevronView.trailingAnchor.constraint(
+                equalTo: contentView.trailingAnchor,
+                constant: -AppSpacing.sm
+            ),
+            chevronView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+
+            contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 56)
+        ])
     }
 }
