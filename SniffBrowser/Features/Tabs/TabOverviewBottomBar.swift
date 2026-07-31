@@ -134,15 +134,32 @@ final class TabOverviewBottomBar: UIView {
     }
 
     private func updateMode() {
+        let isPrivate = mode.isPrivate
+        overrideUserInterfaceStyle = isPrivate ? .dark : .unspecified
+        materialView.contentView.backgroundColor = isPrivate
+            ? AppColors.privateBrowsingSurface.withAlphaComponent(0.72)
+            : .clear
+        newTabButton.configuration?.baseForegroundColor = isPrivate
+            ? AppColors.privateBrowsingAccent
+            : AppColors.accent
+        newTabButton.configuration?.baseBackgroundColor = isPrivate
+            ? AppColors.privateBrowsingAccent.withAlphaComponent(0.18)
+            : AppColors.accentFill
+        doneButton.configuration?.baseForegroundColor = isPrivate
+            ? AppColors.privateBrowsingAccent
+            : AppColors.accent
         newTabButton.accessibilityLabel = mode.isPrivate
             ? "新建无痕标签页"
             : "新建普通标签页"
+        updateResolvedColors()
     }
 
     private func updateResolvedColors() {
-        materialView.layer.borderColor = AppColors.separator
-            .resolvedColor(with: traitCollection)
-            .cgColor
+        materialView.layer.borderColor = (
+            mode.isPrivate
+                ? UIColor.white.withAlphaComponent(0.14)
+                : AppColors.separator.resolvedColor(with: traitCollection)
+        ).cgColor
     }
 
     private func registerForEnvironmentChanges() {

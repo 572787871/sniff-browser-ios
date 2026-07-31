@@ -35,6 +35,7 @@ final class BrowserToolbar: UIView {
   private let resourceBadgeLabel = UILabel()
   private let scanIndicator = UIActivityIndicatorView(style: .medium)
   private var isCollapsed = false
+  private var isPrivateMode = false
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -67,6 +68,16 @@ final class BrowserToolbar: UIView {
     sniffButton.accessibilityValue = isScanning
       ? "正在扫描"
       : (count == 0 ? "未发现资源" : "发现 \(count) 项资源")
+  }
+
+  func setPrivateMode(_ isPrivate: Bool) {
+    guard isPrivateMode != isPrivate else { return }
+    isPrivateMode = isPrivate
+    overrideUserInterfaceStyle = isPrivate ? .dark : .unspecified
+    materialView.contentView.backgroundColor = isPrivate
+      ? AppColors.privateBrowsingSurface.withAlphaComponent(0.68)
+      : .clear
+    updateResolvedColors()
   }
 
   func setCollapsed(_ collapsed: Bool, animated: Bool) {
@@ -210,9 +221,22 @@ final class BrowserToolbar: UIView {
   }
 
   private func updateResolvedColors() {
-    materialView.layer.borderColor = AppColors.separator
-      .resolvedColor(with: traitCollection)
-      .cgColor
+    materialView.layer.borderColor = (
+      isPrivateMode
+        ? UIColor.white.withAlphaComponent(0.16)
+        : AppColors.separator.resolvedColor(with: traitCollection)
+    ).cgColor
+    let primary = isPrivateMode ? UIColor.white : AppColors.primaryText
+    [backButton, forwardButton, tabsButton, moreButton].forEach {
+      $0.tintColor = primary
+    }
+    sniffButton.tintColor = isPrivateMode
+      ? AppColors.privateBrowsingAccent
+      : AppColors.accent
+    tabCountLabel.textColor = primary
+    scanIndicator.color = isPrivateMode
+      ? AppColors.privateBrowsingAccent
+      : AppColors.accent
     layer.shadowColor = UIColor.black.cgColor
   }
 }

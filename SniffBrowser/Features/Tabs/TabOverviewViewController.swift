@@ -128,8 +128,7 @@ final class TabOverviewViewController: BaseViewController {
     }
 
     private func configureBackground() {
-        privacyTintView.backgroundColor =
-            UIColor.systemIndigo.withAlphaComponent(0.045)
+        privacyTintView.backgroundColor = AppColors.privateBrowsingBackground
         privacyTintView.isUserInteractionEnabled = false
         privacyTintView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(privacyTintView)
@@ -366,8 +365,47 @@ final class TabOverviewViewController: BaseViewController {
         let mode = pagingState.selectedMode
         modeControl.selectedSegmentIndex = mode.rawValue
         bottomBar.mode = mode
+        if mode.isPrivate {
+            modeControl.backgroundColor = AppColors.privateBrowsingSurface
+            modeControl.selectedSegmentTintColor =
+                AppColors.privateBrowsingAccent.withAlphaComponent(0.28)
+            modeControl.setTitleTextAttributes(
+                [
+                    .font: AppTypography.subheadline,
+                    .foregroundColor: UIColor.white.withAlphaComponent(0.62)
+                ],
+                for: .normal
+            )
+            modeControl.setTitleTextAttributes(
+                [
+                    .font: AppTypography.subheadline,
+                    .foregroundColor: UIColor.white
+                ],
+                for: .selected
+            )
+        } else {
+            modeControl.backgroundColor = nil
+            modeControl.selectedSegmentTintColor = AppColors.elevatedSurface
+            modeControl.setTitleTextAttributes(
+                [
+                    .font: AppTypography.subheadline,
+                    .foregroundColor: AppColors.secondaryText
+                ],
+                for: .normal
+            )
+            modeControl.setTitleTextAttributes(
+                [
+                    .font: AppTypography.subheadline,
+                    .foregroundColor: AppColors.primaryText
+                ],
+                for: .selected
+            )
+        }
         let changes = {
             self.privacyTintView.alpha = mode.isPrivate ? 1 : 0
+            self.contentView.backgroundColor = mode.isPrivate
+                ? AppColors.privateBrowsingBackground
+                : .clear
         }
         if animated {
             AppAppearance.animate(animations: changes)

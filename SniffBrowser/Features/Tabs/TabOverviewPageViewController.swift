@@ -24,6 +24,11 @@ final class TabOverviewPageViewController: UIViewController {
     )
     private lazy var dataSource = makeDataSource()
     private let emptyView: EmptyStateView
+    private let privacyNoticeView = UIView()
+    private let privacyNoticeIcon = UIImageView(
+        image: UIImage(systemName: "eye.slash.fill")
+    )
+    private let privacyNoticeLabel = UILabel()
     private var pendingRestoredOffset: CGFloat?
     private var lastLaidOutSize: CGSize = .zero
 
@@ -83,7 +88,10 @@ final class TabOverviewPageViewController: UIViewController {
     }
 
     private func configureView() {
-        view.backgroundColor = .clear
+        overrideUserInterfaceStyle = mode.isPrivate ? .dark : .unspecified
+        view.backgroundColor = mode.isPrivate
+            ? AppColors.privateBrowsingBackground
+            : .clear
         view.clipsToBounds = true
 
         collectionView.backgroundColor = .clear
@@ -105,13 +113,21 @@ final class TabOverviewPageViewController: UIViewController {
         emptyView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(emptyView)
 
+        let collectionTopAnchor: NSLayoutYAxisAnchor
+        if mode.isPrivate {
+            configurePrivacyNotice()
+            collectionTopAnchor = privacyNoticeView.bottomAnchor
+        } else {
+            collectionTopAnchor = view.topAnchor
+        }
+
         NSLayoutConstraint.activate([
-            collectionView.topAnchor.constraint(equalTo: view.topAnchor),
+            collectionView.topAnchor.constraint(equalTo: collectionTopAnchor),
             collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            emptyView.topAnchor.constraint(equalTo: view.topAnchor),
+            emptyView.topAnchor.constraint(equalTo: collectionTopAnchor),
             emptyView.leadingAnchor.constraint(
                 equalTo: view.layoutMarginsGuide.leadingAnchor
             ),
@@ -119,6 +135,73 @@ final class TabOverviewPageViewController: UIViewController {
                 equalTo: view.layoutMarginsGuide.trailingAnchor
             ),
             emptyView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+    }
+
+    private func configurePrivacyNotice() {
+        privacyNoticeView.translatesAutoresizingMaskIntoConstraints = false
+        privacyNoticeView.backgroundColor =
+            AppColors.privateBrowsingSurface.withAlphaComponent(0.82)
+        privacyNoticeView.layer.cornerRadius = AppRadius.control
+        privacyNoticeView.layer.cornerCurve = .continuous
+        view.addSubview(privacyNoticeView)
+
+        privacyNoticeIcon.translatesAutoresizingMaskIntoConstraints = false
+        privacyNoticeIcon.tintColor = AppColors.privateBrowsingAccent
+        privacyNoticeIcon.contentMode = .scaleAspectFit
+        privacyNoticeIcon.preferredSymbolConfiguration =
+            UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+        privacyNoticeIcon.isAccessibilityElement = false
+        privacyNoticeView.addSubview(privacyNoticeIcon)
+
+        privacyNoticeLabel.translatesAutoresizingMaskIntoConstraints = false
+        AppTypography.configure(privacyNoticeLabel, style: .caption1)
+        privacyNoticeLabel.textColor = UIColor.white.withAlphaComponent(0.78)
+        privacyNoticeLabel.numberOfLines = 2
+        privacyNoticeLabel.text =
+            "无痕标签不会保存到浏览历史，下载和主动收藏的内容仍会保留。"
+        privacyNoticeView.addSubview(privacyNoticeLabel)
+
+        NSLayoutConstraint.activate([
+            privacyNoticeView.topAnchor.constraint(
+                equalTo: view.topAnchor,
+                constant: AppSpacing.xs
+            ),
+            privacyNoticeView.leadingAnchor.constraint(
+                equalTo: view.leadingAnchor,
+                constant: AppSpacing.md
+            ),
+            privacyNoticeView.trailingAnchor.constraint(
+                equalTo: view.trailingAnchor,
+                constant: -AppSpacing.md
+            ),
+
+            privacyNoticeIcon.leadingAnchor.constraint(
+                equalTo: privacyNoticeView.leadingAnchor,
+                constant: AppSpacing.sm
+            ),
+            privacyNoticeIcon.centerYAnchor.constraint(
+                equalTo: privacyNoticeView.centerYAnchor
+            ),
+            privacyNoticeIcon.widthAnchor.constraint(equalToConstant: 24),
+            privacyNoticeIcon.heightAnchor.constraint(equalToConstant: 24),
+
+            privacyNoticeLabel.leadingAnchor.constraint(
+                equalTo: privacyNoticeIcon.trailingAnchor,
+                constant: AppSpacing.xs
+            ),
+            privacyNoticeLabel.trailingAnchor.constraint(
+                equalTo: privacyNoticeView.trailingAnchor,
+                constant: -AppSpacing.sm
+            ),
+            privacyNoticeLabel.topAnchor.constraint(
+                equalTo: privacyNoticeView.topAnchor,
+                constant: AppSpacing.xs
+            ),
+            privacyNoticeLabel.bottomAnchor.constraint(
+                equalTo: privacyNoticeView.bottomAnchor,
+                constant: -AppSpacing.xs
+            )
         ])
     }
 
@@ -236,7 +319,7 @@ final class TabOverviewPageViewController: UIViewController {
             return .init(
                 symbolName: "eye.slash",
                 title: "没有无痕标签页",
-                message: "无痕标签不会保存在浏览历史或下次会话中。"
+                message: "无痕标签不会保存到浏览历史，下载和主动收藏的内容仍会保留。"
             )
         }
         return .init(

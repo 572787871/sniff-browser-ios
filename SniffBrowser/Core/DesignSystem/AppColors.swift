@@ -8,22 +8,31 @@ enum AppColors {
     /// 管理页面的分组背景。
     static let background = UIColor.systemGroupedBackground
     static let canvas = background
-    static let privateBrowsingBackground = UIColor { traits in
-        if traits.userInterfaceStyle == .dark {
-            return UIColor(
-                red: 0.075,
-                green: 0.075,
-                blue: 0.09,
-                alpha: 1
-            )
-        }
-        return UIColor(
-            red: 0.92,
-            green: 0.92,
-            blue: 0.95,
-            alpha: 1
-        )
-    }
+    /// 无痕模式始终使用独立深色层级，避免在浅色系统外观下与普通标签混淆。
+    static let privateBrowsingBackground = UIColor(
+        red: 0.075,
+        green: 0.078,
+        blue: 0.095,
+        alpha: 1
+    )
+    static let privateBrowsingSurface = UIColor(
+        red: 0.13,
+        green: 0.135,
+        blue: 0.16,
+        alpha: 1
+    )
+    static let privateBrowsingChrome = UIColor(
+        red: 0.105,
+        green: 0.11,
+        blue: 0.135,
+        alpha: 1
+    )
+    static let privateBrowsingAccent = UIColor(
+        red: 0.50,
+        green: 0.63,
+        blue: 0.90,
+        alpha: 1
+    )
 
     /// 普通卡片与列表分组背景。
     static let surface = UIColor.secondarySystemGroupedBackground

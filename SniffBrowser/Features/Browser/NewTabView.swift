@@ -2,6 +2,7 @@ import UIKit
 
 @MainActor
 protocol NewTabViewDelegate: AnyObject {
+  func newTabViewDidBeginEditing(_ view: NewTabView)
   func newTabView(_ view: NewTabView, didSubmit text: String)
 }
 
@@ -21,6 +22,7 @@ final class NewTabView: UIView {
   private let searchImageView = UIImageView(image: UIImage(systemName: "magnifyingglass"))
   private let textField = UITextField()
   private let submitButton = UIButton(type: .system)
+  private var isPrivateMode = false
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -42,16 +44,19 @@ final class NewTabView: UIView {
   }
 
   func setPrivateMode(_ isPrivate: Bool) {
+    isPrivateMode = isPrivate
+    overrideUserInterfaceStyle = isPrivate ? .dark : .unspecified
     backgroundColor = isPrivate
       ? AppColors.privateBrowsingBackground
       : AppColors.background
     titleLabel.text = isPrivate ? "无痕浏览" : "嗅探浏览器"
     welcomeLabel.text = isPrivate
-      ? "网页数据不会写入普通历史记录；关闭所有无痕标签后，会话将被清除。"
+      ? "无痕标签不会保存到浏览历史，下载和主动收藏的内容仍会保留。"
       : "从一次安静、专注的浏览开始"
     accessibilityLabel = isPrivate
       ? "无痕浏览。无痕模式不会让你在网络上匿名。"
       : nil
+    updateResolvedColors()
   }
 
   private func configure() {
@@ -106,6 +111,10 @@ final class NewTabView: UIView {
     searchImageView.translatesAutoresizingMaskIntoConstraints = false
     searchImageView.tintColor = AppColors.secondaryText
     searchImageView.contentMode = .scaleAspectFit
+    searchImageView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+      pointSize: 20,
+      weight: .regular
+    )
 
     textField.translatesAutoresizingMaskIntoConstraints = false
     textField.font = AppTypography.body
@@ -119,12 +128,27 @@ final class NewTabView: UIView {
     textField.returnKeyType = .search
     textField.delegate = self
     textField.accessibilityLabel = "新标签页搜索"
+    textField.accessibilityIdentifier = "newTab.searchField"
+    textField.addTarget(
+      self,
+      action: #selector(textDidChange),
+      for: .editingChanged
+    )
 
     var buttonConfiguration = UIButton.Configuration.plain()
-    buttonConfiguration.image = UIImage(systemName: "arrow.right")
+    buttonConfiguration.image = UIImage(
+      systemName: "arrow.right",
+      withConfiguration: UIImage.SymbolConfiguration(
+        pointSize: 19,
+        weight: .semibold
+      )
+    )
+    buttonConfiguration.contentInsets = .zero
+    submitButton.translatesAutoresizingMaskIntoConstraints = false
     submitButton.configuration = buttonConfiguration
     submitButton.tintColor = AppColors.accent
     submitButton.accessibilityLabel = "打开"
+    submitButton.accessibilityIdentifier = "newTab.submit"
     submitButton.addTarget(
       self,
       action: #selector(submit),
@@ -217,8 +241,8 @@ final class NewTabView: UIView {
       searchImageView.centerYAnchor.constraint(
         equalTo: searchMaterial.contentView.centerYAnchor
       ),
-      searchImageView.widthAnchor.constraint(equalToConstant: 18),
-      searchImageView.heightAnchor.constraint(equalToConstant: 18),
+      searchImageView.widthAnchor.constraint(equalToConstant: 24),
+      searchImageView.heightAnchor.constraint(equalToConstant: 24),
       textField.leadingAnchor.constraint(
         equalTo: searchImageView.trailingAnchor,
         constant: AppSpacing.sm
@@ -243,6 +267,7 @@ final class NewTabView: UIView {
         equalToConstant: AppMetrics.minimumTapSize
       ),
     ])
+    updateSubmitButton()
     updateResolvedColors()
     registerForTraitChanges([
       UITraitUserInterfaceStyle.self,
@@ -253,18 +278,79 @@ final class NewTabView: UIView {
   }
 
   private func updateResolvedColors() {
+    let primary = isPrivateMode
+      ? UIColor.white.withAlphaComponent(0.96)
+      : AppColors.primaryText
+    let secondary = isPrivateMode
+      ? UIColor.white.withAlphaComponent(0.68)
+      : AppColors.secondaryText
+    let tertiary = isPrivateMode
+      ? UIColor.white.withAlphaComponent(0.48)
+      : AppColors.tertiaryText
+
+    titleLabel.textColor = primary
+    welcomeLabel.textColor = secondary
+    dateLabel.textColor = tertiary
+    searchImageView.tintColor = secondary
+    textField.textColor = primary
+    textField.tintColor = isPrivateMode
+      ? AppColors.privateBrowsingAccent
+      : AppColors.accent
+    textField.attributedPlaceholder = NSAttributedString(
+      string: "搜索或输入网址",
+      attributes: [.foregroundColor: secondary.withAlphaComponent(0.72)]
+    )
+    submitButton.tintColor = isPrivateMode
+      ? AppColors.privateBrowsingAccent
+      : AppColors.accent
+    searchMaterial.contentView.backgroundColor = isPrivateMode
+      ? UIColor(
+        red: 0.17,
+        green: 0.17,
+        blue: 0.20,
+        alpha: 0.62
+      )
+      : .clear
     searchMaterial.layer.borderColor = AppColors.separator
       .resolvedColor(with: traitCollection)
       .cgColor
   }
 
+  @objc private func textDidChange() {
+    updateSubmitButton()
+  }
+
+  private func updateSubmitButton() {
+    let hasText = textField.text?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .isEmpty == false
+    submitButton.alpha = hasText ? 1 : 0
+    submitButton.isUserInteractionEnabled = hasText
+    submitButton.accessibilityElementsHidden = !hasText
+  }
+
   @objc private func submit() {
-    delegate?.newTabView(self, didSubmit: textField.text ?? "")
+    let input = textField.text?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    guard !input.isEmpty else {
+      UINotificationFeedbackGenerator().notificationOccurred(.warning)
+      return
+    }
+    delegate?.newTabView(self, didSubmit: input)
     textField.resignFirstResponder()
   }
 }
 
 extension NewTabView: UITextFieldDelegate {
+  func textFieldDidBeginEditing(_ textField: UITextField) {
+    updateSubmitButton()
+    delegate?.newTabViewDidBeginEditing(self)
+  }
+
+  func textFieldDidEndEditing(_ textField: UITextField) {
+    updateSubmitButton()
+  }
+
   func textFieldShouldReturn(_ textField: UITextField) -> Bool {
     submit()
     return true

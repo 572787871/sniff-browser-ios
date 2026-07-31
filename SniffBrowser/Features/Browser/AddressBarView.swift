@@ -31,6 +31,7 @@ final class AddressBarView: UIView {
   private var isCompact = false
   private var pageThemeColor: UIColor?
   private var pageThemeForegroundStyle: BrowserChromeForegroundStyle?
+  private var isPrivateMode = false
 
   var isEditing: Bool {
     textField.isFirstResponder
@@ -89,6 +90,14 @@ final class AddressBarView: UIView {
   ) {
     pageThemeColor = theme?.uiColor
     pageThemeForegroundStyle = foregroundStyle
+    updateResolvedColors()
+    updateSecurityIcon(for: state.url)
+  }
+
+  func setPrivateMode(_ isPrivate: Bool) {
+    guard isPrivateMode != isPrivate else { return }
+    isPrivateMode = isPrivate
+    overrideUserInterfaceStyle = isPrivate ? .dark : .unspecified
     updateResolvedColors()
     updateSecurityIcon(for: state.url)
   }
@@ -255,18 +264,29 @@ final class AddressBarView: UIView {
   }
 
   private func updateResolvedColors() {
-    let foreground = pageThemeForegroundStyle?.color
+    let foreground = isPrivateMode
+      ? UIColor.white
+      : pageThemeForegroundStyle?.color
     let borderColor = foreground?.withAlphaComponent(0.16)
       ?? AppColors.separator.resolvedColor(with: traitCollection)
     materialView.layer.borderColor = borderColor.cgColor
-    materialView.contentView.backgroundColor = pageThemeColor?
-      .withAlphaComponent(
-        pageThemeForegroundStyle == .light ? 0.28 : 0.16
-      ) ?? .clear
+    if isPrivateMode {
+      materialView.contentView.backgroundColor =
+        AppColors.privateBrowsingSurface.withAlphaComponent(0.74)
+    } else {
+      materialView.contentView.backgroundColor = pageThemeColor?
+        .withAlphaComponent(
+          pageThemeForegroundStyle == .light ? 0.28 : 0.16
+        ) ?? .clear
+    }
     textField.textColor = foreground ?? AppColors.primaryText
-    textField.tintColor = foreground ?? AppColors.accent
+    textField.tintColor = isPrivateMode
+      ? AppColors.privateBrowsingAccent
+      : (foreground ?? AppColors.accent)
     trailingButton.tintColor = foreground ?? AppColors.secondaryText
-    progressView.progressTintColor = foreground ?? AppColors.accent
+    progressView.progressTintColor = isPrivateMode
+      ? AppColors.privateBrowsingAccent
+      : (foreground ?? AppColors.accent)
     if let foreground {
       textField.attributedPlaceholder = NSAttributedString(
         string: "搜索或输入网址",

@@ -133,7 +133,10 @@ final class ResourceSnifferViewController: BaseViewController {
         updateSummary()
 
         NSLayoutConstraint.activate([
-            summaryView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            summaryView.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor,
+                constant: AppSpacing.sm
+            ),
             summaryView.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
             summaryView.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor)
         ])
@@ -172,12 +175,13 @@ final class ResourceSnifferViewController: BaseViewController {
         }
 
         NSLayoutConstraint.activate([
-            filterScrollView.topAnchor.constraint(equalTo: summaryView.bottomAnchor, constant: 12),
+            filterScrollView.topAnchor.constraint(
+                equalTo: summaryView.bottomAnchor,
+                constant: AppSpacing.md
+            ),
             filterScrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             filterScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            filterScrollView.heightAnchor.constraint(
-                greaterThanOrEqualToConstant: AppMetrics.minimumTapSize
-            ),
+            filterScrollView.heightAnchor.constraint(equalToConstant: 52),
 
             filterStack.topAnchor.constraint(equalTo: filterScrollView.contentLayoutGuide.topAnchor, constant: 4),
             filterStack.leadingAnchor.constraint(equalTo: filterScrollView.contentLayoutGuide.leadingAnchor, constant: 16),
@@ -201,7 +205,10 @@ final class ResourceSnifferViewController: BaseViewController {
         contentView.addSubview(tableView)
 
         NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: filterScrollView.bottomAnchor),
+            tableView.topAnchor.constraint(
+                equalTo: filterScrollView.bottomAnchor,
+                constant: AppSpacing.xs
+            ),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
@@ -213,9 +220,16 @@ final class ResourceSnifferViewController: BaseViewController {
         contentView.addSubview(emptyState)
 
         NSLayoutConstraint.activate([
-            emptyState.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: 50),
+            emptyState.topAnchor.constraint(
+                equalTo: filterScrollView.bottomAnchor,
+                constant: AppSpacing.lg
+            ),
             emptyState.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor, constant: 12),
-            emptyState.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor, constant: -12)
+            emptyState.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor, constant: -12),
+            emptyState.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -AppSpacing.md
+            )
         ])
     }
 
@@ -393,6 +407,7 @@ extension ResourceSnifferViewController: UITableViewDataSource {
 private final class ResourcePageSummaryView: UIView {
     var onRefresh: (() -> Void)?
 
+    private let iconContainer = UIView()
     private let iconView = UIImageView(image: UIImage(systemName: "globe.asia.australia.fill"))
     private let titleLabel = UILabel()
     private let domainLabel = UILabel()
@@ -416,8 +431,10 @@ private final class ResourcePageSummaryView: UIView {
     }
 
     func setRefreshAvailable(_ isAvailable: Bool) {
-        refreshButton.isHidden = !isAvailable
+        refreshButton.alpha = isAvailable ? 1 : 0
         refreshButton.isEnabled = isAvailable
+        refreshButton.isUserInteractionEnabled = isAvailable
+        refreshButton.accessibilityElementsHidden = !isAvailable
     }
 
     private func configureView() {
@@ -426,27 +443,49 @@ private final class ResourcePageSummaryView: UIView {
         layer.cornerCurve = .continuous
         layoutMargins = UIEdgeInsets(top: 14, left: 16, bottom: 14, right: 12)
 
+        iconContainer.translatesAutoresizingMaskIntoConstraints = false
+        iconContainer.backgroundColor = AppColors.accentFill
+        iconContainer.layer.cornerRadius = AppRadius.control
+        iconContainer.layer.cornerCurve = .continuous
+
+        iconView.translatesAutoresizingMaskIntoConstraints = false
         iconView.tintColor = AppColors.accent
-        iconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 24)
-        iconView.setContentHuggingPriority(.required, for: .horizontal)
+        iconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+            pointSize: 21,
+            weight: .medium
+        )
+        iconView.contentMode = .scaleAspectFit
+        iconContainer.addSubview(iconView)
 
         titleLabel.font = UIFont.preferredFont(forTextStyle: .headline)
         titleLabel.adjustsFontForContentSizeCategory = true
-        titleLabel.numberOfLines = 1
+        titleLabel.numberOfLines = 2
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.setContentCompressionResistancePriority(
+            .defaultHigh,
+            for: .horizontal
+        )
 
         domainLabel.font = UIFont.preferredFont(forTextStyle: .caption1)
         domainLabel.adjustsFontForContentSizeCategory = true
         domainLabel.textColor = AppColors.secondaryText
+        domainLabel.numberOfLines = 1
         domainLabel.lineBreakMode = .byTruncatingMiddle
 
         countLabel.font = UIFont.preferredFont(forTextStyle: .caption1)
         countLabel.adjustsFontForContentSizeCategory = true
         countLabel.textColor = AppColors.secondaryText
+        countLabel.numberOfLines = 1
 
         let labels = UIStackView(arrangedSubviews: [titleLabel, domainLabel, countLabel])
         labels.axis = .vertical
+        labels.alignment = .fill
+        labels.distribution = .fill
         labels.spacing = 3
+        labels.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        labels.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
+        refreshButton.translatesAutoresizingMaskIntoConstraints = false
         refreshButton.setImage(UIImage(systemName: "arrow.clockwise"), for: .normal)
         refreshButton.accessibilityLabel = "重新扫描"
         refreshButton.addTarget(self, action: #selector(refreshPressed), for: .touchUpInside)
@@ -457,7 +496,9 @@ private final class ResourcePageSummaryView: UIView {
             greaterThanOrEqualToConstant: AppMetrics.minimumTapSize
         ).isActive = true
 
-        let stack = UIStackView(arrangedSubviews: [iconView, labels, refreshButton])
+        let stack = UIStackView(
+            arrangedSubviews: [iconContainer, labels, refreshButton]
+        )
         stack.axis = .horizontal
         stack.alignment = .center
         stack.spacing = 12
@@ -465,6 +506,20 @@ private final class ResourcePageSummaryView: UIView {
         addSubview(stack)
 
         NSLayoutConstraint.activate([
+            iconContainer.widthAnchor.constraint(equalToConstant: 44),
+            iconContainer.heightAnchor.constraint(equalToConstant: 44),
+            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 22),
+            iconView.heightAnchor.constraint(equalToConstant: 22),
+
+            refreshButton.widthAnchor.constraint(
+                equalToConstant: AppMetrics.minimumTapSize
+            ),
+            refreshButton.heightAnchor.constraint(
+                equalToConstant: AppMetrics.minimumTapSize
+            ),
+
             stack.topAnchor.constraint(equalTo: layoutMarginsGuide.topAnchor),
             stack.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),

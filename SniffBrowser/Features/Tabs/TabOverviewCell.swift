@@ -24,6 +24,7 @@ final class TabOverviewCell: UICollectionViewCell {
     private let titleLabel = UILabel()
     private let domainLabel = UILabel()
     private var displaysSelection = false
+    private var displaysPrivateMode = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -59,6 +60,7 @@ final class TabOverviewCell: UICollectionViewCell {
         onClose = nil
         previewImageView.image = nil
         displaysSelection = false
+        displaysPrivateMode = false
         contentView.alpha = 1
         contentView.transform = .identity
         accessibilityCustomActions = nil
@@ -70,6 +72,7 @@ final class TabOverviewCell: UICollectionViewCell {
         previewImageView.image = item.thumbnail
         placeholderImageView.isHidden = item.thumbnail != nil
         displaysSelection = item.isSelected
+        displaysPrivateMode = item.isPrivate
         selectedBadge.isHidden = !item.isSelected
         updateResolvedColors()
 
@@ -86,14 +89,48 @@ final class TabOverviewCell: UICollectionViewCell {
     }
 
     func updateResolvedColors() {
+        contentView.backgroundColor = displaysPrivateMode
+            ? AppColors.privateBrowsingSurface
+            : AppColors.surface
+        previewContainer.backgroundColor = displaysPrivateMode
+            ? UIColor(
+                red: 0.10,
+                green: 0.105,
+                blue: 0.125,
+                alpha: 1
+            )
+            : AppColors.tertiarySurface
+        titleLabel.textColor = displaysPrivateMode
+            ? UIColor.white.withAlphaComponent(0.96)
+            : AppColors.primaryText
+        domainLabel.textColor = displaysPrivateMode
+            ? UIColor.white.withAlphaComponent(0.58)
+            : AppColors.secondaryText
+        placeholderImageView.tintColor = displaysPrivateMode
+            ? UIColor.white.withAlphaComponent(0.42)
+            : AppColors.tertiaryText
+        closeButton.configuration?.baseForegroundColor = displaysPrivateMode
+            ? UIColor.white.withAlphaComponent(0.88)
+            : UIColor.label.withAlphaComponent(0.86)
+        selectedBadge.tintColor = displaysPrivateMode
+            ? AppColors.privateBrowsingAccent
+            : AppColors.accent
+        selectedBadge.backgroundColor = displaysPrivateMode
+            ? AppColors.privateBrowsingSurface
+            : AppColors.surface
         contentView.layer.borderWidth = displaysSelection
             ? 1
             : AppMetrics.separatorHeight
-        contentView.layer.borderColor = (
-            displaysSelection ? Self.selectedBorderColor : AppColors.separator
-        )
-        .resolvedColor(with: traitCollection)
-        .cgColor
+        if displaysSelection, displaysPrivateMode {
+            contentView.layer.borderColor =
+                AppColors.privateBrowsingAccent.withAlphaComponent(0.48).cgColor
+        } else {
+            contentView.layer.borderColor = (
+                displaysSelection ? Self.selectedBorderColor : AppColors.separator
+            )
+            .resolvedColor(with: traitCollection)
+            .cgColor
+        }
     }
 
     private func configureView() {

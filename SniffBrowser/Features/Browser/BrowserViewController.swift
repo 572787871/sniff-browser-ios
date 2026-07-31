@@ -223,6 +223,7 @@ final class BrowserViewController: UIViewController {
       action: #selector(contentTapped)
     )
     dismissEditingGesture.cancelsTouchesInView = false
+    dismissEditingGesture.delegate = self
     contentView.addGestureRecognizer(dismissEditingGesture)
   }
 
@@ -428,19 +429,24 @@ final class BrowserViewController: UIViewController {
     _ color: WebPageThemeColor?,
     animated: Bool
   ) {
-    let foregroundStyle = color.map {
-      ContrastColorResolver.foregroundStyle(for: $0)
-    }
+    let isPrivate = activeTab?.isPrivate == true
+    let foregroundStyle: BrowserChromeForegroundStyle? = isPrivate
+      ? .light
+      : color.map { ContrastColorResolver.foregroundStyle(for: $0) }
     pageChromeForegroundStyle = foregroundStyle
-    let resolvedBackground = color?.uiColor ?? AppColors.background
+    let resolvedBackground = isPrivate
+      ? AppColors.privateBrowsingChrome
+      : (color?.uiColor ?? AppColors.background)
 
     let changes = {
       self.view.backgroundColor = resolvedBackground
       self.topChromeBackgroundView.backgroundColor = resolvedBackground
+      self.addressBar.setPrivateMode(isPrivate)
       self.addressBar.applyPageTheme(
-        color,
+        isPrivate ? nil : color,
         foregroundStyle: foregroundStyle
       )
+      self.toolbar.setPrivateMode(isPrivate)
       self.setNeedsStatusBarAppearanceUpdate()
     }
     guard animated, !UIAccessibility.isReduceMotionEnabled else {
@@ -577,8 +583,29 @@ extension BrowserViewController: AddressBarDelegate {
 }
 
 extension BrowserViewController: NewTabViewDelegate {
+  func newTabViewDidBeginEditing(_ view: NewTabView) {
+    chromeScrollController.reset()
+    applyChromeState(.expanded, animated: true)
+  }
+
   func newTabView(_ view: NewTabView, didSubmit text: String) {
     navigate(to: text)
+  }
+}
+
+extension BrowserViewController: UIGestureRecognizerDelegate {
+  func gestureRecognizer(
+    _ gestureRecognizer: UIGestureRecognizer,
+    shouldReceive touch: UITouch
+  ) -> Bool {
+    var candidate: UIView? = touch.view
+    while let view = candidate, view !== contentView {
+      if view is UIControl || view is UITextField {
+        return false
+      }
+      candidate = view.superview
+    }
+    return true
   }
 }
 
