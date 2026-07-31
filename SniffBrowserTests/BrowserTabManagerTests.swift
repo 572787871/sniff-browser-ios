@@ -314,7 +314,7 @@ final class BrowserTabManagerTests: XCTestCase {
 
     @MainActor
     private func makeManager(
-        snapshotService: TabSnapshotProviding = SnapshotServiceStub(),
+        snapshotService: TabSnapshotProviding? = nil,
         maximumResidentWebViewCount: Int =
             BrowserTabManager.defaultMaximumResidentWebViewCount
     ) throws -> BrowserTabManager {
@@ -325,7 +325,7 @@ final class BrowserTabManagerTests: XCTestCase {
                 defaults: defaults,
                 storageKey: storageKey
             ),
-            snapshotService: snapshotService
+            snapshotService: snapshotService ?? SnapshotServiceStub()
         )
     }
 }
