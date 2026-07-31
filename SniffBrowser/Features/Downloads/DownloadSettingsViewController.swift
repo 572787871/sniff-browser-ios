@@ -26,13 +26,19 @@ final class DownloadSettingsViewModel {
     private var notificationRequestRevision = 0
 
     init(
-        preferences: DownloadPreferences = DownloadPreferences(),
-        notificationAuthorizer: DownloadNotificationAuthorizing =
-            SystemDownloadNotificationAuthorizer()
+        preferences: DownloadPreferences,
+        notificationAuthorizer: DownloadNotificationAuthorizing
     ) {
         self.preferences = preferences
         self.notificationAuthorizer = notificationAuthorizer
         state = preferences.state
+    }
+
+    convenience init() {
+        self.init(
+            preferences: DownloadPreferences(),
+            notificationAuthorizer: SystemDownloadNotificationAuthorizer()
+        )
     }
 
     func setAllowsCellularDownloads(_ enabled: Bool) {
@@ -78,6 +84,7 @@ final class DownloadSettingsViewModel {
     }
 }
 
+@MainActor
 final class DownloadSettingsViewController: BaseViewController {
     private enum Row: Int {
         case cellular
@@ -120,9 +127,13 @@ final class DownloadSettingsViewController: BaseViewController {
         )
     ]
 
-    init(viewModel: DownloadSettingsViewModel = DownloadSettingsViewModel()) {
+    init(viewModel: DownloadSettingsViewModel) {
         self.viewModel = viewModel
         super.init(title: "下载设置", prefersLargeTitle: false)
+    }
+
+    convenience init() {
+        self.init(viewModel: DownloadSettingsViewModel())
     }
 
     required init?(coder: NSCoder) {
