@@ -32,7 +32,7 @@ final class ResourceSnifferViewModel {
         self.service = service
         state = State(
             tabID: tabID,
-            pageTitle: pageTitle?.nilIfBlank ?? "新标签页",
+            pageTitle: pageTitle.nilIfBlank ?? "新标签页",
             pageURL: pageURL,
             isPrivate: isPrivate,
             resources: store.resources(for: tabID),
