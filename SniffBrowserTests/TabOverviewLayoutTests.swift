@@ -44,6 +44,20 @@ final class TabOverviewLayoutTests: XCTestCase {
         )
     }
 
+    func testTallPortraitGridCapsCardHeightWithoutChangingTwoColumnCapacity() {
+        let metrics = TabOverviewGridLayoutMetrics.resolve(
+            containerSize: CGSize(width: 430, height: 900)
+        )
+
+        XCTAssertEqual(metrics.columnCount, 2)
+        XCTAssertEqual(metrics.viewportRowCount, 2)
+        XCTAssertEqual(
+            metrics.itemSize.height,
+            TabOverviewGridLayoutMetrics.portraitMaximumItemHeight
+        )
+        XCTAssertEqual(metrics.firstViewportCapacity, 4)
+    }
+
     func testMoreThanFourPortraitTabsRequireVerticalScrolling() {
         let metrics = TabOverviewGridLayoutMetrics.resolve(
             containerSize: CGSize(width: 390, height: 640)

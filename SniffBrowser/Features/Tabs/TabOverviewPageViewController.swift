@@ -25,6 +25,7 @@ final class TabOverviewPageViewController: UIViewController {
     private lazy var dataSource = makeDataSource()
     private let emptyView: EmptyStateView
     private var pendingRestoredOffset: CGFloat?
+    private var lastLaidOutSize: CGSize = .zero
 
     init(mode: TabOverviewMode) {
         self.mode = mode
@@ -44,7 +45,19 @@ final class TabOverviewPageViewController: UIViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        let currentSize = collectionView.bounds.size
+        if currentSize.width > 0,
+           currentSize.height > 0,
+           currentSize != lastLaidOutSize {
+            lastLaidOutSize = currentSize
+            collectionView.collectionViewLayout.invalidateLayout()
+        }
         restorePendingOffsetIfPossible()
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        invalidateGridLayout()
     }
 
     var scrollOffsetY: CGFloat {
@@ -71,8 +84,10 @@ final class TabOverviewPageViewController: UIViewController {
 
     private func configureView() {
         view.backgroundColor = .clear
+        view.clipsToBounds = true
 
         collectionView.backgroundColor = .clear
+        collectionView.clipsToBounds = true
         collectionView.alwaysBounceVertical = true
         collectionView.alwaysBounceHorizontal = false
         collectionView.showsHorizontalScrollIndicator = false
@@ -117,7 +132,7 @@ final class TabOverviewPageViewController: UIViewController {
                     containerSize: environment.container.effectiveContentSize
                 )
                 let itemSize = NSCollectionLayoutSize(
-                    widthDimension: .fractionalWidth(1),
+                    widthDimension: .absolute(metrics.itemSize.width),
                     heightDimension: .absolute(metrics.itemSize.height)
                 )
                 let item = NSCollectionLayoutItem(layoutSize: itemSize)

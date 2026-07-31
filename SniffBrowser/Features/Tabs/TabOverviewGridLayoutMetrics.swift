@@ -12,6 +12,8 @@ struct TabOverviewGridLayoutMetrics: Equatable {
     static let bottomInset: CGFloat = 16
     static let landscapeFourColumnThreshold: CGFloat = 840
     static let previewHeightRatio: CGFloat = 0.69
+    static let portraitMinimumItemHeight: CGFloat = 180
+    static let portraitMaximumItemHeight: CGFloat = 340
 
     let columnCount: Int
     let itemSize: CGSize
@@ -54,13 +56,17 @@ struct TabOverviewGridLayoutMetrics: Equatable {
         )
 
         if isPortrait {
-            let itemHeight = floor(
+            let fittingItemHeight = floor(
                 (
                     availableHeight
                         - topInset
                         - bottomInset
                         - interRowSpacing
                 ) / 2
+            )
+            let itemHeight = min(
+                portraitMaximumItemHeight,
+                max(portraitMinimumItemHeight, fittingItemHeight)
             )
             return TabOverviewGridLayoutMetrics(
                 columnCount: columns,

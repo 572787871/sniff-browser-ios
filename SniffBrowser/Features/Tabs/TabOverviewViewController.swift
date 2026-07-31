@@ -36,7 +36,7 @@ final class TabOverviewViewController: BaseViewController {
     private lazy var pageViewController = UIPageViewController(
         transitionStyle: .scroll,
         navigationOrientation: .horizontal,
-        options: nil
+        options: [.interPageSpacing: NSNumber(value: 0)]
     )
 
     init(items: [TabOverviewItem]) {
@@ -171,6 +171,9 @@ final class TabOverviewViewController: BaseViewController {
         pageViewController.dataSource = self
         pageViewController.delegate = self
         pageViewController.view.backgroundColor = .clear
+        pageViewController.view.clipsToBounds = true
+        pageViewController.view.directionalLayoutMargins = .zero
+        pageViewController.view.insetsLayoutMarginsFromSafeArea = false
 
         addChild(pageViewController)
         pageViewController.view.translatesAutoresizingMaskIntoConstraints = false
@@ -202,7 +205,13 @@ final class TabOverviewViewController: BaseViewController {
             .forEach {
                 $0.isDirectionalLockEnabled = true
                 $0.showsHorizontalScrollIndicator = false
+                $0.contentInset = .zero
+                $0.scrollIndicatorInsets = .zero
+                $0.clipsToBounds = true
             }
+        pageViewController.viewControllers?.forEach {
+            $0.view.clipsToBounds = true
+        }
         contentView.bringSubviewToFront(bottomBar)
     }
 

@@ -15,7 +15,6 @@ final class TabOverviewBottomBar: UIView {
         style: .systemChromeMaterial,
         fallbackColor: AppColors.chromeFallback
     )
-    private let modeLabel = UILabel()
     private let newTabButton = UIButton(type: .system)
     private let doneButton = UIButton(type: .system)
 
@@ -48,11 +47,9 @@ final class TabOverviewBottomBar: UIView {
         materialView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(materialView)
 
-        configureModeLabel()
         configureNewTabButton()
         configureDoneButton()
 
-        materialView.contentView.addSubview(modeLabel)
         materialView.contentView.addSubview(newTabButton)
         materialView.contentView.addSubview(doneButton)
 
@@ -61,18 +58,6 @@ final class TabOverviewBottomBar: UIView {
             materialView.leadingAnchor.constraint(equalTo: leadingAnchor),
             materialView.trailingAnchor.constraint(equalTo: trailingAnchor),
             materialView.bottomAnchor.constraint(equalTo: bottomAnchor),
-
-            modeLabel.leadingAnchor.constraint(
-                equalTo: materialView.contentView.leadingAnchor,
-                constant: AppSpacing.sm
-            ),
-            modeLabel.centerYAnchor.constraint(
-                equalTo: materialView.contentView.centerYAnchor
-            ),
-            modeLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: newTabButton.leadingAnchor,
-                constant: -AppSpacing.xs
-            ),
 
             newTabButton.centerXAnchor.constraint(
                 equalTo: materialView.contentView.centerXAnchor
@@ -104,17 +89,6 @@ final class TabOverviewBottomBar: UIView {
 
         updateMode()
         updateResolvedColors()
-    }
-
-    private func configureModeLabel() {
-        AppTypography.configure(modeLabel, style: .subheadline, weight: .medium)
-        modeLabel.textColor = AppColors.secondaryText
-        modeLabel.setContentHuggingPriority(.required, for: .horizontal)
-        modeLabel.setContentCompressionResistancePriority(
-            .required,
-            for: .horizontal
-        )
-        modeLabel.translatesAutoresizingMaskIntoConstraints = false
     }
 
     private func configureNewTabButton() {
@@ -160,7 +134,6 @@ final class TabOverviewBottomBar: UIView {
     }
 
     private func updateMode() {
-        modeLabel.text = mode.title
         newTabButton.accessibilityLabel = mode.isPrivate
             ? "新建无痕标签页"
             : "新建普通标签页"

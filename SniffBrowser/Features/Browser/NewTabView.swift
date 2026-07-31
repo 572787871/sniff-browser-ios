@@ -63,7 +63,12 @@ final class NewTabView: UIView {
     titleLabel.font = AppTypography.title
     titleLabel.textColor = AppColors.primaryText
     titleLabel.textAlignment = .center
+    titleLabel.numberOfLines = 1
     titleLabel.adjustsFontForContentSizeCategory = true
+    titleLabel.setContentCompressionResistancePriority(
+      .required,
+      for: .horizontal
+    )
 
     welcomeLabel.translatesAutoresizingMaskIntoConstraints = false
     welcomeLabel.text = "从一次安静、专注的浏览开始"
@@ -72,6 +77,10 @@ final class NewTabView: UIView {
     welcomeLabel.textAlignment = .center
     welcomeLabel.numberOfLines = 0
     welcomeLabel.adjustsFontForContentSizeCategory = true
+    welcomeLabel.setContentCompressionResistancePriority(
+      .defaultHigh,
+      for: .horizontal
+    )
 
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "zh_CN")
@@ -81,7 +90,12 @@ final class NewTabView: UIView {
     dateLabel.font = AppTypography.caption
     dateLabel.textColor = AppColors.tertiaryText
     dateLabel.textAlignment = .center
+    dateLabel.numberOfLines = 1
     dateLabel.adjustsFontForContentSizeCategory = true
+    dateLabel.setContentCompressionResistancePriority(
+      .required,
+      for: .horizontal
+    )
 
     searchMaterial.translatesAutoresizingMaskIntoConstraints = false
     searchMaterial.layer.cornerRadius = AppRadius.input
@@ -151,11 +165,6 @@ final class NewTabView: UIView {
       equalTo: scrollView.frameLayoutGuide.heightAnchor
     )
     viewportHeightConstraint.priority = .defaultLow
-    let preferredWidthConstraint = contentStack.widthAnchor.constraint(
-      equalTo: contentContainer.widthAnchor,
-      constant: -(AppSpacing.xl * 2)
-    )
-    preferredWidthConstraint.priority = .defaultHigh
     NSLayoutConstraint.activate([
       scrollView.topAnchor.constraint(equalTo: topAnchor),
       scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -182,7 +191,6 @@ final class NewTabView: UIView {
       ),
       viewportHeightConstraint,
 
-      contentStack.centerXAnchor.constraint(equalTo: contentContainer.centerXAnchor),
       centerConstraint,
       contentStack.topAnchor.constraint(
         greaterThanOrEqualTo: contentContainer.topAnchor,
@@ -193,16 +201,12 @@ final class NewTabView: UIView {
         constant: -AppSpacing.xl
       ),
       contentStack.leadingAnchor.constraint(
-        greaterThanOrEqualTo: contentContainer.leadingAnchor,
+        equalTo: contentContainer.leadingAnchor,
         constant: AppSpacing.xl
       ),
       contentStack.trailingAnchor.constraint(
-        lessThanOrEqualTo: contentContainer.trailingAnchor,
+        equalTo: contentContainer.trailingAnchor,
         constant: -AppSpacing.xl
-      ),
-      preferredWidthConstraint,
-      contentStack.widthAnchor.constraint(
-        lessThanOrEqualToConstant: AppMetrics.maximumReadableWidth
       ),
 
       searchMaterial.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),

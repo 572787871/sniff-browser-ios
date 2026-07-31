@@ -403,29 +403,136 @@ private final class DownloadSettingToggleCell: UITableViewCell {
 }
 
 private final class DownloadSettingStepperCell: UITableViewCell {
+    private let iconContainer = UIView()
+    private let iconView = UIImageView()
+    private let titleLabel = UILabel()
+    private let subtitleLabel = UILabel()
+    private let textStack = UIStackView()
     private let valueLabel = UILabel()
     private let stepper = UIStepper()
-    private let accessoryStack = UIStackView()
+    private let controlStack = UIStackView()
     private var onChange: ((Int) -> Void)?
 
     init(reuseIdentifier: String) {
         super.init(style: .default, reuseIdentifier: reuseIdentifier)
         selectionStyle = .none
 
+        iconContainer.backgroundColor = AppColors.accentFill
+        iconContainer.layer.cornerRadius = AppRadius.control
+        iconContainer.layer.cornerCurve = .continuous
+        iconContainer.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(iconContainer)
+
+        iconView.tintColor = AppColors.accent
+        iconView.contentMode = .scaleAspectFit
+        iconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+            pointSize: 22,
+            weight: .regular
+        )
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconContainer.addSubview(iconView)
+
+        AppTypography.configure(titleLabel, style: .body, weight: .regular)
+        titleLabel.textColor = AppColors.primaryText
+        titleLabel.numberOfLines = 0
+        titleLabel.lineBreakMode = .byWordWrapping
+        titleLabel.setContentCompressionResistancePriority(
+            .defaultHigh,
+            for: .horizontal
+        )
+
+        AppTypography.configure(subtitleLabel, style: .caption1)
+        subtitleLabel.textColor = AppColors.secondaryText
+        subtitleLabel.numberOfLines = 1
+        subtitleLabel.lineBreakMode = .byTruncatingTail
+        subtitleLabel.setContentCompressionResistancePriority(
+            .defaultLow,
+            for: .horizontal
+        )
+
+        textStack.axis = .vertical
+        textStack.alignment = .fill
+        textStack.distribution = .fill
+        textStack.spacing = AppSpacing.xxs
+        textStack.addArrangedSubview(titleLabel)
+        textStack.addArrangedSubview(subtitleLabel)
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(textStack)
+
         AppTypography.configure(valueLabel, style: .headline, weight: .semibold)
         valueLabel.textColor = AppColors.primaryText
         valueLabel.textAlignment = .center
-        valueLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 24).isActive = true
+        valueLabel.setContentHuggingPriority(.required, for: .horizontal)
+        valueLabel.setContentCompressionResistancePriority(
+            .required,
+            for: .horizontal
+        )
 
         stepper.stepValue = 1
         stepper.addTarget(self, action: #selector(stepperChanged), for: .valueChanged)
+        stepper.setContentHuggingPriority(.required, for: .horizontal)
+        stepper.setContentCompressionResistancePriority(
+            .required,
+            for: .horizontal
+        )
 
-        accessoryStack.axis = .horizontal
-        accessoryStack.alignment = .center
-        accessoryStack.spacing = AppSpacing.xs
-        accessoryStack.addArrangedSubview(valueLabel)
-        accessoryStack.addArrangedSubview(stepper)
-        accessoryView = accessoryStack
+        controlStack.axis = .horizontal
+        controlStack.alignment = .center
+        controlStack.distribution = .fill
+        controlStack.spacing = AppSpacing.xs
+        controlStack.addArrangedSubview(valueLabel)
+        controlStack.addArrangedSubview(stepper)
+        controlStack.setContentHuggingPriority(.required, for: .horizontal)
+        controlStack.setContentCompressionResistancePriority(
+            .required,
+            for: .horizontal
+        )
+        controlStack.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(controlStack)
+
+        let margins = contentView.layoutMarginsGuide
+        NSLayoutConstraint.activate([
+            iconContainer.leadingAnchor.constraint(equalTo: margins.leadingAnchor),
+            iconContainer.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            iconContainer.topAnchor.constraint(
+                greaterThanOrEqualTo: contentView.topAnchor,
+                constant: AppSpacing.md
+            ),
+            iconContainer.bottomAnchor.constraint(
+                lessThanOrEqualTo: contentView.bottomAnchor,
+                constant: -AppSpacing.md
+            ),
+            iconContainer.widthAnchor.constraint(equalToConstant: 44),
+            iconContainer.heightAnchor.constraint(equalToConstant: 44),
+
+            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 23),
+            iconView.heightAnchor.constraint(equalToConstant: 23),
+
+            textStack.leadingAnchor.constraint(
+                equalTo: iconContainer.trailingAnchor,
+                constant: AppSpacing.sm
+            ),
+            textStack.topAnchor.constraint(
+                greaterThanOrEqualTo: contentView.topAnchor,
+                constant: AppSpacing.xs
+            ),
+            textStack.bottomAnchor.constraint(
+                lessThanOrEqualTo: contentView.bottomAnchor,
+                constant: -AppSpacing.xs
+            ),
+            textStack.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+
+            controlStack.leadingAnchor.constraint(
+                greaterThanOrEqualTo: textStack.trailingAnchor,
+                constant: AppSpacing.xs
+            ),
+            controlStack.trailingAnchor.constraint(equalTo: margins.trailingAnchor),
+            controlStack.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+
+            valueLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 24)
+        ])
     }
 
     required init?(coder: NSCoder) {
@@ -442,20 +549,14 @@ private final class DownloadSettingStepperCell: UITableViewCell {
         onChange: @escaping (Int) -> Void
     ) {
         self.onChange = onChange
+        iconView.image = UIImage(systemName: symbol)
+        titleLabel.text = title
+        subtitleLabel.text = subtitle
         stepper.minimumValue = Double(range.lowerBound)
         stepper.maximumValue = Double(range.upperBound)
         stepper.value = Double(value)
         stepper.accessibilityIdentifier = "\(accessibilityIdentifier).stepper"
         valueLabel.text = "\(value)"
-
-        var configuration = UIListContentConfiguration.subtitleCell()
-        configuration.text = title
-        configuration.secondaryText = subtitle
-        configuration.image = UIImage(systemName: symbol)
-        configuration.imageProperties.tintColor = AppColors.accent
-        configuration.textProperties.color = AppColors.primaryText
-        configuration.secondaryTextProperties.color = AppColors.secondaryText
-        contentConfiguration = configuration
 
         self.accessibilityIdentifier = accessibilityIdentifier
         accessibilityLabel = title
