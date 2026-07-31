@@ -115,7 +115,7 @@ final class DownloadSettingsRoutingTests: XCTestCase {
             return control
         }
         return view.subviews.lazy.compactMap {
-            findControl(
+            self.findControl(
                 accessibilityIdentifier: accessibilityIdentifier,
                 in: $0
             )
@@ -127,6 +127,8 @@ final class DownloadSettingsRoutingTests: XCTestCase {
         if let tableView = view as? UITableView {
             return tableView
         }
-        return view.subviews.lazy.compactMap(findTableView(in:)).first
+        return view.subviews.lazy.compactMap {
+            self.findTableView(in: $0)
+        }.first
     }
 }
