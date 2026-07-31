@@ -42,6 +42,13 @@ extension BrowserViewController: WKNavigationDelegate {
     didStartProvisionalNavigation navigation: WKNavigation?
   ) {
     resetPageTheme(for: webView)
+    if let tab = tabManager.tabs.first(where: { $0.webView === webView }) {
+      resourceSniffingService.beginNavigation(
+        tabID: tab.id,
+        pageURL: lastRequestedURLs[tab.id] ?? webView.url ?? tab.url,
+        isPrivate: tab.isPrivate
+      )
+    }
     guard webView === activeWebView else { return }
     errorView.isHidden = true
     chromeScrollController.reset()
@@ -53,6 +60,12 @@ extension BrowserViewController: WKNavigationDelegate {
     didCommit navigation: WKNavigation?
   ) {
     WebPageThemeColorService.requestCurrentTheme(in: webView)
+    if let tab = tabManager.tabs.first(where: { $0.webView === webView }) {
+      resourceSniffingService.requestIncrementalScan(
+        tabID: tab.id,
+        reason: "didCommit"
+      )
+    }
   }
 
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation?) {
@@ -67,12 +80,31 @@ extension BrowserViewController: WKNavigationDelegate {
       url: webView.url
     )
     WebPageThemeColorService.requestCurrentTheme(in: webView)
+    resourceSniffingService.requestIncrementalScan(
+      tabID: tab.id,
+      reason: "didFinish"
+    )
     if webView === activeWebView {
       synchronizeActiveState()
       Task { [weak self] in
         await self?.tabManager.captureSnapshot(for: tab.id)
       }
     }
+  }
+
+  func webView(
+    _ webView: WKWebView,
+    decidePolicyFor navigationResponse: WKNavigationResponse,
+    decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+  ) {
+    if let tab = tabManager.tabs.first(where: { $0.webView === webView }) {
+      resourceSniffingService.captureNavigationResponse(
+        tabID: tab.id,
+        response: navigationResponse.response,
+        pageTitle: webView.title
+      )
+    }
+    decisionHandler(.allow)
   }
 
   func webView(
@@ -130,26 +162,36 @@ extension BrowserViewController: WKScriptMessageHandler {
     _ userContentController: WKUserContentController,
     didReceive message: WKScriptMessage
   ) {
-    guard message.name == WebPageThemeColorService.messageHandlerName,
-          message.frameInfo.isMainFrame,
+    guard message.frameInfo.isMainFrame,
           let webView = message.webView,
           let tab = tabManager.tabs.first(where: { $0.webView === webView })
     else {
       return
     }
 
-    let candidates: [String]
-    if let array = message.body as? [String] {
-      candidates = array
-    } else if let value = message.body as? String {
-      candidates = [value]
-    } else {
-      candidates = []
+    if message.name == ResourceSniffingScriptProvider.messageHandlerName {
+      resourceSniffingService.handleMessageBody(
+        message.body,
+        tabID: tab.id,
+        isPrivate: tab.isPrivate
+      )
+      return
     }
-    let color = WebPageThemeColorParser.firstUsable(in: candidates)
-    tab.updatePageThemeColor(color)
-    if webView === activeWebView {
-      applyPageTheme(color, animated: true)
+
+    if message.name == WebPageThemeColorService.messageHandlerName {
+      let candidates: [String]
+      if let array = message.body as? [String] {
+        candidates = array
+      } else if let value = message.body as? String {
+        candidates = [value]
+      } else {
+        candidates = []
+      }
+      let color = WebPageThemeColorParser.firstUsable(in: candidates)
+      tab.updatePageThemeColor(color)
+      if webView === activeWebView {
+        applyPageTheme(color, animated: true)
+      }
     }
   }
 }

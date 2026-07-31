@@ -14,6 +14,7 @@ final class BrowserTabManager {
     private(set) var selectedTabID: UUID?
 
     var onTabsChanged: (() -> Void)?
+    var onTabClosed: ((UUID) -> Void)?
 
     private let maximumTabCount: Int
     private let maximumResidentWebViewCount: Int
@@ -110,6 +111,7 @@ final class BrowserTabManager {
         let wasSelected = selectedTabID == id
         let closedTab = tabs.remove(at: index)
         snapshotService.removeSnapshot(for: closedTab.id)
+        onTabClosed?(closedTab.id)
 
         var replacementNormalTab: BrowserTab?
         if !closedTab.isPrivate, !tabs.contains(where: { !$0.isPrivate }) {

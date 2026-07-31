@@ -13,6 +13,9 @@ enum BrowserConfiguration {
     configuration.userContentController.addUserScript(
       WebPageThemeColorService.userScript
     )
+    configuration.userContentController.addUserScript(
+      ResourceSniffingScriptProvider.userScript
+    )
     return configuration
   }
 }

@@ -38,9 +38,7 @@ final class AppCoordinator: NSObject, BrowserRouting {
     window.makeKeyAndVisible()
   }
 
-  func showResources(pageTitle: String, pageURL: URL?) {
-    let controller = ResourceSnifferViewController()
-    controller.configurePage(title: pageTitle, url: pageURL)
+  func showResources(_ controller: ResourceSnifferViewController) {
     let navigation = sheetNavigation(root: controller)
     controller.onReturnToPage = { [weak navigation] in
       navigation?.dismiss(animated: true)

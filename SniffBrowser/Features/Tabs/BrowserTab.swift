@@ -25,6 +25,9 @@ final class BrowserTab: Identifiable {
     private(set) var estimatedProgress = 0.0
     private(set) var isLoading = false
     private(set) var pageThemeColor: WebPageThemeColor?
+    private(set) var detectedResourceCount = 0
+    private(set) var lastResourceScanAt: Date?
+    private(set) var resourceScanState: ResourceScanState = .idle
 
     private let webViewFactory: WebViewFactory
 
@@ -103,6 +106,16 @@ final class BrowserTab: Identifiable {
 
     func updatePageThemeColor(_ color: WebPageThemeColor?) {
         pageThemeColor = color
+    }
+
+    func updateResourceSummary(
+        count: Int,
+        scanState: ResourceScanState,
+        lastScanAt: Date?
+    ) {
+        detectedResourceCount = max(0, count)
+        resourceScanState = scanState
+        lastResourceScanAt = lastScanAt
     }
 
     private func synchronizeNavigationState() {

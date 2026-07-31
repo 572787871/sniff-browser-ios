@@ -3,7 +3,7 @@ import WebKit
 
 @MainActor
 protocol BrowserRouting: AnyObject {
-  func showResources(pageTitle: String, pageURL: URL?)
+  func showResources(_ controller: ResourceSnifferViewController)
   func showTabs(_ controller: TabOverviewViewController)
   func returnToBrowser()
   func showFavorites()
@@ -21,6 +21,8 @@ final class BrowserViewController: UIViewController {
   let viewModel: BrowserViewModel
   let tabManager: BrowserTabManager
   let favoriteService: FavoriteService
+  let resourceStore: TabResourceStore
+  let resourceSniffingService: WebResourceSniffingService
   let addressBar = AddressBarView()
   let toolbar = BrowserToolbar(frame: .zero)
   let contentView = UIView()
@@ -36,6 +38,7 @@ final class BrowserViewController: UIViewController {
   weak var tabOverviewController: TabOverviewViewController?
   var pageChromeForegroundStyle: BrowserChromeForegroundStyle?
   private var lifecycleObservers: [NSObjectProtocol] = []
+  private var activeResourceObservationToken: UUID?
 
   var activeTab: BrowserTab? {
     tabManager.selectedTab
@@ -48,11 +51,17 @@ final class BrowserViewController: UIViewController {
   init(
     viewModel: BrowserViewModel? = nil,
     tabManager: BrowserTabManager? = nil,
-    favoriteService: FavoriteService = .shared
+    favoriteService: FavoriteService = .shared,
+    resourceStore: TabResourceStore? = nil
   ) {
+    let resolvedResourceStore = resourceStore ?? TabResourceStore()
     self.viewModel = viewModel ?? BrowserViewModel()
     self.tabManager = tabManager ?? BrowserTabManager()
     self.favoriteService = favoriteService
+    self.resourceStore = resolvedResourceStore
+    resourceSniffingService = WebResourceSniffingService(
+      store: resolvedResourceStore
+    )
     super.init(nibName: nil, bundle: nil)
   }
 
@@ -60,6 +69,11 @@ final class BrowserViewController: UIViewController {
     viewModel = BrowserViewModel()
     tabManager = BrowserTabManager()
     favoriteService = .shared
+    let resolvedResourceStore = TabResourceStore()
+    resourceStore = resolvedResourceStore
+    resourceSniffingService = WebResourceSniffingService(
+      store: resolvedResourceStore
+    )
     super.init(coder: coder)
   }
 
@@ -247,6 +261,9 @@ final class BrowserViewController: UIViewController {
       )
       self.refreshTabOverview()
     }
+    tabManager.onTabClosed = { [weak self] tabID in
+      self?.resourceSniffingService.tabClosed(tabID: tabID)
+    }
   }
 
   private func configureLifecycleObservers() {
@@ -284,6 +301,20 @@ final class BrowserViewController: UIViewController {
       WeakScriptMessageHandler(delegate: self),
       name: WebPageThemeColorService.messageHandlerName
     )
+    userContentController.removeScriptMessageHandler(
+      forName: ResourceSniffingScriptProvider.messageHandlerName
+    )
+    userContentController.add(
+      WeakScriptMessageHandler(delegate: self),
+      name: ResourceSniffingScriptProvider.messageHandlerName
+    )
+    if let tab = tabManager.tabs.first(where: { $0.webView === webView }) {
+      resourceSniffingService.register(
+        tabID: tab.id,
+        webView: webView,
+        isPrivate: tab.isPrivate
+      )
+    }
 
     if webView.scrollView.refreshControl == nil {
       let refreshControl = UIRefreshControl()
@@ -300,6 +331,8 @@ final class BrowserViewController: UIViewController {
 
   func attachSelectedTab() {
     observations.removeAll()
+    resourceStore.removeObserver(activeResourceObservationToken)
+    activeResourceObservationToken = nil
     contentView.subviews.compactMap { $0 as? WKWebView }.forEach {
       $0.removeFromSuperview()
     }
@@ -309,6 +342,21 @@ final class BrowserViewController: UIViewController {
     guard let webView = tab.webView else { return }
     applyPageTheme(tab.pageThemeColor, animated: false)
     configureWebView(webView)
+    activeResourceObservationToken = resourceStore.observe(tabID: tab.id) {
+      [weak self, weak tab] snapshot in
+      guard let self, let tab else { return }
+      tab.updateResourceSummary(
+        count: snapshot.resources.count,
+        scanState: snapshot.scanState,
+        lastScanAt: snapshot.lastScanAt
+      )
+      guard self.activeTab?.id == snapshot.tabID else { return }
+      self.toolbar.setSnifferState(
+        resourceCount: snapshot.resources.count,
+        isScanning: snapshot.scanState == .installing
+          || snapshot.scanState == .scanning
+      )
+    }
     webView.translatesAutoresizingMaskIntoConstraints = false
     contentView.insertSubview(webView, at: 0)
     NSLayoutConstraint.activate([
@@ -621,10 +669,17 @@ extension BrowserViewController: BrowserToolbarDelegate {
     case .forward:
       activeWebView?.goForward()
     case .sniff:
-      router?.showResources(
-        pageTitle: viewModel.state.title,
-        pageURL: viewModel.state.url
+      guard let tab = activeTab else { return }
+      let viewModel = ResourceSnifferViewModel(
+        tabID: tab.id,
+        pageTitle: self.viewModel.state.title,
+        pageURL: self.viewModel.state.url,
+        isPrivate: tab.isPrivate,
+        store: resourceStore,
+        service: resourceSniffingService
       )
+      let controller = ResourceSnifferViewController(viewModel: viewModel)
+      router?.showResources(controller)
     case .tabs:
       showTabs()
     case .more:

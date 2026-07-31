@@ -7,7 +7,7 @@ final class SettingsViewController: BaseViewController {
         ) as? String {
             return version
         }
-        return "0.3.0"
+        return "0.4.0"
     }
 
     enum Destination {

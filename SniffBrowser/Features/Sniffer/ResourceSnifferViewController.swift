@@ -1,24 +1,7 @@
 import UIKit
 
 final class ResourceSnifferViewController: BaseViewController {
-    var onReturnToPage: (() -> Void)? {
-        didSet { updateAvailableActionsIfNeeded() }
-    }
-    var sniffingService: ResourceSniffingService? {
-        didSet {
-            updateAvailableActionsIfNeeded()
-        }
-    }
-    var onPreviewResource: ((DetectedResource) -> Void)? {
-        didSet {
-            updateAvailableActionsIfNeeded()
-        }
-    }
-    var onDownloadResource: ((DetectedResource) -> Void)? {
-        didSet {
-            updateAvailableActionsIfNeeded()
-        }
-    }
+    var onReturnToPage: (() -> Void)?
 
     private enum Filter: Int, CaseIterable {
         case all
@@ -27,6 +10,7 @@ final class ResourceSnifferViewController: BaseViewController {
         case hls
         case image
         case document
+        case subtitle
         case other
 
         var title: String {
@@ -37,6 +21,7 @@ final class ResourceSnifferViewController: BaseViewController {
             case .hls: return "HLS"
             case .image: return "图片"
             case .document: return "文档"
+            case .subtitle: return "字幕"
             case .other: return "其他"
             }
         }
@@ -49,96 +34,106 @@ final class ResourceSnifferViewController: BaseViewController {
             case .hls: return type == .hls
             case .image: return type == .image
             case .document: return type == .document
+            case .subtitle: return type == .subtitle
             case .other: return type == .archive || type == .other
             }
         }
     }
 
-    private var pageTitle: String?
-    private var pageURL: URL?
+    private let viewModel: ResourceSnifferViewModel
     private var resources: [DetectedResource] = []
     private var selectedFilter = Filter.all
     private var scanTask: Task<Void, Never>?
-    private var activeScanID: UUID?
+    private var scanState: ResourceScanState = .idle
+    private var errorMessage: String?
 
     private let summaryView = ResourcePageSummaryView()
     private let filterScrollView = UIScrollView()
     private let filterStack = UIStackView()
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
     private lazy var emptyState = EmptyStateView(
-        configuration: .init(
-            symbolName: "dot.radiowaves.left.and.right",
-            title: "暂未发现可下载资源",
-            message: "尝试播放网页中的视频或音频，然后重新扫描当前页面。",
-            actionTitle: "重新扫描",
-            secondaryActionTitle: "返回网页继续播放"
-        ),
+        configuration: emptyStateConfiguration,
         action: { [weak self] in self?.refreshResources() },
         secondaryAction: { [weak self] in self?.onReturnToPage?() }
     )
     private let loadingIndicator = UIActivityIndicatorView(style: .medium)
 
-    init() {
+    init(viewModel: ResourceSnifferViewModel) {
+        self.viewModel = viewModel
         super.init(title: "当前页面资源", prefersLargeTitle: false)
     }
 
     required init?(coder: NSCoder) {
-        super.init(coder: coder)
+        return nil
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        configureNavigation()
         configureSummary()
         configureFilters()
         configureTable()
         configureEmptyState()
-        updateContent()
-        updateAvailableActions()
-    }
-
-    func configurePage(title: String?, url: URL?) {
-        pageTitle = title
-        pageURL = url
-        guard isViewLoaded else { return }
-        updateSummary()
-    }
-
-    func update(resources: [DetectedResource]) {
-        self.resources = resources.sorted { $0.detectedAt > $1.detectedAt }
-        guard isViewLoaded else { return }
-        updateContent()
+        bindViewModel()
+        viewModel.start()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        if isBeingDismissed || isMovingFromParent {
-            scanTask?.cancel()
-            activeScanID = nil
+        guard isBeingDismissed
+            || navigationController?.isBeingDismissed == true
+            || isMovingFromParent
+        else {
+            return
         }
+        scanTask?.cancel()
+        viewModel.stop()
     }
 
     private var filteredResources: [DetectedResource] {
         resources.filter { selectedFilter.includes($0.resourceType) }
     }
 
-    private func configureNavigation() {
-        restoreRefreshButton()
+    private var emptyStateConfiguration: EmptyStateView.Configuration {
+        let isFailed = scanState == .failed
+        return .init(
+            symbolName: isFailed
+                ? "exclamationmark.arrow.triangle.2.circlepath"
+                : "dot.radiowaves.left.and.right",
+            title: isFailed ? "资源扫描失败" : "暂未发现资源",
+            message: isFailed
+                ? (errorMessage ?? "请确认网页已完成加载后重新扫描。")
+                : "尝试播放网页中的视频或音频，然后重新扫描当前页面。",
+            actionTitle: scanState == .scanning ? nil : "重新扫描",
+            secondaryActionTitle: "返回网页继续播放"
+        )
+    }
+
+    private func bindViewModel() {
+        viewModel.onStateChange = { [weak self] state in
+            guard let self else { return }
+            self.resources = state.resources
+            self.scanState = state.scanState
+            self.errorMessage = state.errorMessage
+            self.updateContent(state: state)
+        }
     }
 
     private func configureSummary() {
         summaryView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(summaryView)
         summaryView.onRefresh = { [weak self] in self?.refreshResources() }
-        updateSummary()
 
         NSLayoutConstraint.activate([
             summaryView.topAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.topAnchor,
                 constant: AppSpacing.sm
             ),
-            summaryView.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            summaryView.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor)
+            summaryView.leadingAnchor.constraint(
+                equalTo: view.layoutMarginsGuide.leadingAnchor
+            ),
+            summaryView.trailingAnchor.constraint(
+                equalTo: view.layoutMarginsGuide.trailingAnchor
+            )
         ])
     }
 
@@ -149,28 +144,12 @@ final class ResourceSnifferViewController: BaseViewController {
         contentView.addSubview(filterScrollView)
 
         filterStack.axis = .horizontal
-        filterStack.spacing = 8
+        filterStack.spacing = AppSpacing.xs
         filterStack.translatesAutoresizingMaskIntoConstraints = false
         filterScrollView.addSubview(filterStack)
 
         for filter in Filter.allCases {
-            var configuration = UIButton.Configuration.tinted()
-            configuration.title = filter.title
-            configuration.cornerStyle = .capsule
-            configuration.baseForegroundColor = filter == selectedFilter ? .white : AppColors.primaryText
-            configuration.baseBackgroundColor = filter == selectedFilter
-                ? AppColors.accent
-                : AppColors.progressTrack
-            configuration.contentInsets = NSDirectionalEdgeInsets(
-                top: 7,
-                leading: 14,
-                bottom: 7,
-                trailing: 14
-            )
-            let button = UIButton(configuration: configuration)
-            button.tag = filter.rawValue
-            button.accessibilityLabel = "\(filter.title)资源"
-            button.addTarget(self, action: #selector(filterPressed(_:)), for: .touchUpInside)
+            let button = makeFilterButton(filter)
             filterStack.addArrangedSubview(button)
         }
 
@@ -183,19 +162,55 @@ final class ResourceSnifferViewController: BaseViewController {
             filterScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             filterScrollView.heightAnchor.constraint(equalToConstant: 52),
 
-            filterStack.topAnchor.constraint(equalTo: filterScrollView.contentLayoutGuide.topAnchor, constant: 4),
-            filterStack.leadingAnchor.constraint(equalTo: filterScrollView.contentLayoutGuide.leadingAnchor, constant: 16),
-            filterStack.trailingAnchor.constraint(equalTo: filterScrollView.contentLayoutGuide.trailingAnchor, constant: -16),
-            filterStack.bottomAnchor.constraint(equalTo: filterScrollView.contentLayoutGuide.bottomAnchor, constant: -4),
-            filterStack.heightAnchor.constraint(equalTo: filterScrollView.frameLayoutGuide.heightAnchor, constant: -8)
+            filterStack.topAnchor.constraint(
+                equalTo: filterScrollView.contentLayoutGuide.topAnchor,
+                constant: AppSpacing.xxs
+            ),
+            filterStack.leadingAnchor.constraint(
+                equalTo: filterScrollView.contentLayoutGuide.leadingAnchor,
+                constant: AppSpacing.md
+            ),
+            filterStack.trailingAnchor.constraint(
+                equalTo: filterScrollView.contentLayoutGuide.trailingAnchor,
+                constant: -AppSpacing.md
+            ),
+            filterStack.bottomAnchor.constraint(
+                equalTo: filterScrollView.contentLayoutGuide.bottomAnchor,
+                constant: -AppSpacing.xxs
+            ),
+            filterStack.heightAnchor.constraint(
+                equalTo: filterScrollView.frameLayoutGuide.heightAnchor,
+                constant: -AppSpacing.xs
+            )
         ])
+    }
+
+    private func makeFilterButton(_ filter: Filter) -> UIButton {
+        var configuration = UIButton.Configuration.tinted()
+        configuration.title = filter.title
+        configuration.cornerStyle = .capsule
+        configuration.contentInsets = NSDirectionalEdgeInsets(
+            top: 7,
+            leading: 14,
+            bottom: 7,
+            trailing: 14
+        )
+        let button = UIButton(configuration: configuration)
+        button.tag = filter.rawValue
+        button.accessibilityLabel = "\(filter.title)资源"
+        button.addTarget(
+            self,
+            action: #selector(filterPressed(_:)),
+            for: .touchUpInside
+        )
+        return button
     }
 
     private func configureTable() {
         tableView.backgroundColor = .clear
         tableView.separatorStyle = .none
         tableView.rowHeight = UITableView.automaticDimension
-        tableView.estimatedRowHeight = 112
+        tableView.estimatedRowHeight = 118
         tableView.register(
             ResourceListCell.self,
             forCellReuseIdentifier: ResourceListCell.reuseIdentifier
@@ -218,14 +233,19 @@ final class ResourceSnifferViewController: BaseViewController {
     private func configureEmptyState() {
         emptyState.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(emptyState)
-
         NSLayoutConstraint.activate([
             emptyState.topAnchor.constraint(
                 equalTo: filterScrollView.bottomAnchor,
                 constant: AppSpacing.lg
             ),
-            emptyState.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor, constant: 12),
-            emptyState.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor, constant: -12),
+            emptyState.leadingAnchor.constraint(
+                equalTo: view.layoutMarginsGuide.leadingAnchor,
+                constant: AppSpacing.sm
+            ),
+            emptyState.trailingAnchor.constraint(
+                equalTo: view.layoutMarginsGuide.trailingAnchor,
+                constant: -AppSpacing.sm
+            ),
             emptyState.bottomAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.bottomAnchor,
                 constant: -AppSpacing.md
@@ -233,122 +253,146 @@ final class ResourceSnifferViewController: BaseViewController {
         ])
     }
 
-    private func updateSummary() {
+    private func updateContent(state: ResourceSnifferViewModel.State) {
+        let isScanning = state.scanState == .installing
+            || state.scanState == .scanning
         summaryView.configure(
-            title: pageTitle ?? "新标签页",
-            domain: pageURL?.host ?? "尚未打开网页",
-            resourceCount: resources.count
+            title: state.pageTitle,
+            domain: state.pageURL?.host ?? "尚未打开网页",
+            resourceCount: resources.count,
+            scanState: state.scanState,
+            isPrivate: state.isPrivate
         )
-    }
-
-    private func updateContent() {
-        loadingIndicator.stopAnimating()
+        summaryView.setRefreshAvailable(!isScanning && state.pageURL != nil)
         tableView.reloadData()
         let isEmpty = filteredResources.isEmpty
         tableView.isHidden = isEmpty
         emptyState.isHidden = !isEmpty
-        updateSummary()
-        updateFilterButtons()
-    }
-
-    private func updateAvailableActionsIfNeeded() {
-        guard isViewLoaded else { return }
-        updateAvailableActions()
-    }
-
-    private func updateAvailableActions() {
-        let canScan = sniffingService != nil
-        summaryView.setRefreshAvailable(canScan)
-        restoreRefreshButton()
         emptyState.configure(
-            .init(
-                symbolName: "dot.radiowaves.left.and.right",
-                title: "暂未发现可下载资源",
-                message: "尝试播放网页中的视频或音频，然后重新扫描当前页面。",
-                actionTitle: canScan ? "重新扫描" : nil,
-                secondaryActionTitle: "返回网页继续播放"
-            ),
-            action: canScan ? { [weak self] in self?.refreshResources() } : nil,
+            emptyStateConfiguration,
+            action: isScanning ? nil : { [weak self] in
+                self?.refreshResources()
+            },
             secondaryAction: onReturnToPage
         )
-        tableView.reloadData()
+        updateFilterButtons()
+        updateRefreshButton(isScanning: isScanning)
+    }
+
+    private func updateRefreshButton(isScanning: Bool) {
+        if isScanning {
+            loadingIndicator.startAnimating()
+            navigationItem.rightBarButtonItem = UIBarButtonItem(
+                customView: loadingIndicator
+            )
+        } else {
+            loadingIndicator.stopAnimating()
+            navigationItem.rightBarButtonItem = UIBarButtonItem(
+                image: UIImage(systemName: "arrow.clockwise"),
+                style: .plain,
+                target: self,
+                action: #selector(refreshPressed)
+            )
+            navigationItem.rightBarButtonItem?.accessibilityLabel =
+                "重新扫描当前页面"
+        }
     }
 
     private func updateFilterButtons() {
         for case let button as UIButton in filterStack.arrangedSubviews {
             guard let filter = Filter(rawValue: button.tag) else { continue }
-            button.configuration?.baseForegroundColor = filter == selectedFilter ? .white : AppColors.primaryText
-            button.configuration?.baseBackgroundColor = filter == selectedFilter
+            let count = resources.lazy.filter {
+                filter.includes($0.resourceType)
+            }.count
+            button.configuration?.title = count > 0
+                ? "\(filter.title) \(count)"
+                : filter.title
+            button.configuration?.baseForegroundColor =
+                filter == selectedFilter ? .white : AppColors.primaryText
+            button.configuration?.baseBackgroundColor =
+                filter == selectedFilter
                 ? AppColors.accent
                 : AppColors.progressTrack
-            button.accessibilityValue = filter == selectedFilter ? "已选择" : nil
+            button.accessibilityValue = filter == selectedFilter
+                ? "已选择，\(count) 项"
+                : "\(count) 项"
         }
     }
 
     private func refreshResources() {
-        guard let sniffingService else {
-            updateContent()
-            return
-        }
+        guard scanState != .scanning, scanState != .installing else { return }
         scanTask?.cancel()
-        let scanID = UUID()
-        activeScanID = scanID
-        emptyState.isHidden = true
-        tableView.isHidden = true
-        loadingIndicator.startAnimating()
-        navigationItem.rightBarButtonItem = UIBarButtonItem(customView: loadingIndicator)
-
-        let pageURL = pageURL
-        let pageTitle = pageTitle
         scanTask = Task { [weak self] in
             do {
-                let detected = try await sniffingService.scanResources(
-                    forPageURL: pageURL,
-                    pageTitle: pageTitle
-                )
+                try await self?.viewModel.refresh()
                 guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    guard self?.activeScanID == scanID else { return }
-                    self?.activeScanID = nil
-                    self?.resources = detected
-                    self?.restoreRefreshButton()
-                    self?.updateContent()
-                    UINotificationFeedbackGenerator().notificationOccurred(
-                        detected.isEmpty ? .warning : .success
-                    )
-                }
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
             } catch is CancellationError {
-                await MainActor.run {
-                    guard self?.activeScanID == scanID else { return }
-                    self?.activeScanID = nil
-                    self?.restoreRefreshButton()
-                    self?.updateContent()
-                }
                 return
             } catch {
-                await MainActor.run {
-                    guard self?.activeScanID == scanID else { return }
-                    self?.activeScanID = nil
-                    self?.restoreRefreshButton()
-                    self?.updateContent()
-                    UINotificationFeedbackGenerator().notificationOccurred(.error)
-                }
+                guard !Task.isCancelled else { return }
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
             }
         }
     }
 
-    private func restoreRefreshButton() {
-        guard sniffingService != nil else {
-            navigationItem.rightBarButtonItem = nil
-            return
-        }
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            image: UIImage(systemName: "arrow.clockwise"),
-            style: .plain,
-            target: self,
-            action: #selector(refreshPressed)
+    private func copy(_ resource: DetectedResource) {
+        UIPasteboard.general.string = resource.originalURLString
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    private func share(_ resource: DetectedResource) {
+        let controller = UIActivityViewController(
+            activityItems: [resource.canonicalURL],
+            applicationActivities: nil
         )
-        navigationItem.rightBarButtonItem?.accessibilityLabel = "重新扫描当前页面"
+        present(controller, animated: true)
+    }
+
+    private func showDetails(_ resource: DetectedResource) {
+        let details = [
+            "类型：\(resource.resourceType.localizedTitle)",
+            "格式：\(resource.fileExtension?.uppercased() ?? "未知")",
+            "MIME：\(resource.mimeType ?? "未知")",
+            "来源：\(resource.canonicalURL.host ?? "未知")",
+            "大小：\(formattedSize(resource.estimatedSize))",
+            formattedResolution(resource),
+            formattedDuration(resource.duration),
+            "检测来源：\(resource.detectionSource.rawValue)",
+            resource.limitationReason
+        ].compactMap { $0 }.joined(separator: "\n")
+        let alert = UIAlertController(
+            title: resource.fileName,
+            message: details,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "复制链接", style: .default) {
+            [weak self] _ in self?.copy(resource)
+        })
+        alert.addAction(UIAlertAction(title: "关闭", style: .cancel))
+        present(alert, animated: true)
+    }
+
+    private func formattedSize(_ size: Int64?) -> String {
+        guard let size else { return "大小未知" }
+        return ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+    }
+
+    private func formattedResolution(_ resource: DetectedResource) -> String? {
+        guard let width = resource.width, let height = resource.height else {
+            return nil
+        }
+        return "分辨率：\(width)×\(height)"
+    }
+
+    private func formattedDuration(_ duration: Double?) -> String? {
+        guard let duration, duration.isFinite, duration > 0 else { return nil }
+        let totalSeconds = Int(duration.rounded())
+        return String(
+            format: "时长：%d:%02d",
+            totalSeconds / 60,
+            totalSeconds % 60
+        )
     }
 
     @objc private func refreshPressed() {
@@ -358,12 +402,16 @@ final class ResourceSnifferViewController: BaseViewController {
     @objc private func filterPressed(_ sender: UIButton) {
         guard let filter = Filter(rawValue: sender.tag) else { return }
         selectedFilter = filter
-        updateContent()
+        let state = viewModel.state
+        updateContent(state: state)
     }
 }
 
 extension ResourceSnifferViewController: UITableViewDataSource {
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+    func tableView(
+        _ tableView: UITableView,
+        numberOfRowsInSection section: Int
+    ) -> Int {
         filteredResources.count
     }
 
@@ -378,28 +426,12 @@ extension ResourceSnifferViewController: UITableViewDataSource {
             return UITableViewCell()
         }
         let resource = filteredResources[indexPath.row]
-        let previewHandler = onPreviewResource
-        let downloadHandler = onDownloadResource
         cell.configure(
             resource: resource,
-            canPreview: previewHandler != nil,
-            canDownload: downloadHandler != nil
+            onCopy: { [weak self] in self?.copy(resource) },
+            onShare: { [weak self] in self?.share(resource) },
+            onDetails: { [weak self] in self?.showDetails(resource) }
         )
-        if let previewHandler {
-            cell.onPreview = {
-                previewHandler(resource)
-            }
-        } else {
-            cell.onPreview = nil
-        }
-        if let downloadHandler {
-            cell.onDownload = {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                downloadHandler(resource)
-            }
-        } else {
-            cell.onDownload = nil
-        }
         return cell
     }
 }
@@ -408,10 +440,13 @@ private final class ResourcePageSummaryView: UIView {
     var onRefresh: (() -> Void)?
 
     private let iconContainer = UIView()
-    private let iconView = UIImageView(image: UIImage(systemName: "globe.asia.australia.fill"))
+    private let iconView = UIImageView(
+        image: UIImage(systemName: "globe.asia.australia.fill")
+    )
     private let titleLabel = UILabel()
     private let domainLabel = UILabel()
     private let countLabel = UILabel()
+    private let privacyLabel = UILabel()
     private let refreshButton = UIButton(type: .system)
 
     override init(frame: CGRect) {
@@ -423,18 +458,40 @@ private final class ResourcePageSummaryView: UIView {
         return nil
     }
 
-    func configure(title: String, domain: String, resourceCount: Int) {
+    func configure(
+        title: String,
+        domain: String,
+        resourceCount: Int,
+        scanState: ResourceScanState,
+        isPrivate: Bool
+    ) {
         titleLabel.text = title
         domainLabel.text = domain
-        countLabel.text = "已识别 \(resourceCount) 项"
-        accessibilityLabel = "\(title)，\(domain)，已识别 \(resourceCount) 项资源"
+        switch scanState {
+        case .installing, .scanning:
+            countLabel.text = "正在扫描"
+        case .failed:
+            countLabel.text = "扫描失败"
+        case .idle, .completed:
+            countLabel.text = resourceCount == 0
+                ? "暂未发现资源"
+                : "已发现 \(resourceCount) 项"
+        }
+        privacyLabel.text = isPrivate
+            ? "无痕结果仅保留在当前会话"
+            : nil
+        privacyLabel.isHidden = !isPrivate
+        accessibilityLabel = [
+            title,
+            domain,
+            countLabel.text,
+            privacyLabel.text
+        ].compactMap { $0 }.joined(separator: "，")
     }
 
     func setRefreshAvailable(_ isAvailable: Bool) {
-        refreshButton.alpha = isAvailable ? 1 : 0
+        refreshButton.alpha = isAvailable ? 1 : 0.35
         refreshButton.isEnabled = isAvailable
-        refreshButton.isUserInteractionEnabled = isAvailable
-        refreshButton.accessibilityElementsHidden = !isAvailable
     }
 
     private func configureView() {
@@ -461,47 +518,55 @@ private final class ResourcePageSummaryView: UIView {
         titleLabel.adjustsFontForContentSizeCategory = true
         titleLabel.numberOfLines = 2
         titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.setContentCompressionResistancePriority(
-            .defaultHigh,
-            for: .horizontal
-        )
-
         domainLabel.font = UIFont.preferredFont(forTextStyle: .caption1)
         domainLabel.adjustsFontForContentSizeCategory = true
         domainLabel.textColor = AppColors.secondaryText
         domainLabel.numberOfLines = 1
         domainLabel.lineBreakMode = .byTruncatingMiddle
-
         countLabel.font = UIFont.preferredFont(forTextStyle: .caption1)
         countLabel.adjustsFontForContentSizeCategory = true
         countLabel.textColor = AppColors.secondaryText
-        countLabel.numberOfLines = 1
+        privacyLabel.font = UIFont.preferredFont(forTextStyle: .caption2)
+        privacyLabel.adjustsFontForContentSizeCategory = true
+        privacyLabel.textColor = AppColors.secondaryText
+        privacyLabel.numberOfLines = 1
 
-        let labels = UIStackView(arrangedSubviews: [titleLabel, domainLabel, countLabel])
+        let labels = UIStackView(
+            arrangedSubviews: [
+                titleLabel,
+                domainLabel,
+                countLabel,
+                privacyLabel
+            ]
+        )
         labels.axis = .vertical
         labels.alignment = .fill
         labels.distribution = .fill
         labels.spacing = 3
         labels.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        labels.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        labels.setContentCompressionResistancePriority(
+            .defaultLow,
+            for: .horizontal
+        )
 
         refreshButton.translatesAutoresizingMaskIntoConstraints = false
-        refreshButton.setImage(UIImage(systemName: "arrow.clockwise"), for: .normal)
+        refreshButton.setImage(
+            UIImage(systemName: "arrow.clockwise"),
+            for: .normal
+        )
         refreshButton.accessibilityLabel = "重新扫描"
-        refreshButton.addTarget(self, action: #selector(refreshPressed), for: .touchUpInside)
-        refreshButton.widthAnchor.constraint(
-            greaterThanOrEqualToConstant: AppMetrics.minimumTapSize
-        ).isActive = true
-        refreshButton.heightAnchor.constraint(
-            greaterThanOrEqualToConstant: AppMetrics.minimumTapSize
-        ).isActive = true
+        refreshButton.addTarget(
+            self,
+            action: #selector(refreshPressed),
+            for: .touchUpInside
+        )
 
         let stack = UIStackView(
             arrangedSubviews: [iconContainer, labels, refreshButton]
         )
         stack.axis = .horizontal
         stack.alignment = .center
-        stack.spacing = 12
+        stack.spacing = AppSpacing.sm
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
 
@@ -512,14 +577,12 @@ private final class ResourcePageSummaryView: UIView {
             iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
             iconView.widthAnchor.constraint(equalToConstant: 22),
             iconView.heightAnchor.constraint(equalToConstant: 22),
-
             refreshButton.widthAnchor.constraint(
                 equalToConstant: AppMetrics.minimumTapSize
             ),
             refreshButton.heightAnchor.constraint(
                 equalToConstant: AppMetrics.minimumTapSize
             ),
-
             stack.topAnchor.constraint(equalTo: layoutMarginsGuide.topAnchor),
             stack.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
@@ -529,167 +592,5 @@ private final class ResourcePageSummaryView: UIView {
 
     @objc private func refreshPressed() {
         onRefresh?()
-    }
-}
-
-private final class ResourceListCell: UITableViewCell {
-    static let reuseIdentifier = "ResourceListCell"
-
-    var onPreview: (() -> Void)?
-    var onDownload: (() -> Void)?
-
-    private let cardView = UIView()
-    private let typeIconView = UIImageView()
-    private let nameLabel = UILabel()
-    private let metadataLabel = UILabel()
-    private let domainLabel = UILabel()
-    private let previewButton = UIButton(type: .system)
-    private let downloadButton = UIButton(type: .system)
-
-    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
-        super.init(style: style, reuseIdentifier: reuseIdentifier)
-        configureView()
-    }
-
-    required init?(coder: NSCoder) {
-        return nil
-    }
-
-    override func prepareForReuse() {
-        super.prepareForReuse()
-        onPreview = nil
-        onDownload = nil
-    }
-
-    func configure(
-        resource: DetectedResource,
-        canPreview: Bool,
-        canDownload: Bool
-    ) {
-        nameLabel.text = resource.fileName
-        let format = resource.mimeType?.split(separator: "/").last.map(String.init)
-            ?? resource.url.pathExtension.uppercased()
-        let size = resource.estimatedSize.map {
-            ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)
-        } ?? "大小未知"
-        metadataLabel.text = [resource.resourceType.localizedTitle, format, size]
-            .filter { !$0.isEmpty }
-            .joined(separator: " · ")
-        domainLabel.text = resource.url.host ?? resource.sourcePageURL?.host
-        typeIconView.image = UIImage(systemName: symbolName(for: resource.resourceType))
-        previewButton.isHidden = !canPreview
-        previewButton.isEnabled = canPreview
-        downloadButton.isHidden = !canDownload
-        downloadButton.isEnabled = canDownload
-        accessibilityLabel = "\(resource.fileName)，\(metadataLabel.text ?? "")"
-    }
-
-    private func configureView() {
-        backgroundColor = .clear
-        selectionStyle = .none
-
-        cardView.backgroundColor = AppColors.surface
-        cardView.layer.cornerRadius = AppRadius.card
-        cardView.layer.cornerCurve = .continuous
-        cardView.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(cardView)
-
-        typeIconView.tintColor = AppColors.accent
-        typeIconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 24)
-        typeIconView.contentMode = .center
-        typeIconView.backgroundColor = AppColors.accentFill
-        typeIconView.layer.cornerRadius = AppRadius.control
-        typeIconView.translatesAutoresizingMaskIntoConstraints = false
-
-        nameLabel.font = UIFont.preferredFont(forTextStyle: .headline)
-        nameLabel.adjustsFontForContentSizeCategory = true
-        nameLabel.numberOfLines = 2
-
-        metadataLabel.font = UIFont.preferredFont(forTextStyle: .subheadline)
-        metadataLabel.adjustsFontForContentSizeCategory = true
-        metadataLabel.textColor = AppColors.secondaryText
-        metadataLabel.numberOfLines = 2
-
-        domainLabel.font = UIFont.preferredFont(forTextStyle: .caption1)
-        domainLabel.adjustsFontForContentSizeCategory = true
-        domainLabel.textColor = AppColors.tertiaryText
-        domainLabel.lineBreakMode = .byTruncatingMiddle
-
-        let labels = UIStackView(arrangedSubviews: [nameLabel, metadataLabel, domainLabel])
-        labels.axis = .vertical
-        labels.spacing = 3
-
-        previewButton.setImage(UIImage(systemName: "play.circle"), for: .normal)
-        previewButton.accessibilityLabel = "在线播放"
-        previewButton.addTarget(self, action: #selector(previewPressed), for: .touchUpInside)
-        previewButton.widthAnchor.constraint(
-            equalToConstant: AppMetrics.minimumTapSize
-        ).isActive = true
-        previewButton.heightAnchor.constraint(
-            equalToConstant: AppMetrics.minimumTapSize
-        ).isActive = true
-
-        var downloadConfiguration = UIButton.Configuration.tinted()
-        downloadConfiguration.image = UIImage(systemName: "arrow.down")
-        downloadConfiguration.cornerStyle = .medium
-        downloadButton.configuration = downloadConfiguration
-        downloadButton.accessibilityLabel = "下载资源"
-        downloadButton.addTarget(self, action: #selector(downloadPressed), for: .touchUpInside)
-        downloadButton.widthAnchor.constraint(
-            equalToConstant: AppMetrics.minimumTapSize
-        ).isActive = true
-        downloadButton.heightAnchor.constraint(
-            equalToConstant: AppMetrics.minimumTapSize
-        ).isActive = true
-
-        let actions = UIStackView(arrangedSubviews: [previewButton, downloadButton])
-        actions.axis = .horizontal
-        actions.spacing = 2
-
-        let stack = UIStackView(arrangedSubviews: [typeIconView, labels, actions])
-        stack.axis = .horizontal
-        stack.alignment = .center
-        stack.spacing = 12
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        cardView.addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 5),
-            cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -5),
-
-            typeIconView.widthAnchor.constraint(
-                equalToConstant: AppMetrics.primaryButtonHeight
-            ),
-            typeIconView.heightAnchor.constraint(
-                equalToConstant: AppMetrics.primaryButtonHeight
-            ),
-
-            stack.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 14),
-            stack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
-            stack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -10),
-            stack.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -14)
-        ])
-    }
-
-    private func symbolName(for type: ResourceType) -> String {
-        switch type {
-        case .video: return "film"
-        case .audio: return "waveform"
-        case .hls: return "dot.radiowaves.left.and.right"
-        case .image: return "photo"
-        case .document: return "doc.text"
-        case .archive: return "archivebox"
-        case .other: return "doc"
-        }
-    }
-
-    @objc private func previewPressed() {
-        onPreview?()
-    }
-
-    @objc private func downloadPressed() {
-        onDownload?()
     }
 }
