@@ -1,3 +1,5 @@
+import AVKit
+import QuickLook
 import UIKit
 
 final class DownloadManagerViewController: BaseViewController {
@@ -14,6 +16,7 @@ final class DownloadManagerViewController: BaseViewController {
         case active
         case paused
         case completed
+        case failed
 
         var title: String {
             switch self {
@@ -21,15 +24,17 @@ final class DownloadManagerViewController: BaseViewController {
             case .active: return "进行中"
             case .paused: return "已暂停"
             case .completed: return "已完成"
+            case .failed: return "失败"
             }
         }
 
         func includes(_ state: DownloadState) -> Bool {
             switch self {
             case .all: return true
-            case .active: return state == .waiting || state == .downloading
+            case .active: return state == .waiting || state.isInProgress
             case .paused: return state == .paused
             case .completed: return state == .completed
+            case .failed: return state == .failed
             }
         }
     }
@@ -37,6 +42,7 @@ final class DownloadManagerViewController: BaseViewController {
     private let manager: DownloadManaging?
     private var selectedScope = Scope.all
     private var operationTask: Task<Void, Never>?
+    private var previewURL: URL?
 
     private let scopeControl = UISegmentedControl(items: Scope.allCases.map(\.title))
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
@@ -53,6 +59,7 @@ final class DownloadManagerViewController: BaseViewController {
     private var visibleTasks: [DownloadTaskModel] {
         guard let tasks = manager?.tasks else { return [] }
         return tasks
+            .filter { $0.isHiddenFromDownloadHistory != true }
             .filter { selectedScope.includes($0.state) }
             .sorted { $0.updatedAt > $1.updatedAt }
     }
@@ -71,7 +78,9 @@ final class DownloadManagerViewController: BaseViewController {
         configureScopeControl()
         configureTable()
         configureEmptyState()
+        configureNavigationActions()
         updateContent()
+        manager?.onTasksChanged = { [weak self] in self?.updateContent() }
         reloadTasks()
     }
 
@@ -81,12 +90,14 @@ final class DownloadManagerViewController: BaseViewController {
         let isEmpty = visibleTasks.isEmpty
         tableView.isHidden = isEmpty
         emptyState.isHidden = !isEmpty
+        configureNavigationActions()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         if isBeingDismissed || isMovingFromParent {
             operationTask?.cancel()
+            manager?.onTasksChanged = nil
         }
     }
 
@@ -140,6 +151,58 @@ final class DownloadManagerViewController: BaseViewController {
             emptyState.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
         updateEmptyStateActions()
+    }
+
+    private func configureNavigationActions() {
+        guard let allTasks = manager?.tasks else {
+            navigationItem.rightBarButtonItem = nil
+            return
+        }
+        let tasks = allTasks.filter { $0.isHiddenFromDownloadHistory != true }
+        guard !tasks.isEmpty else {
+            navigationItem.rightBarButtonItem = nil
+            return
+        }
+        let pausable = tasks.filter {
+            $0.state == .waiting || $0.state.isInProgress
+        }
+        let resumable = tasks.filter { $0.state == .paused }
+        let completed = tasks.filter { $0.state == .completed }
+
+        let pauseAll = UIAction(
+            title: "全部暂停",
+            image: UIImage(systemName: "pause.circle"),
+            attributes: pausable.isEmpty ? [.disabled] : []
+        ) { [weak self] _ in
+            self?.perform { manager in
+                for task in pausable {
+                    try await manager.pauseTask(id: task.id)
+                }
+            }
+        }
+        let resumeAll = UIAction(
+            title: "全部继续",
+            image: UIImage(systemName: "play.circle"),
+            attributes: resumable.isEmpty ? [.disabled] : []
+        ) { [weak self] _ in
+            self?.perform { manager in
+                for task in resumable {
+                    try await manager.resumeTask(id: task.id)
+                }
+            }
+        }
+        let clearCompleted = UIAction(
+            title: "清理已完成记录",
+            image: UIImage(systemName: "checkmark.circle"),
+            attributes: completed.isEmpty ? [.disabled] : []
+        ) { [weak self] _ in
+            self?.confirmClearCompleted(completed)
+        }
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            image: UIImage(systemName: "ellipsis.circle"),
+            menu: UIMenu(children: [pauseAll, resumeAll, clearCompleted])
+        )
+        navigationItem.rightBarButtonItem?.accessibilityLabel = "下载批量操作"
     }
 
     private func updateEmptyStateActions() {
@@ -203,11 +266,71 @@ final class DownloadManagerViewController: BaseViewController {
                 return
             } catch {
                 await MainActor.run {
-                    self?.onError?(error)
+                    self?.presentOperationError(error)
                     UINotificationFeedbackGenerator().notificationOccurred(.error)
                 }
             }
         }
+    }
+
+    private func presentOperationError(_ error: Error) {
+        if let onError {
+            onError(error)
+            return
+        }
+        let alert = UIAlertController(
+            title: "无法完成操作",
+            message: DownloadErrorMapper.message(for: error),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "好", style: .default))
+        present(alert, animated: true)
+    }
+
+    private func confirmClearCompleted(_ tasks: [DownloadTaskModel]) {
+        let alert = UIAlertController(
+            title: "清理已完成记录？",
+            message: "只删除下载记录，已保存到文件库的文件会继续保留。",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "清理记录", style: .destructive) {
+            [weak self] _ in
+            self?.perform { manager in
+                for task in tasks {
+                    try await manager.deleteTask(id: task.id, deleteFile: false)
+                }
+            }
+        })
+        present(alert, animated: true)
+    }
+
+    private func confirmDelete(_ task: DownloadTaskModel) {
+        let alert = UIAlertController(
+            title: task.state == .completed ? "删除下载？" : "删除记录？",
+            message: task.state == .completed
+                ? "可以只删除记录，或同时删除文件库中的文件。"
+                : "此操作会移除该下载记录。",
+            preferredStyle: .actionSheet
+        )
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "删除记录", style: .destructive) {
+            [weak self] _ in
+            self?.perform { manager in
+                try await manager.deleteTask(id: task.id, deleteFile: false)
+            }
+        })
+        if task.state == .completed {
+            alert.addAction(UIAlertAction(
+                title: "删除记录和文件",
+                style: .destructive
+            ) { [weak self] _ in
+                self?.perform { manager in
+                    try await manager.deleteTask(id: task.id, deleteFile: true)
+                }
+            })
+        }
+        present(alert, animated: true)
     }
 
     @objc private func scopeChanged() {
@@ -239,6 +362,28 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
         return cell
     }
 
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        let task = visibleTasks[indexPath.row]
+        guard task.state == .completed,
+              let url = manager?.fileURL(for: task.id)
+        else { return }
+
+        switch task.resourceType {
+        case .video, .audio, .hls:
+            let controller = AVPlayerViewController()
+            controller.player = AVPlayer(url: url)
+            present(controller, animated: true) {
+                controller.player?.play()
+            }
+        case .image, .document, .subtitle, .archive, .other:
+            previewURL = url
+            let controller = QLPreviewController()
+            controller.dataSource = self
+            present(controller, animated: true)
+        }
+    }
+
     func tableView(
         _ tableView: UITableView,
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
@@ -247,7 +392,7 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
         var actions: [UIContextualAction] = []
 
         switch task.state {
-        case .waiting, .downloading:
+        case .waiting, .preparing, .downloading, .retrying:
             let pause = UIContextualAction(style: .normal, title: "暂停") { [weak self] _, _, finish in
                 self?.perform { manager in try await manager.pauseTask(id: task.id) }
                 finish(true)
@@ -263,6 +408,16 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
             resume.backgroundColor = AppColors.accent
             resume.image = UIImage(systemName: "play")
             actions.append(resume)
+            let restart = UIContextualAction(
+                style: .normal,
+                title: "重新下载"
+            ) { [weak self] _, _, finish in
+                self?.confirmRestart(task)
+                finish(true)
+            }
+            restart.backgroundColor = AppColors.secondaryText
+            restart.image = UIImage(systemName: "arrow.counterclockwise")
+            actions.append(restart)
         case .failed:
             let retry = UIContextualAction(style: .normal, title: "重试") { [weak self] _, _, finish in
                 self?.perform { manager in try await manager.retryTask(id: task.id) }
@@ -271,7 +426,7 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
             retry.backgroundColor = AppColors.accent
             retry.image = UIImage(systemName: "arrow.clockwise")
             actions.append(retry)
-        case .completed, .cancelled:
+        case .finalizing, .completed, .cancelled:
             break
         }
 
@@ -284,10 +439,54 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
             actions.append(cancel)
         }
 
+        if [.completed, .failed, .cancelled].contains(task.state) {
+            let delete = UIContextualAction(
+                style: .destructive,
+                title: "删除"
+            ) { [weak self] _, _, finish in
+                self?.confirmDelete(task)
+                finish(true)
+            }
+            delete.image = UIImage(systemName: "trash")
+            actions.append(delete)
+        }
+
         guard !actions.isEmpty else { return nil }
         let configuration = UISwipeActionsConfiguration(actions: actions)
         configuration.performsFirstActionWithFullSwipe = false
         return configuration
+    }
+
+    private func confirmRestart(_ task: DownloadTaskModel) {
+        let alert = UIAlertController(
+            title: "从头重新下载？",
+            message: "已保存的断点数据会被删除，下载将从 0 开始。",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "重新下载", style: .destructive) {
+            [weak self] _ in
+            self?.perform { manager in
+                try await manager.restartTaskFromBeginning(id: task.id)
+            }
+        })
+        present(alert, animated: true)
+    }
+}
+
+extension DownloadManagerViewController: QLPreviewControllerDataSource {
+    func numberOfPreviewItems(in controller: QLPreviewController) -> Int {
+        previewURL == nil ? 0 : 1
+    }
+
+    func previewController(
+        _ controller: QLPreviewController,
+        previewItemAt index: Int
+    ) -> QLPreviewItem {
+        guard let previewURL else {
+            preconditionFailure("Quick Look requested without a completed download URL")
+        }
+        return previewURL as NSURL
     }
 }
 
@@ -300,6 +499,7 @@ private final class DownloadTaskCell: UITableViewCell {
     private let statusLabel = UILabel()
     private let sizeLabel = UILabel()
     private let progressView = UIProgressView(progressViewStyle: .default)
+    private let indeterminateIndicator = UIActivityIndicatorView(style: .medium)
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -312,25 +512,47 @@ private final class DownloadTaskCell: UITableViewCell {
 
     func configure(task: DownloadTaskModel) {
         nameLabel.text = task.fileName
-        statusLabel.text = task.state.localizedTitle
+        var statusParts = [task.state.localizedTitle]
+        if let speed = task.speedBytesPerSecond, speed > 0 {
+            statusParts.append(
+                "\(ByteCountFormatter.string(fromByteCount: Int64(speed), countStyle: .file))/秒"
+            )
+        }
+        if let remaining = task.estimatedRemainingTime,
+           remaining.isFinite,
+           remaining > 0 {
+            let formatter = DateComponentsFormatter()
+            formatter.allowedUnits = remaining >= 3_600 ? [.hour, .minute] : [.minute, .second]
+            formatter.unitsStyle = .abbreviated
+            if let value = formatter.string(from: remaining) {
+                statusParts.append("剩余 \(value)")
+            }
+        }
+        statusLabel.text = statusParts.joined(separator: " · ")
 
         let downloaded = ByteCountFormatter.string(
             fromByteCount: task.downloadedSize,
             countStyle: .file
         )
-        if let expected = task.expectedSize {
+        if let expected = task.expectedSize, expected > 0 {
             let total = ByteCountFormatter.string(fromByteCount: expected, countStyle: .file)
             sizeLabel.text = "\(downloaded) / \(total)"
         } else {
-            sizeLabel.text = downloaded
+            sizeLabel.text = "\(downloaded) / 大小未知"
         }
 
         if let progress = task.progress {
             progressView.isHidden = false
             progressView.progress = Float(progress)
+            indeterminateIndicator.stopAnimating()
             accessibilityValue = "\(Int(progress * 100))%"
         } else {
             progressView.isHidden = true
+            if task.state == .waiting || task.state.isInProgress {
+                indeterminateIndicator.startAnimating()
+            } else {
+                indeterminateIndicator.stopAnimating()
+            }
             accessibilityValue = task.state.localizedTitle
         }
 
@@ -341,6 +563,9 @@ private final class DownloadTaskCell: UITableViewCell {
         case .failed:
             iconView.image = UIImage(systemName: "exclamationmark.circle.fill")
             iconView.tintColor = AppColors.danger
+        case .cancelled:
+            iconView.image = UIImage(systemName: "xmark.circle")
+            iconView.tintColor = AppColors.secondaryText
         default:
             iconView.image = UIImage(systemName: "arrow.down.doc")
             iconView.tintColor = AppColors.accent
@@ -380,8 +605,12 @@ private final class DownloadTaskCell: UITableViewCell {
 
         progressView.progressTintColor = AppColors.accent
         progressView.trackTintColor = AppColors.progressTrack
+        indeterminateIndicator.color = AppColors.accent
+        indeterminateIndicator.hidesWhenStopped = true
 
-        let statusRow = UIStackView(arrangedSubviews: [statusLabel, sizeLabel])
+        let statusRow = UIStackView(
+            arrangedSubviews: [indeterminateIndicator, statusLabel, sizeLabel]
+        )
         statusRow.axis = .horizontal
         statusRow.spacing = 8
 

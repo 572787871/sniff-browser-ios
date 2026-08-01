@@ -1,5 +1,11 @@
 import Foundation
 
+extension Notification.Name {
+    static let downloadPreferencesDidChange = Notification.Name(
+        "com.example.SniffBrowser.downloadPreferencesDidChange"
+    )
+}
+
 struct DownloadSettingsState: Equatable, Sendable {
     let allowsCellularDownloads: Bool
     let maximumConcurrentDownloads: Int
@@ -37,6 +43,7 @@ struct DownloadPreferences {
         }
         nonmutating set {
             defaults.set(newValue, forKey: Key.allowsCellularDownloads)
+            notifyChange()
         }
     }
 
@@ -54,6 +61,7 @@ struct DownloadPreferences {
                 Self.clampedConcurrentDownloadCount(newValue),
                 forKey: Key.maximumConcurrentDownloads
             )
+            notifyChange()
         }
     }
 
@@ -65,6 +73,7 @@ struct DownloadPreferences {
         }
         nonmutating set {
             defaults.set(newValue, forKey: Key.completionNotificationsEnabled)
+            notifyChange()
         }
     }
 
@@ -76,6 +85,7 @@ struct DownloadPreferences {
         }
         nonmutating set {
             defaults.set(newValue, forKey: Key.automaticRetryEnabled)
+            notifyChange()
         }
     }
 
@@ -94,5 +104,9 @@ struct DownloadPreferences {
             max(value, concurrentDownloadRange.lowerBound),
             concurrentDownloadRange.upperBound
         )
+    }
+
+    private func notifyChange() {
+        NotificationCenter.default.post(name: .downloadPreferencesDidChange, object: nil)
     }
 }

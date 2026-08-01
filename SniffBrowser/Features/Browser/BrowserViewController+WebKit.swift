@@ -61,10 +61,7 @@ extension BrowserViewController: WKNavigationDelegate {
   ) {
     WebPageThemeColorService.requestCurrentTheme(in: webView)
     if let tab = tabManager.tabs.first(where: { $0.webView === webView }) {
-      resourceSniffingService.requestIncrementalScan(
-        tabID: tab.id,
-        reason: "didCommit"
-      )
+      resourceSniffingService.restoreActiveSniffingAfterNavigation(tabID: tab.id)
     }
   }
 
@@ -80,10 +77,7 @@ extension BrowserViewController: WKNavigationDelegate {
       url: webView.url
     )
     WebPageThemeColorService.requestCurrentTheme(in: webView)
-    resourceSniffingService.requestIncrementalScan(
-      tabID: tab.id,
-      reason: "didFinish"
-    )
+    resourceSniffingService.requestIncrementalScan(tabID: tab.id, reason: "didFinish")
     if webView === activeWebView {
       synchronizeActiveState()
       Task { [weak self] in

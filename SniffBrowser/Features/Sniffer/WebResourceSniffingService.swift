@@ -62,7 +62,13 @@ final class WebResourceSniffingService: ResourceSniffingService {
     }
 
     func tabClosed(tabID: UUID) {
+        if let webView = contexts[tabID]?.webView.value {
+            webView.evaluateJavaScript(
+                "(() => window.\(ResourceSniffingScriptProvider.bridgeName)?.dispose?.() === true)();"
+            )
+        }
         unregister(tabID: tabID)
+        ResourceThumbnailLoader.shared.cancelRequests(for: tabID)
         let scans = pendingScans.filter { $0.value.tabID == tabID }.map(\.key)
         scans.forEach {
             finishPendingScan(
@@ -84,10 +90,82 @@ final class WebResourceSniffingService: ResourceSniffingService {
             pageURL: pageURL,
             isPrivate: isPrivate
         )
-        logger.debug("开始扫描 host=\(pageURL?.host ?? "unknown")")
+        logger.debug("主文档导航 host=\(pageURL?.host ?? "unknown")")
+    }
+
+    func activationState(for tabID: UUID) -> SniffingActivationState {
+        store.activationState(for: tabID)
+    }
+
+    func enableSniffing(for tabID: UUID) async throws {
+        guard contexts[tabID] != nil else {
+            throw ResourceSniffingError.tabUnavailable
+        }
+        guard let webView = contexts[tabID]?.webView.value else {
+            throw ResourceSniffingError.webViewUnavailable
+        }
+        if store.activationState(for: tabID) == .active {
+            return
+        }
+
+        store.beginActivation(tabID: tabID)
+        do {
+            let enabled = try await evaluateBoolean(
+                ResourceSniffingScriptProvider.enableInvocation,
+                in: webView
+            )
+            guard enabled else {
+                throw ResourceSniffingError.scriptUnavailable
+            }
+            _ = try await scanResources(for: tabID)
+            store.completeActivation(tabID: tabID)
+        } catch {
+            store.failActivation(
+                tabID: tabID,
+                message: error.localizedDescription
+            )
+            throw error
+        }
+    }
+
+    func disableSniffing(for tabID: UUID) async {
+        guard store.activationState(for: tabID) != .disabled else { return }
+        store.beginStopping(tabID: tabID)
+        if let webView = contexts[tabID]?.webView.value {
+            _ = try? await evaluateBoolean(
+                ResourceSniffingScriptProvider.disableInvocation,
+                in: webView
+            )
+        }
+        let scans = pendingScans.filter { $0.value.tabID == tabID }.map(\.key)
+        scans.forEach {
+            finishPendingScan(scanID: $0, result: .failure(CancellationError()))
+        }
+        store.completeStopping(tabID: tabID)
+    }
+
+    func restoreActiveSniffingAfterNavigation(tabID: UUID) {
+        guard store.activationState(for: tabID).isEnabled,
+              let webView = contexts[tabID]?.webView.value
+        else { return }
+        webView.evaluateJavaScript(
+            ResourceSniffingScriptProvider.enableAndIncrementalScanInvocation(
+                reason: "navigation"
+            )
+        ) { [weak self] value, error in
+            guard error != nil || (value as? Bool) != true else { return }
+            Task { @MainActor [weak self] in
+                self?.store.failActivation(
+                    tabID: tabID,
+                    message: ResourceSniffingError.scriptUnavailable
+                        .localizedDescription
+                )
+            }
+        }
     }
 
     func requestIncrementalScan(tabID: UUID, reason: String) {
+        guard store.activationState(for: tabID).isEnabled else { return }
         guard let webView = contexts[tabID]?.webView.value else { return }
         store.beginScan(tabID: tabID, scanID: nil, isManual: false)
         webView.evaluateJavaScript(
@@ -114,6 +192,7 @@ final class WebResourceSniffingService: ResourceSniffingService {
         response: URLResponse,
         pageTitle: String?
     ) {
+        guard store.activationState(for: tabID).isEnabled else { return }
         guard let url = response.url,
               ["http", "https"].contains(url.scheme?.lowercased() ?? "")
         else {
@@ -142,6 +221,7 @@ final class WebResourceSniffingService: ResourceSniffingService {
     }
 
     func handleMessageBody(_ body: Any, tabID: UUID, isPrivate: Bool) {
+        guard store.activationState(for: tabID).isEnabled else { return }
         guard JSONSerialization.isValidJSONObject(body),
               let data = try? JSONSerialization.data(withJSONObject: body),
               data.count <= 2_000_000
@@ -186,6 +266,9 @@ final class WebResourceSniffingService: ResourceSniffingService {
         }
         guard let webView = contexts[tabID]?.webView.value else {
             throw ResourceSniffingError.webViewUnavailable
+        }
+        guard store.activationState(for: tabID).isEnabled else {
+            throw ResourceSniffingError.scriptUnavailable
         }
 
         let previousScanIDs = pendingScans
@@ -265,6 +348,7 @@ final class WebResourceSniffingService: ResourceSniffingService {
         tabID: UUID,
         isPrivate: Bool
     ) {
+        guard store.activationState(for: tabID).isEnabled else { return }
         guard messageBelongsToCurrentPage(batch, tabID: tabID) else {
             return
         }
@@ -282,7 +366,7 @@ final class WebResourceSniffingService: ResourceSniffingService {
 
         switch batch.kind {
         case .scriptReady:
-            store.beginScan(tabID: tabID, scanID: nil, isManual: false)
+            break
         case .batch:
             store.upsert(resources, tabID: tabID)
         case .scanComplete:
@@ -376,5 +460,20 @@ final class WebResourceSniffingService: ResourceSniffingService {
         }
         timeoutTasks.removeValue(forKey: scanID)?.cancel()
         pending.continuation.resume(with: result)
+    }
+
+    private func evaluateBoolean(
+        _ script: String,
+        in webView: WKWebView
+    ) async throws -> Bool {
+        try await withCheckedThrowingContinuation { continuation in
+            webView.evaluateJavaScript(script) { value, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: value as? Bool == true)
+                }
+            }
+        }
     }
 }

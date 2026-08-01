@@ -2,13 +2,21 @@ import UIKit
 
 final class ResourceListCell: UITableViewCell {
     static let reuseIdentifier = "ResourceListCell"
+    private static let downloadActionIdentifier = UIAction.Identifier(
+        "com.example.SniffBrowser.resource.download"
+    )
 
     private let cardView = UIView()
     private let typeIconView = UIImageView()
     private let nameLabel = UILabel()
     private let metadataLabel = UILabel()
     private let domainLabel = UILabel()
+    private let downloadButton = UIButton(type: .system)
     private let moreButton = UIButton(type: .system)
+    private var thumbnailTask: Task<Void, Never>?
+    private var thumbnailToken: ResourceThumbnailToken?
+    private var representedResourceID: UUID?
+    private var iconWidthConstraint: NSLayoutConstraint?
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -21,15 +29,30 @@ final class ResourceListCell: UITableViewCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        thumbnailTask?.cancel()
+        thumbnailTask = nil
+        thumbnailToken?.cancel()
+        thumbnailToken = nil
+        representedResourceID = nil
+        typeIconView.image = nil
         moreButton.menu = nil
     }
 
     func configure(
         resource: DetectedResource,
+        allowsThumbnailDiskCache: Bool,
+        thumbnailRequestProvider: @escaping @MainActor () async -> URLRequest?,
         onCopy: @escaping () -> Void,
         onShare: @escaping () -> Void,
-        onDetails: @escaping () -> Void
+        onDetails: @escaping () -> Void,
+        onPreview: (() -> Void)?,
+        onDownload: (() -> Void)?
     ) {
+        thumbnailTask?.cancel()
+        thumbnailTask = nil
+        thumbnailToken?.cancel()
+        thumbnailToken = nil
+        representedResourceID = resource.id
         nameLabel.text = resource.fileName
         var metadata = [
             resource.fileExtension?.uppercased()
@@ -59,7 +82,48 @@ final class ResourceListCell: UITableViewCell {
         typeIconView.image = UIImage(
             systemName: symbolName(for: resource.resourceType)
         )
-        moreButton.menu = UIMenu(children: [
+        typeIconView.backgroundColor = AppColors.accentFill
+        iconWidthConstraint?.constant = resource.resourceType == .image ? 80 : 48
+        typeIconView.contentMode = resource.resourceType == .image
+            ? .scaleAspectFill
+            : .center
+        typeIconView.clipsToBounds = true
+        if resource.resourceType == .image {
+            let scale = UIScreen.main.scale
+            thumbnailTask = Task { [weak self] in
+                guard let request = await thumbnailRequestProvider(),
+                      !Task.isCancelled
+                else { return }
+                let thumbnail = ResourceThumbnailRequest(
+                    resourceID: resource.id,
+                    tabID: resource.tabID,
+                    request: request,
+                    targetPixelSize: CGSize(
+                        width: 80 * scale,
+                        height: 64 * scale
+                    ),
+                    allowsDiskCache: allowsThumbnailDiskCache
+                )
+                self?.thumbnailToken = ResourceThumbnailLoader.shared.load(
+                    thumbnail
+                ) { [weak self] image in
+                    guard let self,
+                          self.representedResourceID == resource.id,
+                          let image
+                    else { return }
+                    self.typeIconView.image = image
+                    self.typeIconView.backgroundColor = AppColors.progressTrack
+                }
+            }
+        }
+        var menuActions: [UIMenuElement] = []
+        if let onPreview {
+            menuActions.append(UIAction(
+                title: resource.resourceType == .image ? "预览图片" : "在线播放",
+                image: UIImage(systemName: resource.resourceType == .image ? "photo" : "play.circle")
+            ) { _ in onPreview() })
+        }
+        menuActions.append(contentsOf: [
             UIAction(
                 title: "复制链接",
                 image: UIImage(systemName: "doc.on.doc")
@@ -73,7 +137,31 @@ final class ResourceListCell: UITableViewCell {
                 image: UIImage(systemName: "info.circle")
             ) { _ in onDetails() }
         ])
+        moreButton.menu = UIMenu(children: menuActions)
         moreButton.showsMenuAsPrimaryAction = true
+        downloadButton.setImage(
+            UIImage(systemName: resource.resourceType == .hls
+                ? "arrow.down.circle"
+                : "arrow.down.to.line"),
+            for: .normal
+        )
+        downloadButton.accessibilityLabel = resource.resourceType == .hls
+            ? "离线保存"
+            : "下载"
+        downloadButton.isEnabled = onDownload != nil
+        downloadButton.alpha = onDownload == nil ? 0.35 : 1
+        downloadButton.removeAction(
+            identifiedBy: Self.downloadActionIdentifier,
+            for: .touchUpInside
+        )
+        if let onDownload {
+            downloadButton.addAction(
+                UIAction(identifier: Self.downloadActionIdentifier) { _ in
+                    onDownload()
+                },
+                for: .touchUpInside
+            )
+        }
         accessibilityLabel = "\(resource.fileName)，\(metadataLabel.text ?? "")"
     }
 
@@ -123,8 +211,11 @@ final class ResourceListCell: UITableViewCell {
         )
         moreButton.accessibilityLabel = "资源操作"
 
+        downloadButton.tintColor = AppColors.accent
+        downloadButton.accessibilityLabel = "下载资源"
+
         let stack = UIStackView(
-            arrangedSubviews: [typeIconView, labels, moreButton]
+            arrangedSubviews: [typeIconView, labels, downloadButton, moreButton]
         )
         stack.axis = .horizontal
         stack.alignment = .center
@@ -143,12 +234,17 @@ final class ResourceListCell: UITableViewCell {
                 equalTo: contentView.bottomAnchor,
                 constant: -AppSpacing.xxs
             ),
-            typeIconView.widthAnchor.constraint(equalToConstant: 48),
-            typeIconView.heightAnchor.constraint(equalToConstant: 48),
+            typeIconView.heightAnchor.constraint(equalToConstant: 64),
             moreButton.widthAnchor.constraint(
                 equalToConstant: AppMetrics.minimumTapSize
             ),
             moreButton.heightAnchor.constraint(
+                equalToConstant: AppMetrics.minimumTapSize
+            ),
+            downloadButton.widthAnchor.constraint(
+                equalToConstant: AppMetrics.minimumTapSize
+            ),
+            downloadButton.heightAnchor.constraint(
                 equalToConstant: AppMetrics.minimumTapSize
             ),
             stack.topAnchor.constraint(
@@ -168,6 +264,10 @@ final class ResourceListCell: UITableViewCell {
                 constant: -AppSpacing.sm
             )
         ])
+        iconWidthConstraint = typeIconView.widthAnchor.constraint(
+            equalToConstant: 48
+        )
+        iconWidthConstraint?.isActive = true
     }
 
     private func symbolName(for type: ResourceType) -> String {

@@ -77,6 +77,18 @@ enum ResourceScanState: String, Codable, Equatable, Sendable {
     }
 }
 
+enum SniffingActivationState: String, Codable, Equatable, Sendable {
+    case disabled
+    case starting
+    case active
+    case stopping
+    case failed
+
+    var isEnabled: Bool {
+        self == .starting || self == .active
+    }
+}
+
 struct DetectedResource: Identifiable, Codable, Hashable, Sendable {
     let id: UUID
     let canonicalURL: URL
@@ -155,6 +167,7 @@ struct TabResourceSnapshot: Equatable, Sendable {
     let scanState: ResourceScanState
     let lastScanAt: Date?
     let errorMessage: String?
+    let activationState: SniffingActivationState
 }
 
 enum ResourceSniffingError: LocalizedError, Equatable {
@@ -177,6 +190,9 @@ enum ResourceSniffingError: LocalizedError, Equatable {
 
 @MainActor
 protocol ResourceSniffingService: AnyObject {
+    func activationState(for tabID: UUID) -> SniffingActivationState
+    func enableSniffing(for tabID: UUID) async throws
+    func disableSniffing(for tabID: UUID) async
     func scanResources(for tabID: UUID) async throws -> [DetectedResource]
     func resources(for tabID: UUID) -> [DetectedResource]
     func resetResources(for tabID: UUID)

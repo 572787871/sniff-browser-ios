@@ -10,6 +10,8 @@ final class TabResourceStoreTests: XCTestCase {
         let secondID = UUID()
         store.prepare(tabID: firstID, isPrivate: false)
         store.prepare(tabID: secondID, isPrivate: false)
+        activate(store, tabID: firstID)
+        activate(store, tabID: secondID)
         store.upsert([try resource(tabID: firstID, name: "first.mp4")], tabID: firstID)
 
         XCTAssertEqual(store.resources(for: firstID).count, 1)
@@ -23,6 +25,8 @@ final class TabResourceStoreTests: XCTestCase {
         let secondID = UUID()
         store.prepare(tabID: firstID, isPrivate: true)
         store.prepare(tabID: secondID, isPrivate: true)
+        activate(store, tabID: firstID)
+        activate(store, tabID: secondID)
         store.upsert([try resource(tabID: firstID, name: "private.mp4")], tabID: firstID)
 
         store.remove(tabID: firstID)
@@ -36,6 +40,7 @@ final class TabResourceStoreTests: XCTestCase {
         let store = TabResourceStore()
         let tabID = UUID()
         store.prepare(tabID: tabID, isPrivate: false)
+        activate(store, tabID: tabID)
         store.upsert([try resource(tabID: tabID, name: "old.mp4")], tabID: tabID)
 
         store.beginNavigation(
@@ -69,6 +74,7 @@ final class TabResourceStoreTests: XCTestCase {
             tabID: tabID
         )
 
+        activate(store, tabID: tabID)
         store.upsert([first, second], tabID: tabID)
 
         XCTAssertEqual(store.resources(for: tabID).count, 1)
@@ -82,6 +88,7 @@ final class TabResourceStoreTests: XCTestCase {
         let tabID = UUID()
         let stale = try resource(tabID: tabID, name: "stale.mp4")
         let current = try resource(tabID: tabID, name: "current.mp4")
+        activate(store, tabID: tabID)
         store.upsert([stale, current], tabID: tabID)
         let scanID = UUID()
 
@@ -100,10 +107,12 @@ final class TabResourceStoreTests: XCTestCase {
         let token = store.observe(tabID: tabID) {
             counts.append($0.resources.count)
         }
+        activate(store, tabID: tabID)
         store.upsert([try resource(tabID: tabID, name: "one.mp4")], tabID: tabID)
         store.removeObserver(token)
 
-        XCTAssertEqual(counts, [0, 1])
+        XCTAssertEqual(counts.last, 1)
+        XCTAssertTrue(counts.contains(0))
     }
 
     private func resource(
@@ -121,5 +130,11 @@ final class TabResourceStoreTests: XCTestCase {
             detectionSource: source,
             tabID: tabID
         )
+    }
+
+    @MainActor
+    private func activate(_ store: TabResourceStore, tabID: UUID) {
+        store.beginActivation(tabID: tabID)
+        store.completeActivation(tabID: tabID)
     }
 }

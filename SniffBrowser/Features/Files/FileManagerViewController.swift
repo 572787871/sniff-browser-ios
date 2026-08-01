@@ -1,12 +1,11 @@
+import AVKit
+import QuickLook
 import UIKit
 
+@MainActor
 final class FileManagerViewController: BaseViewController {
     enum Category: Int, CaseIterable {
-        case all
-        case video
-        case audio
-        case image
-        case document
+        case all, video, audio, image, document, hls
 
         var title: String {
             switch self {
@@ -15,185 +14,386 @@ final class FileManagerViewController: BaseViewController {
             case .audio: return "音频"
             case .image: return "图片"
             case .document: return "文档"
+            case .hls: return "HLS"
+            }
+        }
+
+        func includes(_ task: DownloadTaskModel) -> Bool {
+            switch self {
+            case .all: return true
+            case .video: return task.resourceType == .video
+            case .audio: return task.resourceType == .audio
+            case .image: return task.resourceType == .image
+            case .document:
+                return [.document, .subtitle, .archive, .other]
+                    .contains(task.resourceType)
+            case .hls: return task.downloadKind == .hlsAsset
             }
         }
     }
 
-    enum SortOrder {
-        case name
-        case date
-        case size
-    }
+    enum SortOrder { case name, date, size }
 
-    var onImportFiles: (() -> Void)? {
-        didSet { refreshAvailableActions() }
-    }
-    var onCreateFolder: (() -> Void)? {
-        didSet { refreshAvailableActions() }
-    }
+    var onImportFiles: (() -> Void)?
+    var onCreateFolder: (() -> Void)?
     var onReturnToBrowser: (() -> Void)? {
-        didSet { updateEmptyStateActions() }
+        didSet { updateEmptyState() }
     }
-    var onSortOrderChanged: ((SortOrder) -> Void)? {
-        didSet { refreshAvailableActions() }
-    }
+    var onSortOrderChanged: ((SortOrder) -> Void)?
 
+    private let downloadCenter: DownloadCenter
     private let searchController = UISearchController(searchResultsController: nil)
     private let categoryControl = UISegmentedControl(items: Category.allCases.map(\.title))
-    private let emptyState = EmptyStateView(
-        configuration: .init(
-            symbolName: "folder",
-            title: "文件库为空",
-            message: "下载完成的文件会安全地保存在应用资料库中，并按类型整理。",
-            actionTitle: "从“文件”导入",
-            secondaryActionTitle: "前往浏览器"
-        )
-    )
+    private let tableView = UITableView(frame: .zero, style: .insetGrouped)
+    private let emptyState = EmptyStateView(configuration: .init(
+        symbolName: "folder",
+        title: "文件库为空",
+        message: "下载完成的文件会安全地保存在应用资料库中，并按类型整理。",
+        actionTitle: nil,
+        secondaryActionTitle: "前往浏览器"
+    ))
+    private var selectedCategory = Category.all
+    private var sortOrder = SortOrder.date
+    private var searchText = ""
+    private var observer: NSObjectProtocol?
+    private var previewDataSource: FilePreviewDataSource?
 
-    init() {
+    private var visibleTasks: [DownloadTaskModel] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let values = downloadCenter.tasks.filter {
+            $0.state == .completed
+                && selectedCategory.includes($0)
+                && (query.isEmpty || $0.fileName.localizedCaseInsensitiveContains(query))
+                && downloadCenter.fileURL(for: $0.id) != nil
+        }
+        return values.sorted { lhs, rhs in
+            switch sortOrder {
+            case .name:
+                return lhs.fileName.localizedStandardCompare(rhs.fileName) == .orderedAscending
+            case .date:
+                return (lhs.completedAt ?? lhs.updatedAt) > (rhs.completedAt ?? rhs.updatedAt)
+            case .size:
+                return lhs.downloadedSize > rhs.downloadedSize
+            }
+        }
+    }
+
+    init(downloadCenter: DownloadCenter) {
+        self.downloadCenter = downloadCenter
         super.init(title: "文件", prefersLargeTitle: true)
     }
 
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
+    convenience init() {
+        self.init(downloadCenter: .shared)
+    }
+
+    required init?(coder: NSCoder) { return nil }
+
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         configureNavigation()
-        configureCategoryControl()
-        configureEmptyState()
+        configureContent()
+        observer = NotificationCenter.default.addObserver(
+            forName: .downloadTasksDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.reloadContent() }
+        }
+        Task { [weak self] in
+            await self?.downloadCenter.reloadTasks()
+            self?.reloadContent()
+        }
+    }
+
+    func setSortOrder(_ order: SortOrder) {
+        sortOrder = order
+        reloadContent()
     }
 
     private func configureNavigation() {
         searchController.obscuresBackgroundDuringPresentation = false
-        searchController.searchBar.placeholder = "搜索文件或文件夹"
-        searchController.searchBar.accessibilityLabel = "搜索文件"
+        searchController.searchBar.placeholder = "搜索文件"
+        searchController.searchResultsUpdater = self
         navigationItem.searchController = searchController
         navigationItem.hidesSearchBarWhenScrolling = false
-
-        updateNavigationActions()
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            image: UIImage(systemName: "arrow.up.arrow.down"),
+            menu: UIMenu(title: "排序方式", options: .singleSelection, children: [
+                sortAction("名称", .name),
+                sortAction("日期", .date, selected: true),
+                sortAction("大小", .size)
+            ])
+        )
     }
 
-    private func updateNavigationActions() {
-        var items: [UIBarButtonItem] = []
-        if onCreateFolder != nil || onImportFiles != nil {
-            let actionsItem = UIBarButtonItem(
-                image: UIImage(systemName: "ellipsis.circle"),
-                menu: makeActionsMenu()
-            )
-            actionsItem.accessibilityLabel = "文件操作"
-            items.append(actionsItem)
-        }
-        if onSortOrderChanged != nil {
-            let sortItem = UIBarButtonItem(
-                image: UIImage(systemName: "arrow.up.arrow.down"),
-                menu: makeSortMenu()
-            )
-            sortItem.accessibilityLabel = "文件排序"
-            items.append(sortItem)
-        }
-        navigationItem.rightBarButtonItems = items.isEmpty ? nil : items
-    }
-
-    private func configureCategoryControl() {
-        categoryControl.selectedSegmentIndex = Category.all.rawValue
-        categoryControl.accessibilityLabel = "文件类型"
+    private func configureContent() {
+        categoryControl.selectedSegmentIndex = 0
+        categoryControl.addTarget(self, action: #selector(categoryChanged), for: .valueChanged)
         categoryControl.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(categoryControl)
 
-        NSLayoutConstraint.activate([
-            categoryControl.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
-            categoryControl.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            categoryControl.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor)
-        ])
-    }
+        tableView.backgroundColor = .clear
+        tableView.separatorStyle = .none
+        tableView.rowHeight = 104
+        tableView.dataSource = self
+        tableView.delegate = self
+        tableView.register(FileLibraryCell.self, forCellReuseIdentifier: FileLibraryCell.reuseID)
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(tableView)
 
-    private func configureEmptyState() {
         emptyState.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(emptyState)
 
         NSLayoutConstraint.activate([
-            emptyState.topAnchor.constraint(
-                equalTo: categoryControl.bottomAnchor,
-                constant: AppSpacing.xs
-            ),
+            categoryControl.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            categoryControl.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            categoryControl.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+            tableView.topAnchor.constraint(equalTo: categoryControl.bottomAnchor, constant: 8),
+            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            emptyState.topAnchor.constraint(equalTo: categoryControl.bottomAnchor, constant: 8),
             emptyState.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             emptyState.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             emptyState.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
-        updateEmptyStateActions()
+        updateEmptyState()
     }
 
-    private func refreshAvailableActions() {
-        updateEmptyStateActions()
+    private func sortAction(_ title: String, _ order: SortOrder, selected: Bool = false) -> UIAction {
+        UIAction(title: title, state: selected ? .on : .off) { [weak self] _ in
+            self?.setSortOrder(order)
+            self?.onSortOrderChanged?(order)
+        }
+    }
+
+    private func reloadContent() {
+        tableView.reloadData()
+        let empty = visibleTasks.isEmpty
+        tableView.isHidden = empty
+        emptyState.isHidden = !empty
+        updateEmptyState()
+    }
+
+    private func updateEmptyState() {
         guard isViewLoaded else { return }
-        updateNavigationActions()
-    }
-
-    private func updateEmptyStateActions() {
         emptyState.configure(
             .init(
                 symbolName: "folder",
-                title: "文件库为空",
-                message: "下载完成的文件会安全地保存在应用资料库中，并按类型整理。",
-                actionTitle: "从“文件”导入",
-                secondaryActionTitle: "前往浏览器"
+                title: searchText.isEmpty ? "文件库为空" : "没有匹配的文件",
+                message: searchText.isEmpty
+                    ? "下载完成的文件会安全地保存在应用资料库中，并按类型整理。"
+                    : "请尝试其他关键词或文件类型。",
+                actionTitle: nil,
+                secondaryActionTitle: searchText.isEmpty ? "前往浏览器" : nil
             ),
-            action: actionWithFeedback(onImportFiles),
-            secondaryAction: actionWithFeedback(onReturnToBrowser)
+            action: nil,
+            secondaryAction: onReturnToBrowser
         )
     }
 
-    private func actionWithFeedback(_ action: (() -> Void)?) -> (() -> Void)? {
-        guard let action else { return nil }
-        return {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            action()
+    @objc private func categoryChanged() {
+        selectedCategory = Category(rawValue: categoryControl.selectedSegmentIndex) ?? .all
+        reloadContent()
+    }
+
+    private func open(_ task: DownloadTaskModel) {
+        guard let url = downloadCenter.fileURL(for: task.id) else { return }
+        if task.downloadKind == .hlsAsset || [.video, .audio].contains(task.resourceType) {
+            let player = AVPlayerViewController()
+            player.player = AVPlayer(url: url)
+            present(player, animated: true) { player.player?.play() }
+        } else {
+            let source = FilePreviewDataSource(url: url)
+            previewDataSource = source
+            let preview = QLPreviewController()
+            preview.dataSource = source
+            present(preview, animated: true)
         }
     }
 
-    private func makeActionsMenu() -> UIMenu {
-        let createFolder = UIAction(
-            title: "新建文件夹",
-            image: UIImage(systemName: "folder.badge.plus"),
-            attributes: onCreateFolder == nil ? [.disabled] : []
-        ) { [weak self] _ in
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            self?.onCreateFolder?()
-        }
-        let importFiles = UIAction(
-            title: "从“文件”导入",
-            image: UIImage(systemName: "square.and.arrow.down"),
-            attributes: onImportFiles == nil ? [.disabled] : []
-        ) { [weak self] _ in
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            self?.onImportFiles?()
-        }
-        return UIMenu(children: [createFolder, importFiles])
+    private func share(_ task: DownloadTaskModel) {
+        guard let url = downloadCenter.fileURL(for: task.id) else { return }
+        present(UIActivityViewController(activityItems: [url], applicationActivities: nil), animated: true)
     }
 
-    private func makeSortMenu() -> UIMenu {
-        UIMenu(title: "排序方式", options: .singleSelection, children: [
-            sortAction(title: "名称", symbol: "textformat", order: .name, isSelected: true),
-            sortAction(title: "日期", symbol: "calendar", order: .date),
-            sortAction(title: "大小", symbol: "internaldrive", order: .size)
+    private func promptRename(_ task: DownloadTaskModel) {
+        let alert = UIAlertController(title: "重命名", message: nil, preferredStyle: .alert)
+        alert.addTextField { $0.text = (task.fileName as NSString).deletingPathExtension }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "保存", style: .default) { [weak self, weak alert] _ in
+            guard let self, let text = alert?.textFields?.first?.text else { return }
+            do { try self.downloadCenter.renameCompletedTask(id: task.id, to: text) }
+            catch { self.presentError(error) }
+        })
+        present(alert, animated: true)
+    }
+
+    private func confirmDelete(_ task: DownloadTaskModel) {
+        let alert = UIAlertController(
+            title: "删除文件？",
+            message: "文件和下载记录都会被删除，此操作无法撤销。",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "删除", style: .destructive) { [weak self] _ in
+            Task { [weak self] in
+                do { try await self?.downloadCenter.deleteTask(id: task.id, deleteFile: true) }
+                catch { self?.presentError(error) }
+            }
+        })
+        present(alert, animated: true)
+    }
+
+    private func presentError(_ error: Error) {
+        let alert = UIAlertController(title: "无法完成操作", message: DownloadErrorMapper.message(for: error), preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "好", style: .default))
+        present(alert, animated: true)
+    }
+}
+
+extension FileManagerViewController: UISearchResultsUpdating {
+    func updateSearchResults(for searchController: UISearchController) {
+        searchText = searchController.searchBar.text ?? ""
+        reloadContent()
+    }
+}
+
+extension FileManagerViewController: UITableViewDataSource, UITableViewDelegate {
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        visibleTasks.count
+    }
+
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        guard let cell = tableView.dequeueReusableCell(
+            withIdentifier: FileLibraryCell.reuseID,
+            for: indexPath
+        ) as? FileLibraryCell else { return UITableViewCell() }
+        let task = visibleTasks[indexPath.row]
+        cell.configure(task: task, fileURL: downloadCenter.fileURL(for: task.id))
+        return cell
+    }
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        open(visibleTasks[indexPath.row])
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        contextMenuConfigurationForRowAt indexPath: IndexPath,
+        point: CGPoint
+    ) -> UIContextMenuConfiguration? {
+        let task = visibleTasks[indexPath.row]
+        return UIContextMenuConfiguration(actionProvider: { [weak self] _ in
+            UIMenu(children: [
+                UIAction(title: "打开", image: UIImage(systemName: "play")) { _ in self?.open(task) },
+                UIAction(title: "分享", image: UIImage(systemName: "square.and.arrow.up")) { _ in self?.share(task) },
+                UIAction(title: "重命名", image: UIImage(systemName: "pencil")) { _ in self?.promptRename(task) },
+                UIAction(title: "删除", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in self?.confirmDelete(task) }
+            ])
+        })
+    }
+}
+
+private final class FileLibraryCell: UITableViewCell {
+    static let reuseID = "FileLibraryCell"
+    private let thumbnailView = UIImageView()
+    private let titleLabel = UILabel()
+    private let metadataLabel = UILabel()
+    private var thumbnailToken: FileThumbnailToken?
+    private var representedID: UUID?
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        selectionStyle = .none
+        backgroundColor = .clear
+        contentView.backgroundColor = AppColors.surface
+        contentView.layer.cornerRadius = AppRadius.card
+        contentView.layer.cornerCurve = .continuous
+
+        thumbnailView.contentMode = .scaleAspectFill
+        thumbnailView.clipsToBounds = true
+        thumbnailView.layer.cornerRadius = AppRadius.control
+        thumbnailView.backgroundColor = AppColors.accentFill
+        thumbnailView.tintColor = AppColors.accent
+        thumbnailView.translatesAutoresizingMaskIntoConstraints = false
+
+        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.numberOfLines = 2
+        metadataLabel.font = .preferredFont(forTextStyle: .caption1)
+        metadataLabel.textColor = AppColors.secondaryText
+        metadataLabel.numberOfLines = 2
+        let labels = UIStackView(arrangedSubviews: [titleLabel, metadataLabel])
+        labels.axis = .vertical
+        labels.spacing = 5
+        labels.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(thumbnailView)
+        contentView.addSubview(labels)
+        NSLayoutConstraint.activate([
+            thumbnailView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
+            thumbnailView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            thumbnailView.widthAnchor.constraint(equalToConstant: 72),
+            thumbnailView.heightAnchor.constraint(equalToConstant: 64),
+            labels.leadingAnchor.constraint(equalTo: thumbnailView.trailingAnchor, constant: 12),
+            labels.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
+            labels.centerYAnchor.constraint(equalTo: contentView.centerYAnchor)
         ])
     }
 
-    private func sortAction(
-        title: String,
-        symbol: String,
-        order: SortOrder,
-        isSelected: Bool = false
-    ) -> UIAction {
-        UIAction(
-            title: title,
-            image: UIImage(systemName: symbol),
-            attributes: onSortOrderChanged == nil ? [.disabled] : [],
-            state: isSelected ? .on : .off
-        ) { [weak self] _ in
-            self?.onSortOrderChanged?(order)
+    required init?(coder: NSCoder) { return nil }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        thumbnailToken?.cancel()
+        thumbnailToken = nil
+        representedID = nil
+        thumbnailView.image = nil
+    }
+
+    func configure(task: DownloadTaskModel, fileURL: URL?) {
+        representedID = task.id
+        titleLabel.text = task.fileName
+        let size = ByteCountFormatter.string(fromByteCount: task.downloadedSize, countStyle: .file)
+        let date = (task.completedAt ?? task.updatedAt).formatted(date: .abbreviated, time: .shortened)
+        metadataLabel.text = "\(task.downloadKind == .hlsAsset ? "HLS 离线视频" : task.resourceType.localizedTitle) · \(size)\n\(date)"
+        thumbnailView.image = UIImage(systemName: symbol(for: task))
+        guard let fileURL else { return }
+        thumbnailToken = FileThumbnailLoader.shared.load(
+            fileURL: fileURL,
+            size: CGSize(width: 144, height: 128),
+            scale: UIScreen.main.scale
+        ) { [weak self] image in
+            guard let self, self.representedID == task.id, let image else { return }
+            self.thumbnailView.image = image
         }
+    }
+
+    private func symbol(for task: DownloadTaskModel) -> String {
+        if task.downloadKind == .hlsAsset { return "play.rectangle.on.rectangle" }
+        switch task.resourceType {
+        case .video: return "film"
+        case .audio: return "waveform"
+        case .image: return "photo"
+        case .document: return "doc.text"
+        case .subtitle: return "captions.bubble"
+        case .archive: return "archivebox"
+        case .hls: return "play.rectangle.on.rectangle"
+        case .other: return "doc"
+        }
+    }
+}
+
+private final class FilePreviewDataSource: NSObject, QLPreviewControllerDataSource {
+    let url: URL
+    init(url: URL) { self.url = url }
+    func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
+    func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
+        url as NSURL
     }
 }

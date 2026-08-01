@@ -17,7 +17,7 @@
 
 第三轮根据真机问题继续收口现有能力：标签管理在竖屏首屏完整呈现四张卡片，普通与无痕标签原生左右分页；收藏改为真实本地持久化；浏览器顶部可根据网页公开主题色保持一致且可读；用户中心和下载设置路由完成定向修复。
 
-0.4.0 接入第一阶段资源嗅探：通过公开 WebKit API 与页面脚本识别当前标签页中的媒体、图片、字幕和文档资源，实时展示真实结果，但暂不开放下载。
+0.5.0 将资源嗅探改为按标签主动开启，并接入真实图片缩略图、普通后台文件下载、系统 HLS 离线下载、持久化下载任务和文件库。应用不提供 DRM、直播流或访问控制绕过。
 
 ## 当前完成情况
 
@@ -33,9 +33,14 @@
 - 资源、历史、下载、文件、用户与设置的统一正式页面骨架和可执行空状态。
 - 用户中心使用真实可用的本地收藏数量；尚未接入仓库的数据诚实显示 0，不填充示例数据。
 - 下载空状态与设置首页统一进入同一持久化下载偏好页面。
-- 第一阶段资源嗅探：DOM、MutationObserver、PerformanceResourceTiming、Fetch、XHR、媒体事件和导航响应。
+- 第一阶段资源嗅探：默认休眠；用户为当前标签开启后才启用 DOM、MutationObserver、PerformanceResourceTiming、Fetch、XHR、媒体事件和导航响应。
 - 每标签独立资源仓库、规范化去重、元数据合并、实时分类列表、手动重扫和真实工具栏角标。
-- 下载、认证协议与基础安全服务。
+- 图片资源真实缩略图：原生 URLSession、ImageIO 下采样、请求合并与受限缓存；无痕标签不写磁盘。
+- 普通 HTTP/HTTPS background URLSession 下载、真实进度/速度/剩余时间、暂停、恢复、取消、重试和任务 JSON 持久化。由于这是用户指定任意站点的通用浏览器，工程使用全局 ATS HTTP 例外以允许用户主动访问和下载明文 HTTP 资源；HTTPS 仍执行系统证书校验，正式上架时需要向 App Review 说明此用途。
+- 普通未受保护 HLS VOD 的 `AVAssetDownloadURLSession` 离线保存；保留系统 Asset Package，不伪装 MP4 转换。
+- 下载记录与文件库联动；图片/视频缩略图、AVPlayer 播放、Quick Look 预览、分享、重命名和删除使用真实本地文件。
+- 下载请求按当前标签临时构造 User-Agent、Referer 和匹配域 Cookie；敏感请求信息不持久化。
+- 认证协议与基础安全服务。
 - XCTest 单元测试。
 - GitHub Actions Simulator、测试、iphoneos Release 与未签名 IPA。
 - GitHub 托管 macOS Runner 已完成一次全链路成功验证。
@@ -142,9 +147,9 @@ xcodebuild test \
 
 1. 根据第三轮真机截图验证四宫格、左右分页、网页主题色和用户中心首帧布局。
 2. 完成历史记录持久化。
-3. 根据真机测试继续校准第一阶段资源识别的准确率与性能。
-4. 实现普通文件下载、后台任务与断点续传，并消费现有下载偏好。
-5. 实现文件管理、AVPlayer 和音频播放器。
+3. 根据真机测试校准主动资源识别、后台下载恢复和系统 HLS 离线包兼容性。
+4. 完成历史记录持久化及更完整的文件夹/批量管理。
+5. 按需设计 Swift 原生 M3U8 Parser 与合法分片下载第二阶段，不引入 Node/FFmpeg。
 6. 接入 Supabase Auth 与 Sign in with Apple。
 7. 完善内容过滤、站点权限、隐私和上线资料。
 
@@ -155,10 +160,12 @@ xcodebuild test \
 - WKWebView 不直接公开所有底层网络请求，因此无法保证发现页面加载的每一项资源。
 - Blob URL 只在当前页面上下文中有效，不保证可以导出。
 - 跨域限制可能导致 MIME、大小等元数据缺失。
-- 加密 HLS 不保证可用；DRM/FairPlay 内容不会尝试下载或解密。
+- HLS 第一阶段只支持系统能够离线保存的未受 DRM 保护 VOD；直播、DRM/FairPlay 明确拒绝，且不转换为 MP4。
 - WKWebView 行为不与 Safari 完全相同。
 - 休眠标签恢复时会重新加载 URL，不保证精确恢复滚动位置和网页脚本内存状态。
-- 本轮只识别和展示真实资源，未开放实际下载；下载、文件与登录页面不伪造未接入的业务结果。
+- background URLSession 和 AVAssetDownloadURLSession 的后台恢复、蜂窝切换与通知必须在 iPhone 真机继续验证。
+- 签名 URL 过期、服务器拒绝 Range、跨域 Cookie 策略或服务器返回登录 HTML 时，任务会显示真实失败，不会伪装成功。
+- 登录服务尚未接入，用户中心继续保持游客模式。
 - 未签名 IPA 不能直接作为 App Store 包使用。
 
 ## 资源下载合规说明
@@ -170,3 +177,5 @@ xcodebuild test \
 - [项目计划](PROJECT_PLAN.md)
 - [设计系统](DESIGN_SYSTEM.md)
 - [更新记录](CHANGELOG.md)
+- [参考实现与许可证边界](REFERENCE_IMPLEMENTATION_NOTES.md)
+- [开源项目说明](OPEN_SOURCE_NOTICES.md)

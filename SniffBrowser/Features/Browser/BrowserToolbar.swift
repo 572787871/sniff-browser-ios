@@ -36,6 +36,7 @@ final class BrowserToolbar: UIView {
   private let scanIndicator = UIActivityIndicatorView(style: .medium)
   private var isCollapsed = false
   private var isPrivateMode = false
+  private var snifferActivationState: SniffingActivationState = .disabled
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -59,15 +60,43 @@ final class BrowserToolbar: UIView {
     tabsButton.accessibilityLabel = "标签页，共 \(max(1, tabCount)) 个"
   }
 
-  func setSnifferState(resourceCount: Int, isScanning: Bool) {
+  func setSnifferState(
+    resourceCount: Int,
+    activationState: SniffingActivationState
+  ) {
+    snifferActivationState = activationState
     let count = max(0, resourceCount)
     resourceBadgeLabel.text = count > 99 ? "99+" : "\(count)"
-    resourceBadgeLabel.isHidden = count == 0
-    scanIndicator.isHidden = !isScanning
-    isScanning ? scanIndicator.startAnimating() : scanIndicator.stopAnimating()
-    sniffButton.accessibilityValue = isScanning
-      ? "正在扫描"
-      : (count == 0 ? "未发现资源" : "发现 \(count) 项资源")
+    resourceBadgeLabel.isHidden = count == 0 || activationState != .active
+    let isStarting = activationState == .starting
+    scanIndicator.isHidden = !isStarting
+    isStarting ? scanIndicator.startAnimating() : scanIndicator.stopAnimating()
+    switch activationState {
+    case .disabled:
+      sniffButton.accessibilityLabel = "开启资源嗅探"
+      sniffButton.accessibilityValue = nil
+      sniffButton.tintColor = AppColors.secondaryText
+    case .starting:
+      sniffButton.accessibilityLabel = "资源嗅探"
+      sniffButton.accessibilityValue = "正在开启"
+    case .active:
+      sniffButton.accessibilityLabel = "当前页面资源"
+      sniffButton.accessibilityValue = count == 0
+        ? "嗅探已开启，未发现资源"
+        : "嗅探已开启，发现 \(count) 项资源"
+    case .stopping:
+      sniffButton.accessibilityLabel = "资源嗅探"
+      sniffButton.accessibilityValue = "正在停止"
+    case .failed:
+      sniffButton.accessibilityLabel = "重新开启资源嗅探"
+      sniffButton.accessibilityValue = "开启失败"
+      sniffButton.tintColor = AppColors.danger
+    }
+    if activationState == .active || activationState == .starting {
+      sniffButton.tintColor = isPrivateMode
+        ? AppColors.privateBrowsingAccent
+        : AppColors.accent
+    }
   }
 
   func setPrivateMode(_ isPrivate: Bool) {
@@ -217,7 +246,7 @@ final class BrowserToolbar: UIView {
       view.updateResolvedColors()
     }
     update(canGoBack: false, canGoForward: false, tabCount: 1)
-    setSnifferState(resourceCount: 0, isScanning: false)
+    setSnifferState(resourceCount: 0, activationState: .disabled)
   }
 
   private func updateResolvedColors() {
@@ -230,9 +259,16 @@ final class BrowserToolbar: UIView {
     [backButton, forwardButton, tabsButton, moreButton].forEach {
       $0.tintColor = primary
     }
-    sniffButton.tintColor = isPrivateMode
-      ? AppColors.privateBrowsingAccent
-      : AppColors.accent
+    switch snifferActivationState {
+    case .disabled, .stopping:
+      sniffButton.tintColor = AppColors.secondaryText
+    case .failed:
+      sniffButton.tintColor = AppColors.danger
+    case .starting, .active:
+      sniffButton.tintColor = isPrivateMode
+        ? AppColors.privateBrowsingAccent
+        : AppColors.accent
+    }
     tabCountLabel.textColor = primary
     scanIndicator.color = isPrivateMode
       ? AppColors.privateBrowsingAccent

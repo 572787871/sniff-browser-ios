@@ -31,6 +31,16 @@ final class FileNameSanitizerTests: XCTestCase {
     XCTAssertEqual(result.count, 8)
   }
 
+  func testPreservesExtensionWhenTruncatingLongFileName() {
+    let result = FileNameSanitizer.sanitize(
+      "这是一个非常非常长的视频文件名称.mp4",
+      maximumLength: 12
+    )
+
+    XCTAssertEqual(result.count, 12)
+    XCTAssertTrue(result.hasSuffix(".mp4"))
+  }
+
   func testFallsBackToUnnamedFileForOnlyInvalidContent() {
     XCTAssertEqual(FileNameSanitizer.sanitize("..."), "未命名文件")
     XCTAssertEqual(FileNameSanitizer.sanitize("   "), "未命名文件")

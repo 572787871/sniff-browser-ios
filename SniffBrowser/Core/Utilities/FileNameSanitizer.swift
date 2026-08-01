@@ -13,8 +13,33 @@ enum FileNameSanitizer {
       with: "_",
       options: .regularExpression
     )
-    let limited = String(collapsed.prefix(max(1, maximumLength)))
-      .trimmingCharacters(in: CharacterSet(charactersIn: " ."))
+    let lengthLimit = max(1, maximumLength)
+    let trimmed = collapsed.trimmingCharacters(
+      in: CharacterSet(charactersIn: " .")
+    )
+    guard trimmed.count > lengthLimit else {
+      return trimmed.isEmpty ? "未命名文件" : trimmed
+    }
+
+    let path = trimmed as NSString
+    let pathExtension = path.pathExtension
+    let extensionLength = pathExtension.count + 1
+    let limited: String
+    if !pathExtension.isEmpty, extensionLength < lengthLimit {
+      let baseLimit = lengthLimit - extensionLength
+      let base = path.deletingPathExtension.trimmingCharacters(
+        in: CharacterSet(charactersIn: " .")
+      )
+      let limitedBase = String(base.prefix(baseLimit)).trimmingCharacters(
+        in: CharacterSet(charactersIn: " .")
+      )
+      limited = limitedBase.isEmpty
+        ? String(trimmed.prefix(lengthLimit))
+        : "\(limitedBase).\(pathExtension)"
+    } else {
+      limited = String(trimmed.prefix(lengthLimit))
+        .trimmingCharacters(in: CharacterSet(charactersIn: " ."))
+    }
     return limited.isEmpty ? "未命名文件" : limited
   }
 }

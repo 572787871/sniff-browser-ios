@@ -63,14 +63,18 @@ struct ResourceDeduplicator: Sendable {
         existing: DetectedResource,
         incoming: DetectedResource
     ) -> DetectedResource {
-        let preferredSource = incoming.detectionSource.confidence
-            > existing.detectionSource.confidence
-            ? incoming.detectionSource
-            : existing.detectionSource
-        let preferredType = incoming.resourceType.sortPriority
-            < existing.resourceType.sortPriority
-            ? incoming.resourceType
-            : existing.resourceType
+        let preferredSource: DetectionSource
+        if incoming.detectionSource.confidence > existing.detectionSource.confidence {
+            preferredSource = incoming.detectionSource
+        } else {
+            preferredSource = existing.detectionSource
+        }
+        let preferredType: ResourceType
+        if incoming.resourceType.sortPriority < existing.resourceType.sortPriority {
+            preferredType = incoming.resourceType
+        } else {
+            preferredType = existing.resourceType
+        }
 
         return DetectedResource(
             id: existing.id,

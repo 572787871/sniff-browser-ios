@@ -6,9 +6,11 @@ final class AppCoordinator: NSObject, BrowserRouting {
   private let navigationController: UINavigationController
   private let websiteDataManager = WebsiteDataManager()
   private let favoriteService = FavoriteService.shared
+  private let downloadCenter = DownloadCenter.shared
   private weak var browserViewController: BrowserViewController?
   private weak var userCenterViewController: UserCenterViewController?
   private var favoriteChangeObserver: NSObjectProtocol?
+  private var downloadChangeObserver: NSObjectProtocol?
 
   init(window: UIWindow) {
     self.window = window
@@ -20,28 +22,48 @@ final class AppCoordinator: NSObject, BrowserRouting {
         self?.refreshUserCenterCounts()
       }
     }
+    downloadChangeObserver = NotificationCenter.default.addObserver(
+      forName: .downloadTasksDidChange,
+      object: downloadCenter,
+      queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor in
+        self?.refreshUserCenterCounts()
+      }
+    }
   }
 
   deinit {
     if let favoriteChangeObserver {
       favoriteService.removeChangeObserver(favoriteChangeObserver)
     }
+    if let downloadChangeObserver {
+      NotificationCenter.default.removeObserver(downloadChangeObserver)
+    }
   }
 
   func start() {
-    let browser = BrowserViewController()
+    let browser = BrowserViewController(downloadCenter: downloadCenter)
     browser.router = self
     browserViewController = browser
     navigationController.setViewControllers([browser], animated: false)
     navigationController.setNavigationBarHidden(true, animated: false)
     window.rootViewController = navigationController
     window.makeKeyAndVisible()
+    Task { [downloadCenter] in
+      await downloadCenter.reloadTasks()
+    }
   }
 
   func showResources(_ controller: ResourceSnifferViewController) {
     let navigation = sheetNavigation(root: controller)
     controller.onReturnToPage = { [weak navigation] in
       navigation?.dismiss(animated: true)
+    }
+    controller.onShowDownloads = { [weak self, weak navigation] in
+      navigation?.dismiss(animated: true) {
+        self?.showDownloads()
+      }
     }
     presentSheet(navigation)
   }
@@ -97,7 +119,7 @@ final class AppCoordinator: NSObject, BrowserRouting {
   }
 
   func showDownloads() {
-    let controller = DownloadManagerViewController()
+    let controller = DownloadManagerViewController(manager: downloadCenter)
     controller.onBrowseForDownloads = { [weak self] in
       self?.returnToBrowser()
     }
@@ -108,11 +130,12 @@ final class AppCoordinator: NSObject, BrowserRouting {
   }
 
   func showFiles() {
-    let controller = FileManagerViewController()
-    // 文件仓储尚未实现，因此导入、建夹和排序操作保持禁用，避免伪造结果。
+    let controller = FileManagerViewController(downloadCenter: downloadCenter)
     controller.onImportFiles = nil
     controller.onCreateFolder = nil
-    controller.onSortOrderChanged = nil
+    controller.onSortOrderChanged = { [weak controller] order in
+      controller?.setSortOrder(order)
+    }
     controller.onReturnToBrowser = { [weak self] in
       self?.returnToBrowser()
     }
@@ -147,7 +170,13 @@ final class AppCoordinator: NSObject, BrowserRouting {
   }
 
   private func currentUserCenterCounts() -> UserCenterCounts {
-    UserCenterCounts(favorites: (try? favoriteService.count()) ?? 0)
+    UserCenterCounts(
+      downloads: downloadCenter.tasks.filter {
+        $0.isHiddenFromDownloadHistory != true
+      }.count,
+      files: downloadCenter.tasks.filter { $0.state == .completed }.count,
+      favorites: (try? favoriteService.count()) ?? 0
+    )
   }
 
   private func refreshUserCenterCounts() {

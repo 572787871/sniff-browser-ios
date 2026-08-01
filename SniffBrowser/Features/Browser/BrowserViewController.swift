@@ -23,6 +23,8 @@ final class BrowserViewController: UIViewController {
   let favoriteService: FavoriteService
   let resourceStore: TabResourceStore
   let resourceSniffingService: WebResourceSniffingService
+  let downloadCenter: DownloadCenter
+  let downloadRequestContextBuilder = DownloadRequestContextBuilder()
   let addressBar = AddressBarView()
   let toolbar = BrowserToolbar(frame: .zero)
   let contentView = UIView()
@@ -49,20 +51,35 @@ final class BrowserViewController: UIViewController {
   }
 
   init(
-    viewModel: BrowserViewModel? = nil,
-    tabManager: BrowserTabManager? = nil,
-    favoriteService: FavoriteService = .shared,
-    resourceStore: TabResourceStore? = nil
+    viewModel: BrowserViewModel,
+    tabManager: BrowserTabManager,
+    favoriteService: FavoriteService,
+    resourceStore: TabResourceStore,
+    downloadCenter: DownloadCenter
   ) {
-    let resolvedResourceStore = resourceStore ?? TabResourceStore()
-    self.viewModel = viewModel ?? BrowserViewModel()
-    self.tabManager = tabManager ?? BrowserTabManager()
+    self.viewModel = viewModel
+    self.tabManager = tabManager
     self.favoriteService = favoriteService
-    self.resourceStore = resolvedResourceStore
+    self.resourceStore = resourceStore
+    self.downloadCenter = downloadCenter
     resourceSniffingService = WebResourceSniffingService(
-      store: resolvedResourceStore
+      store: resourceStore
     )
     super.init(nibName: nil, bundle: nil)
+  }
+
+  convenience init(downloadCenter: DownloadCenter) {
+    self.init(
+      viewModel: BrowserViewModel(),
+      tabManager: BrowserTabManager(),
+      favoriteService: .shared,
+      resourceStore: TabResourceStore(),
+      downloadCenter: downloadCenter
+    )
+  }
+
+  convenience init() {
+    self.init(downloadCenter: .shared)
   }
 
   required init?(coder: NSCoder) {
@@ -71,6 +88,7 @@ final class BrowserViewController: UIViewController {
     favoriteService = .shared
     let resolvedResourceStore = TabResourceStore()
     resourceStore = resolvedResourceStore
+    downloadCenter = .shared
     resourceSniffingService = WebResourceSniffingService(
       store: resolvedResourceStore
     )
@@ -244,7 +262,7 @@ final class BrowserViewController: UIViewController {
   private func configureActions() {
     addressBar.delegate = self
     toolbar.toolbarDelegate = self
-    toolbar.setSnifferState(resourceCount: 0, isScanning: false)
+    toolbar.setSnifferState(resourceCount: 0, activationState: .disabled)
     newTabView.delegate = self
     errorView.onRetry = { [weak self] in
       self?.retryLastRequest()
@@ -348,13 +366,13 @@ final class BrowserViewController: UIViewController {
       tab.updateResourceSummary(
         count: snapshot.resources.count,
         scanState: snapshot.scanState,
-        lastScanAt: snapshot.lastScanAt
+        lastScanAt: snapshot.lastScanAt,
+        activationState: snapshot.activationState
       )
       guard self.activeTab?.id == snapshot.tabID else { return }
       self.toolbar.setSnifferState(
         resourceCount: snapshot.resources.count,
-        isScanning: snapshot.scanState == .installing
-          || snapshot.scanState == .scanning
+        activationState: snapshot.activationState
       )
     }
     webView.translatesAutoresizingMaskIntoConstraints = false
@@ -676,7 +694,18 @@ extension BrowserViewController: BrowserToolbarDelegate {
         pageURL: self.viewModel.state.url,
         isPrivate: tab.isPrivate,
         store: resourceStore,
-        service: resourceSniffingService
+        service: resourceSniffingService,
+        downloadCenter: downloadCenter,
+        requestContextProvider: { [weak self, weak webView = tab.webView] url in
+          guard let self else {
+            return DownloadRequestContext(targetURL: url, pageURL: nil, headers: [:])
+          }
+          return await self.downloadRequestContextBuilder.build(
+            targetURL: url,
+            pageURL: self.viewModel.state.url,
+            webView: webView
+          )
+        }
       )
       let controller = ResourceSnifferViewController(viewModel: viewModel)
       router?.showResources(controller)

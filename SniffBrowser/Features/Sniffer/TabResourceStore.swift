@@ -14,6 +14,7 @@ final class TabResourceStore {
         var errorMessage: String?
         var manualScanID: UUID?
         var manualSeenKeys: Set<String> = []
+        var activationState: SniffingActivationState = .disabled
     }
 
     private struct Observation {
@@ -42,13 +43,60 @@ final class TabResourceStore {
         bucket.pageKey = pageKey(for: pageURL)
         bucket.isPrivate = isPrivate
         bucket.resourcesByURL.removeAll(keepingCapacity: true)
-        bucket.scanState = .installing
+        bucket.scanState = bucket.activationState.isEnabled ? .installing : .idle
         bucket.lastScanAt = nil
         bucket.errorMessage = nil
         bucket.manualScanID = nil
         bucket.manualSeenKeys.removeAll()
         buckets[tabID] = bucket
         notify(tabID)
+    }
+
+    func beginActivation(tabID: UUID) {
+        var bucket = buckets[tabID] ?? Bucket()
+        bucket.activationState = .starting
+        bucket.scanState = .installing
+        bucket.errorMessage = nil
+        buckets[tabID] = bucket
+        notify(tabID)
+    }
+
+    func completeActivation(tabID: UUID) {
+        guard var bucket = buckets[tabID] else { return }
+        bucket.activationState = .active
+        buckets[tabID] = bucket
+        notify(tabID)
+    }
+
+    func beginStopping(tabID: UUID) {
+        guard var bucket = buckets[tabID] else { return }
+        bucket.activationState = .stopping
+        buckets[tabID] = bucket
+        notify(tabID)
+    }
+
+    func completeStopping(tabID: UUID) {
+        guard var bucket = buckets[tabID] else { return }
+        bucket.activationState = .disabled
+        bucket.scanState = .idle
+        bucket.errorMessage = nil
+        bucket.manualScanID = nil
+        bucket.manualSeenKeys.removeAll(keepingCapacity: true)
+        buckets[tabID] = bucket
+        notify(tabID)
+    }
+
+    func failActivation(tabID: UUID, message: String) {
+        var bucket = buckets[tabID] ?? Bucket()
+        bucket.activationState = .failed
+        bucket.scanState = .failed
+        bucket.errorMessage = message
+        buckets[tabID] = bucket
+        notify(tabID)
+    }
+
+    func activationState(for tabID: UUID) -> SniffingActivationState {
+        buckets[tabID]?.activationState ?? .disabled
     }
 
     func reconcilePageIfNeeded(
@@ -81,6 +129,7 @@ final class TabResourceStore {
 
     func beginScan(tabID: UUID, scanID: UUID?, isManual: Bool) {
         var bucket = buckets[tabID] ?? Bucket()
+        guard bucket.activationState.isEnabled else { return }
         bucket.scanState = .scanning
         bucket.errorMessage = nil
         if isManual {
@@ -94,6 +143,7 @@ final class TabResourceStore {
     func upsert(_ resources: [DetectedResource], tabID: UUID) {
         guard !resources.isEmpty else { return }
         var bucket = buckets[tabID] ?? Bucket()
+        guard bucket.activationState.isEnabled else { return }
         for resource in resources.prefix(ResourceMessageDecoder.maximumBatchCount) {
             let key = resource.canonicalURL.absoluteString
             if let existing = bucket.resourcesByURL[key] {
@@ -164,7 +214,8 @@ final class TabResourceStore {
             resources: sortedResources(in: bucket),
             scanState: bucket?.scanState ?? .idle,
             lastScanAt: bucket?.lastScanAt,
-            errorMessage: bucket?.errorMessage
+            errorMessage: bucket?.errorMessage,
+            activationState: bucket?.activationState ?? .disabled
         )
     }
 
@@ -183,7 +234,7 @@ final class TabResourceStore {
     func reset(tabID: UUID) {
         guard var bucket = buckets[tabID] else { return }
         bucket.resourcesByURL.removeAll(keepingCapacity: true)
-        bucket.scanState = .idle
+        bucket.scanState = bucket.activationState.isEnabled ? .completed : .idle
         bucket.lastScanAt = nil
         bucket.errorMessage = nil
         bucket.manualScanID = nil
@@ -216,8 +267,7 @@ final class TabResourceStore {
         guard let bucket else { return [] }
         return bucket.resourcesByURL.values.sorted { lhs, rhs in
             if lhs.resourceType.sortPriority != rhs.resourceType.sortPriority {
-                return lhs.resourceType.sortPriority
-                    < rhs.resourceType.sortPriority
+                return lhs.resourceType.sortPriority < rhs.resourceType.sortPriority
             }
             if (lhs.estimatedSize != nil) != (rhs.estimatedSize != nil) {
                 return lhs.estimatedSize != nil

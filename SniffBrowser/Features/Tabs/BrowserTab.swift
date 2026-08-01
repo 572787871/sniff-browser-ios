@@ -28,6 +28,10 @@ final class BrowserTab: Identifiable {
     private(set) var detectedResourceCount = 0
     private(set) var lastResourceScanAt: Date?
     private(set) var resourceScanState: ResourceScanState = .idle
+    private(set) var sniffingState: SniffingActivationState = .disabled
+    private(set) var sniffingStartedAt: Date?
+
+    var isSniffingEnabled: Bool { sniffingState.isEnabled }
 
     private let webViewFactory: WebViewFactory
 
@@ -111,11 +115,18 @@ final class BrowserTab: Identifiable {
     func updateResourceSummary(
         count: Int,
         scanState: ResourceScanState,
-        lastScanAt: Date?
+        lastScanAt: Date?,
+        activationState: SniffingActivationState
     ) {
         detectedResourceCount = max(0, count)
         resourceScanState = scanState
         lastResourceScanAt = lastScanAt
+        sniffingState = activationState
+        if activationState == .starting, sniffingStartedAt == nil {
+            sniffingStartedAt = Date()
+        } else if activationState == .disabled {
+            sniffingStartedAt = nil
+        }
     }
 
     private func synchronizeNavigationState() {

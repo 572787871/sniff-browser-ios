@@ -12,6 +12,8 @@
 
 第四轮完成第一阶段资源嗅探：只使用公开 WebKit API 与安全页面脚本识别当前标签资源，建立标签隔离、去重、分类、实时列表和手动重扫；不实现实际下载、HLS 合并、DRM、播放器或文件写入。
 
+第五轮把嗅探改为用户按标签主动开启，并接入原生缩略图、普通后台文件下载、Apple HLS 离线下载、任务持久化与真实文件库。直播、DRM/FairPlay、Blob 导出和 HLS 转 MP4 明确不在范围内。
+
 产品边界：
 
 - 仅使用公开 Apple API，不使用 WebKit 私有 API。
@@ -50,6 +52,7 @@
 - URL/搜索关键词识别、Google 搜索。
 - 前进、后退、刷新、停止、进度、下拉刷新。
 - HTTPS/HTTP 状态展示。
+- 通用浏览器允许用户主动访问未知 HTTP 主机，因此使用全局 ATS HTTP 例外；HTTPS 仍由系统执行证书与信任校验。正式发行前必须准备 App Review 用途说明，并优先鼓励 HTTPS。
 - 新标签页原生页面。
 - target="_blank" 与 `window.open` 处理。
 - 外部 URL 的安全转交。
@@ -63,12 +66,15 @@
 - 原生 Bottom Sheet 更多菜单。
 - Application Support 原子 JSON 收藏持久化、URL 规范化去重、搜索、打开、分享和确认删除。
 - 网页公开主题色与背景色检测、标签级主题色保存和可读前景色解析。
-- 资源页面展示当前标签真实扫描状态、分类、资源元数据、复制、分享与详情；零资源时继续使用正式空状态。
+- 资源页面展示当前标签真实扫描状态、分类、资源元数据、图片缩略图、复制、分享、预览与下载确认；零资源时继续使用正式空状态。
 - 用户中心收藏数量来自真实本地仓库；没有仓库数据时诚实返回 0。
 - 下载空状态与设置首页通过统一 Coordinator 路由直达同一下载设置详情页。
-- 第一阶段资源嗅探：DOM、MutationObserver、PerformanceResourceTiming、Fetch、XHR、媒体事件与导航响应。
+- 第一阶段资源嗅探默认休眠；用户主动开启后才启用 DOM、MutationObserver、PerformanceResourceTiming、Fetch、XHR、媒体事件与导航响应。
 - 每标签独立资源仓库、规范 URL 去重、元数据合并、手动重扫、扫描状态和真实角标。
-- 下载、认证的模型与协议。
+- background URLSession 普通文件下载、Resume Data、持久化队列、并发限制、真实进度与错误验证。
+- `AVAssetDownloadURLSession` 普通 HLS VOD 离线下载；拒绝直播和受保护内容。
+- 完成文件进入 Documents/Downloads 分类目录或系统管理的 HLS Asset Package，并由文件库真实展示和打开。
+- 认证的模型与协议。
 - Keychain、偏好、日志、文件名清理等基础服务。
 
 后续实现：
@@ -140,7 +146,7 @@
 - `TabResourceStore` 按标签隔离，导航和关标签时清理；无痕结果不持久化。
 - 规范 URL 去重会移除 fragment 和明确追踪参数，但保留 token、signature、expires 等访问参数。
 
-当前不发送额外 HEAD 请求，不读取响应体，不持久化完整资源列表，不实现实际下载。
+当前不发送额外 HEAD 请求、不读取响应体、不持久化完整资源列表。识别脚本在新标签中默认休眠，只有用户点击嗅探按钮后才安装监听并扫描；停止后保留结果但不再接收新资源。
 
 限制：
 
@@ -155,16 +161,19 @@
 
 ## 7. 下载管理方案
 
-首轮定义 `DownloadManaging`、`DownloadTaskModel`、`DownloadState`，下载页面只显示真实空状态。
+当前下载实现：
 
-后续：
+- 普通资源使用 background `URLSessionDownloadTask`，支持 waiting、preparing、downloading、paused、retrying、finalizing、completed、failed 和 cancelled。
+- 暂停产生 Resume Data 并存入 Application Support；系统/服务器不接受时明确提示从头开始，不伪装断点成功。
+- HLS 使用 `AVAssetDownloadURLSession`；只接受系统可播放、有限时长且未受保护的 VOD。
+- 任务保存 URL、文件名、类型、大小、进度、速度、剩余时间、目标相对路径、Resume Data 相对路径和用户可读错误；Cookie 和 Authorization 不持久化。
+- 普通文件进入 Documents/Downloads 的分类目录；系统 HLS Asset Package 保留其受管理位置并存相对引用。
+- 下载页提供暂停、继续、取消、重试、清理与完成文件打开；文件页展示真实完成记录。
 
-- 普通资源：background `URLSessionDownloadTask`。
-- HLS：根据合法资源类型选择 `AVAssetDownloadURLSession` 或可验证的分片方案。
-- 状态：waiting、downloading、paused、completed、failed、cancelled。
-- 保存任务 URL、文件名、大小、进度、速度、剩余时间、目标目录、resumeData、错误和来源。
-- 支持暂停、恢复、取消、重试、并发限制、网络切换、后台完成回调及本地通知。
-- 任务必须持久化，禁止仅驻留内存。
+后续仍需真机强化：
+
+- 后台被杀恢复、网络切换、通知、系统 HLS 包生命周期和不同服务器 Resume Data 兼容性。
+- Swift 原生 M3U8 Parser、分片队列和合法 AES-128 内容处理属于第二阶段，不在当前实现中。
 
 ## 8. 用户系统方案
 
@@ -200,8 +209,8 @@ CI 只能证明工程可生成、编译和自动测试通过，不能证明签�
 3. 第三轮：修复四宫格标签布局、普通/无痕左右分页、收藏持久化、网页顶栏主题色、用户中心首次布局和下载设置路由。
 4. 第一阶段资源嗅探引擎、标签隔离、去重、分类和真实资源列表。
 5. 历史持久化。
-6. 普通文件下载、后台任务、断点续传与任务持久化。
-7. HLS 合法下载策略、文件夹、文件操作、AVPlayer/音频播放器。
+6. 主动嗅探、普通后台文件下载、断点恢复、系统 HLS 离线保存、任务持久化与基础文件库。
+7. HLS 第二阶段 Parser、文件夹/批量操作和完整播放器体验。
 8. Supabase Auth、同步和 Keychain 会话。
 9. 内容过滤、权限、隐私与存储管理。
 10. Instruments、无障碍、UI 测试、App Store 上线准备。

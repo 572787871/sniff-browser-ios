@@ -2,6 +2,30 @@
 
 本项目遵循语义化版本，并如实记录已经落地的能力。
 
+## 0.5.0 - 2026-07-31
+
+### 新增
+
+- 将资源嗅探改为每个标签由用户主动开启；新建和恢复标签默认休眠，停止后保留结果但不再监听。
+- 增加图片资源真实缩略图：请求去重、取消、ImageIO 下采样、5 MB 上限、内存/磁盘缓存及无痕仅内存策略。
+- 增加 background URLSession 普通文件下载，支持真实进度、平滑速度、剩余时间、暂停 Resume Data、继续、取消、重试和后台事件接续。
+- 增加 `AVAssetDownloadURLSession` HLS 离线下载，支持未受保护的有限时长 VOD，并拒绝直播与 DRM/FairPlay。
+- 增加下载任务原子 JSON 持久化、并发调度、响应状态/HTML 错误页校验、本地通知和敏感请求上下文隔离。
+- 文件库接入真实完成任务，支持缩略图、AVPlayer、Quick Look、分享、重命名和二次确认删除。
+- 增加参考实现与许可证边界、开源项目说明文档。
+
+### 安全与边界
+
+- Cookie 只按目标 URL 从当前标签临时取得，不写入任务 JSON 或日志；不持久化 Authorization。
+- 不引入 GPL 项目源码，不打包 Node.js、Electron、Android 组件、FFmpeg 或浏览器扩展。
+- HLS 不转换为 MP4；Blob、直播、DRM/FairPlay 不创建假下载任务。
+- 首次下载媒体显示合规说明，要求用户只保存有权获取的资源。
+
+### 验证说明
+
+- 当前 Linux 宿主没有 Xcode、Simulator 或 iPhone，无法执行 Apple 工具链构建与真机后台下载验证。
+- 本地仅执行 Swift 语法树、YAML、plist、diff、资源脚本与敏感信息静态检查；Push 后由既有 GitHub Actions 负责真实编译和 XCTest，本轮不等待结果。
+
 ## 0.4.0 - 2026-07-31
 
 ### 新增

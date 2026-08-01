@@ -1,6 +1,7 @@
 import UIKit
 
 @main
+@MainActor
 final class AppDelegate: UIResponder, UIApplicationDelegate {
   func application(
     _ application: UIApplication,
@@ -20,5 +21,21 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
       name: "Default Configuration",
       sessionRole: connectingSceneSession.role
     )
+  }
+
+  func application(
+    _ application: UIApplication,
+    handleEventsForBackgroundURLSession identifier: String,
+    completionHandler: @escaping () -> Void
+  ) {
+    DownloadCenter.shared.handleBackgroundEvents(
+      identifier: identifier,
+      completionHandler: completionHandler
+    )
+  }
+
+  func applicationDidReceiveMemoryWarning(_ application: UIApplication) {
+    ResourceThumbnailLoader.shared.clearMemoryCache()
+    FileThumbnailLoader.shared.clearMemory()
   }
 }
