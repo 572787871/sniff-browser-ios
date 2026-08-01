@@ -32,6 +32,21 @@ struct DownloadRequestCookie: Sendable {
         }
         return HTTPCookie(properties: properties)
     }
+
+    func matches(_ url: URL, now: Date = Date()) -> Bool {
+        guard expiresDate.map({ $0 > now }) ?? true,
+              let host = url.host?.lowercased()
+        else { return false }
+        let normalizedDomain = domain
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            .lowercased()
+        let domainMatches = host == normalizedDomain
+            || host.hasSuffix(".\(normalizedDomain)")
+        guard domainMatches else { return false }
+        let requestPath = url.path.isEmpty ? "/" : url.path
+        guard requestPath.hasPrefix(path.isEmpty ? "/" : path) else { return false }
+        return !isSecure || url.scheme?.lowercased() == "https"
+    }
 }
 
 struct DownloadRequestContext: Sendable {
@@ -53,15 +68,28 @@ struct DownloadRequestContext: Sendable {
     }
 
     func makeRequest(
+        for url: URL? = nil,
         cachePolicy: URLRequest.CachePolicy = .reloadIgnoringLocalCacheData,
         allowsCellularAccess: Bool = true
     ) -> URLRequest {
-        var request = URLRequest(url: targetURL, cachePolicy: cachePolicy)
+        let requestURL = url ?? targetURL
+        var request = URLRequest(url: requestURL, cachePolicy: cachePolicy)
         request.allowsCellularAccess = allowsCellularAccess
         // Cookies are copied from WKWebView after domain/path filtering. Do not
         // let URLSession's separate cookie store replace that explicit context.
         request.httpShouldHandleCookies = false
-        headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+        headers.forEach {
+            guard $0.key.caseInsensitiveCompare("Cookie") != .orderedSame else { return }
+            request.setValue($0.value, forHTTPHeaderField: $0.key)
+        }
+        let matchingCookies = cookies
+            .filter { $0.matches(requestURL) }
+            .compactMap(\.httpCookie)
+        if !matchingCookies.isEmpty {
+            HTTPCookie.requestHeaderFields(with: matchingCookies).forEach {
+                request.setValue($0.value, forHTTPHeaderField: $0.key)
+            }
+        }
         return request
     }
 
@@ -72,7 +100,9 @@ struct DownloadRequestContext: Sendable {
         if let userAgent = headers["User-Agent"], !userAgent.isEmpty {
             options[AVURLAssetHTTPUserAgentKey] = userAgent
         }
-        let validCookies = cookies.compactMap(\.httpCookie)
+        let validCookies = cookies
+            .filter { $0.matches(targetURL) }
+            .compactMap(\.httpCookie)
         if !validCookies.isEmpty {
             options[AVURLAssetHTTPCookiesKey] = validCookies
         }
@@ -97,10 +127,15 @@ final class DownloadRequestContextBuilder {
         }
 
         let userAgent = await resolveUserAgent(in: webView)
-        let matchingCookies = await resolveCookies(
-            for: targetURL,
+        // Keep the current WebKit cookie snapshot in memory and apply only the
+        // cookies that match each concrete playlist/key/segment URL. HLS
+        // commonly redirects from the page host to a sibling CDN host; taking
+        // only the manifest host's cookies here makes those later requests
+        // impossible to authenticate correctly.
+        let browserCookies = await resolveCookies(
             store: webView.configuration.websiteDataStore.httpCookieStore
         )
+        let matchingCookies = browserCookies.filter { $0.matches(targetURL) }
 
         var headers = refererHeader(pageURL)
         if let value = userAgent, !value.isEmpty {
@@ -114,7 +149,7 @@ final class DownloadRequestContextBuilder {
             targetURL: targetURL,
             pageURL: pageURL,
             headers: headers,
-            cookies: matchingCookies.map(DownloadRequestCookie.init)
+            cookies: browserCookies.map(DownloadRequestCookie.init)
         )
     }
 
@@ -137,15 +172,9 @@ final class DownloadRequestContextBuilder {
         }
     }
 
-    private func resolveCookies(
-        for targetURL: URL,
-        store: WKHTTPCookieStore
-    ) async -> [HTTPCookie] {
-        let allCookies = await withCheckedContinuation { continuation in
+    private func resolveCookies(store: WKHTTPCookieStore) async -> [HTTPCookie] {
+        await withCheckedContinuation { continuation in
             store.getAllCookies { continuation.resume(returning: $0) }
-        }
-        return allCookies.filter { cookie in
-            cookie.matches(targetURL)
         }
     }
 }

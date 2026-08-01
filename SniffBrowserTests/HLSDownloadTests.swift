@@ -49,6 +49,24 @@ final class HLSDownloadTests: XCTestCase {
         XCTAssertEqual(playlist.outputFileExtension, "mp4")
     }
 
+    func testPreservesDiscontinuityForLocalPlaybackPlaylist() throws {
+        let url = try XCTUnwrap(URL(string: "https://media.example.com/video.m3u8"))
+        let text = """
+        #EXTM3U
+        #EXTINF:3,
+        first.ts
+        #EXT-X-DISCONTINUITY
+        #EXTINF:4,
+        second.ts
+        #EXT-X-ENDLIST
+        """
+
+        guard case let .media(playlist) = try HLSPlaylistParser().parse(text, sourceURL: url)
+        else { return XCTFail("Expected media playlist") }
+        XCTAssertFalse(playlist.segments[0].discontinuityBefore)
+        XCTAssertTrue(playlist.segments[1].discontinuityBefore)
+    }
+
     func testParsesMasterVariantsWithoutTreatingPlaylistAsVideo() throws {
         let url = try XCTUnwrap(URL(string: "https://media.example.com/master.m3u8"))
         let text = """
@@ -177,6 +195,36 @@ final class HLSDownloadTests: XCTestCase {
 
         XCTAssertEqual(resource.resourceType, .hls)
         XCTAssertTrue(resource.isPotentiallyDownloadable)
+    }
+
+    func testRequestContextAppliesCookiesOnlyToMatchingResourceHost() throws {
+        let target = try XCTUnwrap(URL(string: "https://media.example.com/master.m3u8"))
+        let context = DownloadRequestContext(
+            targetURL: target,
+            pageURL: URL(string: "https://www.example.com/watch"),
+            headers: ["User-Agent": "SniffBrowserTests"],
+            cookies: [
+                DownloadRequestCookie(try XCTUnwrap(HTTPCookie(properties: [
+                    .name: "media_session",
+                    .value: "value",
+                    .domain: ".example.com",
+                    .path: "/",
+                    .secure: "TRUE"
+                ]))),
+                DownloadRequestCookie(try XCTUnwrap(HTTPCookie(properties: [
+                    .name: "unrelated",
+                    .value: "secret",
+                    .domain: ".invalid.test",
+                    .path: "/",
+                    .secure: "TRUE"
+                ])))
+            ]
+        )
+
+        let segmentURL = try XCTUnwrap(URL(string: "https://cdn.example.com/segment.ts"))
+        let request = context.makeRequest(for: segmentURL)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Cookie"), "media_session=value")
+        XCTAssertFalse(request.allHTTPHeaderFields?["Cookie"]?.contains("unrelated") == true)
     }
 }
 

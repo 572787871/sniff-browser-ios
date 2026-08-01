@@ -30,19 +30,22 @@ struct HLSSegment: Equatable, Sendable {
     let duration: TimeInterval?
     let mediaSequence: Int64
     let encryption: HLSAES128Encryption?
+    let discontinuityBefore: Bool
 
     init(
         url: URL,
         byteRange: HLSByteRange?,
         duration: TimeInterval?,
         mediaSequence: Int64 = 0,
-        encryption: HLSAES128Encryption? = nil
+        encryption: HLSAES128Encryption? = nil,
+        discontinuityBefore: Bool = false
     ) {
         self.url = url
         self.byteRange = byteRange
         self.duration = duration
         self.mediaSequence = mediaSequence
         self.encryption = encryption
+        self.discontinuityBefore = discontinuityBefore
     }
 }
 
@@ -153,6 +156,7 @@ struct HLSPlaylistParser {
         var nextSequence: Int64 = 0
         var currentEncryption: HLSAES128Encryption?
         var hasUnsupportedEncryption = false
+        var pendingDiscontinuity = false
 
         for line in lines {
             if line.hasPrefix("#EXT-X-MEDIA-SEQUENCE:") {
@@ -180,9 +184,12 @@ struct HLSPlaylistParser {
                         byteRange: range,
                         duration: nil,
                         mediaSequence: nextSequence,
-                        encryption: currentEncryption
+                        encryption: currentEncryption,
+                        discontinuityBefore: pendingDiscontinuity
                     )
                 }
+            } else if line == "#EXT-X-DISCONTINUITY" {
+                pendingDiscontinuity = true
             } else if line.hasPrefix("#EXT-X-KEY:") {
                 let attributes = parseAttributes(String(line.dropFirst("#EXT-X-KEY:".count)))
                 let method = attributes["METHOD"]?.uppercased() ?? ""
@@ -224,7 +231,8 @@ struct HLSPlaylistParser {
                     byteRange: range,
                     duration: pendingDuration,
                     mediaSequence: nextSequence,
-                    encryption: currentEncryption
+                    encryption: currentEncryption,
+                    discontinuityBefore: pendingDiscontinuity
                 ))
                 nextSequence += 1
                 if let range {
@@ -234,6 +242,7 @@ struct HLSPlaylistParser {
                 }
                 pendingDuration = nil
                 pendingByteRange = nil
+                pendingDiscontinuity = false
             }
         }
 

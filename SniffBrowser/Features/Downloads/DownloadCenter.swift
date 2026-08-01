@@ -111,10 +111,11 @@ final class DownloadCenter: DownloadManaging {
             }
             throw DownloadCenterError.invalidURL
         }
-        guard resource.isPotentiallyDownloadable else {
-            if resource.resourceType == .hls {
-                throw DownloadCenterError.protectedMediaUnsupported
-            }
+        // A playlist is often served as text/plain and the lightweight sniffer
+        // cannot determine encryption from response metadata alone. Let the
+        // HLS parser inspect the real manifest instead of incorrectly labeling
+        // every such stream as protected before download creation.
+        guard resource.isPotentiallyDownloadable || resource.resourceType == .hls else {
             throw DownloadCenterError.invalidURL
         }
 
@@ -414,9 +415,9 @@ final class DownloadCenter: DownloadManaging {
                 try hlsService.resume(taskID: model.id)
                 return
             } catch {
-                // New or unrestorable HLS tasks are recreated through
-                // AVAssetDownloadURLSession so AVPlayer receives a system-owned,
-                // directly playable offline asset package.
+                // A fresh request context is required after process relaunch or
+                // when a signed manifest has expired. The segment checkpoints
+                // remain reusable once the page supplies that context again.
             }
             let preparationTask = Task { [weak self] in
                 guard let self else { return }
@@ -557,7 +558,8 @@ final class DownloadCenter: DownloadManaging {
             task.expectedSize = storedFile.byteCount ?? task.expectedSize
             task.progressFraction = 1
             task.destinationRelativePath = storedFile.relativePath
-            if !storedFile.relativePath.hasPrefix("Container/") {
+            if task.downloadKind != .hlsAsset,
+               !storedFile.relativePath.hasPrefix("Container/") {
                 task.fileName = storedFile.fileURL.lastPathComponent
                 task.fileExtension = storedFile.fileURL.pathExtension.lowercased()
             }
@@ -587,7 +589,8 @@ final class DownloadCenter: DownloadManaging {
         } else {
             hlsService.register(plan: HLSDownloadPlan(
                 taskID: model.id,
-                fileName: model.fileName
+                fileName: model.fileName,
+                thumbnailURL: model.thumbnailURL
             ))
         }
     }

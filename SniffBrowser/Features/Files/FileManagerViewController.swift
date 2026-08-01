@@ -203,9 +203,19 @@ final class FileManagerViewController: BaseViewController {
     private func open(_ task: DownloadTaskModel) {
         guard let url = downloadCenter.fileURL(for: task.id) else { return }
         if task.downloadKind == .hlsAsset || [.video, .audio].contains(task.resourceType) {
-            let player = AVPlayerViewController()
-            player.player = AVPlayer(url: url)
-            present(player, animated: true) { player.player?.play() }
+            Task { [weak self] in
+                do {
+                    let playbackURL = url.pathExtension.lowercased() == "sniffhls"
+                        ? try await HLSLocalPlaybackServer.shared.playbackURL(for: url)
+                        : url
+                    guard let self else { return }
+                    let player = AVPlayerViewController()
+                    player.player = AVPlayer(url: playbackURL)
+                    self.present(player, animated: true) { player.player?.play() }
+                } catch {
+                    self?.presentError(error)
+                }
+            }
         } else {
             let source = FilePreviewDataSource(url: url)
             previewDataSource = source

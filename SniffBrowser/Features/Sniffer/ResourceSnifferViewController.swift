@@ -416,7 +416,7 @@ final class ResourceSnifferViewController: BaseViewController {
     }
 
     private func requestDownload(_ resource: DetectedResource) {
-        guard resource.isPotentiallyDownloadable,
+        guard (resource.isPotentiallyDownloadable || resource.resourceType == .hls),
               ["http", "https"].contains(
                 resource.canonicalURL.scheme?.lowercased() ?? ""
               )
@@ -449,10 +449,15 @@ final class ResourceSnifferViewController: BaseViewController {
 
     private func presentDownloadConfirmation(_ resource: DetectedResource) {
         let kind = resource.resourceType == .hls ? "视频" : resource.resourceType.localizedTitle
+        // Content-Length on an HLS URL is only the playlist text size. It is
+        // never the size of the video represented by that playlist.
+        let expectedSize = resource.resourceType == .hls
+            ? "下载时计算"
+            : formattedSize(resource.estimatedSize)
         let message = [
             "类型：\(kind)",
             "文件名：\(resource.fileName)",
-            "预计大小：\(formattedSize(resource.estimatedSize))"
+            "预计大小：\(expectedSize)"
         ].joined(separator: "\n")
         let sheet = UIAlertController(
             title: resource.resourceType == .hls ? "下载视频" : "确认下载",
@@ -628,7 +633,7 @@ extension ResourceSnifferViewController: UITableViewDataSource {
             onPreview: [.image, .video, .audio, .hls].contains(resource.resourceType)
                 ? { [weak self] in self?.preview(resource) }
                 : nil,
-            onDownload: resource.isPotentiallyDownloadable
+            onDownload: (resource.isPotentiallyDownloadable || resource.resourceType == .hls)
                 && ["http", "https"].contains(
                     resource.canonicalURL.scheme?.lowercased() ?? ""
                 )

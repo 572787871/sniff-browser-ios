@@ -41,6 +41,27 @@ final class FileThumbnailLoader {
             DispatchQueue.main.async { completion(image) }
             return FileThumbnailToken(cancellation: {})
         }
+        if fileURL.pathExtension.lowercased() == "sniffhls" {
+            let operation = FileThumbnailOperation()
+            let posterURL = fileURL.appendingPathComponent("poster.jpg")
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard operation.isActive,
+                      let image = UIImage(contentsOfFile: posterURL.path)
+                else {
+                    DispatchQueue.main.async {
+                        guard operation.isActive else { return }
+                        completion(nil)
+                    }
+                    return
+                }
+                self?.store(image, key: key)
+                DispatchQueue.main.async {
+                    guard operation.isActive else { return }
+                    completion(image)
+                }
+            }
+            return FileThumbnailToken { operation.cancel() }
+        }
         let request = QLThumbnailGenerator.Request(
             fileAt: fileURL,
             size: size,
@@ -121,7 +142,7 @@ final class FileThumbnailLoader {
     }
 
     private static func isVideoFile(_ url: URL) -> Bool {
-        ["mp4", "m4v", "mov", "movpkg", "m3u8"].contains(
+        ["mp4", "m4v", "mov", "movpkg", "m3u8", "sniffhls"].contains(
             url.pathExtension.lowercased()
         )
     }

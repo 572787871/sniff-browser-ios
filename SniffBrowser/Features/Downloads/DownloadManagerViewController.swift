@@ -399,10 +399,20 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
 
         switch task.resourceType {
         case .video, .audio, .hls:
-            let controller = AVPlayerViewController()
-            controller.player = AVPlayer(url: url)
-            present(controller, animated: true) {
-                controller.player?.play()
+            Task { [weak self] in
+                do {
+                    let playbackURL = url.pathExtension.lowercased() == "sniffhls"
+                        ? try await HLSLocalPlaybackServer.shared.playbackURL(for: url)
+                        : url
+                    guard let self else { return }
+                    let controller = AVPlayerViewController()
+                    controller.player = AVPlayer(url: playbackURL)
+                    self.present(controller, animated: true) {
+                        controller.player?.play()
+                    }
+                } catch {
+                    self?.presentOperationError(error)
+                }
             }
         case .image, .document, .subtitle, .archive, .other:
             previewURL = url

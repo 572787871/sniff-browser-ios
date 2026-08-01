@@ -78,6 +78,32 @@ final class DownloadFileStorageTests: XCTestCase {
         XCTAssertTrue(stored.relativePath.hasPrefix("Container/"))
     }
 
+    func testStoresSelfContainedHLSVideoPackageInVideosDirectory() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let work = fixture.root.appendingPathComponent("work", isDirectory: true)
+        let media = work.appendingPathComponent("media", isDirectory: true)
+        try FileManager.default.createDirectory(at: media, withIntermediateDirectories: true)
+        try Data("#EXTM3U\n#EXT-X-ENDLIST\n".utf8).write(
+            to: work.appendingPathComponent("index.m3u8")
+        )
+        try Data(repeating: 7, count: 128).write(
+            to: media.appendingPathComponent("segment-000000.ts")
+        )
+
+        let stored = try fixture.storage.storeHLSVideoPackage(
+            from: work,
+            preferredFileName: "Sample.m3u8"
+        )
+
+        XCTAssertTrue(stored.relativePath.hasPrefix("Downloads/Videos/"))
+        XCTAssertEqual(stored.fileURL.pathExtension, "sniffhls")
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: stored.fileURL.appendingPathComponent("index.m3u8").path
+        ))
+        XCTAssertEqual(stored.byteCount, 151)
+    }
+
     private func makeFixture() throws -> (root: URL, storage: DownloadFileStorage) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

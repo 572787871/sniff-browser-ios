@@ -81,6 +81,35 @@ final class DownloadFileStorage {
         return try storedFile(forContainerURL: temporaryURL)
     }
 
+    /// Stores a self-contained, decrypted VOD package. The package keeps the
+    /// media fragments and a rewritten local playlist together so AVPlayer can
+    /// consume the original codec without exposing a concatenated MPEG-TS file.
+    func storeHLSVideoPackage(
+        from workingDirectory: URL,
+        preferredFileName: String
+    ) throws -> StoredDownloadFile {
+        guard FileManager.default.fileExists(
+            atPath: workingDirectory.appendingPathComponent("index.m3u8").path
+        ) else { throw DownloadCenterError.fileOperationFailed }
+        let directory = try categoryDirectory(for: .video)
+        let sanitized = FileNameSanitizer.sanitize(preferredFileName)
+        let baseName = (sanitized as NSString).deletingPathExtension
+        let packageName = "\(baseName.isEmpty ? "下载视频" : baseName).sniffhls"
+        let destination = uniqueDestination(in: directory, fileName: packageName)
+        do {
+            try FileManager.default.moveItem(at: workingDirectory, to: destination)
+        } catch {
+            do {
+                try FileManager.default.copyItem(at: workingDirectory, to: destination)
+                try? FileManager.default.removeItem(at: workingDirectory)
+            } catch {
+                try? FileManager.default.removeItem(at: destination)
+                throw DownloadCenterError.fileOperationFailed
+            }
+        }
+        return storedFile(for: destination)
+    }
+
     func saveResumeData(_ data: Data, taskID: UUID) throws -> String {
         let url = resumeDataRootURL.appendingPathComponent("\(taskID.uuidString).resume")
         try data.write(to: url, options: .atomic)
