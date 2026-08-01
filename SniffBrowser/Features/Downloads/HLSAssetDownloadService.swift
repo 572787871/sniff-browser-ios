@@ -440,16 +440,16 @@ final class HLSAssetDownloadService: NSObject {
             }
             guard !validRanges.isEmpty else { return false }
 
-            guard let sourceStart = validRanges
-                .map(\.start)
-                .compactMap { $0 }
-                .min(by: { CMTimeCompare($0, $1) < 0 }),
-                  let sourceEnd = validRanges
-                .map { CMTimeAdd($0.start, $0.duration) }
-                .compactMap { $0 }
-                .max(by: { CMTimeCompare($0, $1) < 0 })
-            else { return false }
-            let segmentDuration = CMTimeSubtract(sourceEnd, sourceStart)
+            var sourceStart = validRanges[0].start
+            var segmentDuration = validRanges[0].duration
+            for range in validRanges.dropFirst() {
+                if CMTimeCompare(range.start, sourceStart) < 0 {
+                    sourceStart = range.start
+                }
+                if CMTimeCompare(range.duration, segmentDuration) > 0 {
+                    segmentDuration = range.duration
+                }
+            }
             guard segmentDuration.isValid,
                   segmentDuration.isNumeric,
                   CMTimeCompare(segmentDuration, .zero) > 0
