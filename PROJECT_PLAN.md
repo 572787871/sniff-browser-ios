@@ -73,7 +73,7 @@
 - 每标签独立资源仓库、规范 URL 去重、元数据合并、手动重扫、扫描状态和真实角标。
 - background URLSession 普通文件下载、Resume Data、持久化队列、并发限制、真实进度与错误验证。
 - Swift 原生下载普通或标准 identity-key AES-128 HLS VOD 的初始化片段和媒体分片；拒绝直播、SAMPLE-AES、FairPlay 和其他受保护内容。
-- 完成文件进入 Documents/Downloads 分类目录，fMP4 保存为 `.mp4`，MPEG-TS 保存为 `.ts`，并由文件库真实展示和打开。
+- 完成文件进入 Documents/Downloads 分类目录，fMP4 保存为 `.mp4`，MPEG-TS 通过 AVFoundation 导出为本地可播放的 `.mp4`，并由文件库真实展示和打开。
 - 认证的模型与协议。
 - Keychain、偏好、日志、文件名清理等基础服务。
 

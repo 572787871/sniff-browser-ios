@@ -165,6 +165,12 @@ struct ResourceClassifier: Sendable {
         candidate: ResourceCandidate,
         url: URL
     ) -> Bool {
+        // A blob URL is a page-local playback handle, not a requestable media
+        // file. The scanner separately discovers the backing MP4/HLS URL; do
+        // not present this unusable duplicate as the first video result.
+        if url.scheme?.lowercased() == "blob" {
+            return false
+        }
         // HLS/DASH media fragments are implementation details of a stream, not
         // independently playable videos. Keeping them would bury the actual
         // MP4/HLS entry and invite downloads that can never form a full video.

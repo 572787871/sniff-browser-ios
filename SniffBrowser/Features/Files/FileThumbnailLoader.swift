@@ -1,3 +1,4 @@
+import AVFoundation
 import QuickLookThumbnailing
 import UIKit
 
@@ -46,23 +47,113 @@ final class FileThumbnailLoader {
             scale: scale,
             representationTypes: [.thumbnail, .lowQualityThumbnail]
         )
+        let operation = FileThumbnailOperation()
         generator.generateBestRepresentation(for: request) { [weak self] representation, _ in
+            guard operation.isActive else { return }
             let image = representation?.uiImage
             if let image {
-                self?.cache.setObject(
-                    image,
-                    forKey: key as NSString,
-                    cost: Int(image.size.width * image.size.height * 4)
-                )
+                self?.store(image, key: key)
+                DispatchQueue.main.async { completion(image) }
+                return
             }
-            DispatchQueue.main.async { completion(image) }
+            guard Self.isVideoFile(fileURL) else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            self?.generateVideoFrame(
+                fileURL: fileURL,
+                size: size,
+                scale: scale,
+                key: key,
+                operation: operation,
+                completion: completion
+            )
         }
         return FileThumbnailToken { [weak generator] in
+            operation.cancel()
             generator?.cancel(request)
         }
     }
 
     func clearMemory() {
         cache.removeAllObjects()
+    }
+
+    private func generateVideoFrame(
+        fileURL: URL,
+        size: CGSize,
+        scale: CGFloat,
+        key: String,
+        operation: FileThumbnailOperation,
+        completion: @escaping (UIImage?) -> Void
+    ) {
+        let asset = AVURLAsset(url: fileURL)
+        let imageGenerator = AVAssetImageGenerator(asset: asset)
+        imageGenerator.appliesPreferredTrackTransform = true
+        imageGenerator.maximumSize = CGSize(
+            width: size.width * scale,
+            height: size.height * scale
+        )
+        imageGenerator.requestedTimeToleranceBefore = .positiveInfinity
+        imageGenerator.requestedTimeToleranceAfter = .positiveInfinity
+        guard operation.install(imageGenerator) else { return }
+        let requestedTime = CMTime(seconds: 0.5, preferredTimescale: 600)
+        imageGenerator.generateCGImagesAsynchronously(
+            forTimes: [NSValue(time: requestedTime)]
+        ) { [weak self] _, cgImage, _, result, _ in
+            guard operation.isActive else { return }
+            guard result == .succeeded, let cgImage else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            let image = UIImage(cgImage: cgImage)
+            self?.store(image, key: key)
+            DispatchQueue.main.async { completion(image) }
+        }
+    }
+
+    private func store(_ image: UIImage, key: String) {
+        cache.setObject(
+            image,
+            forKey: key as NSString,
+            cost: Int(image.size.width * image.size.height * image.scale * image.scale * 4)
+        )
+    }
+
+    private static func isVideoFile(_ url: URL) -> Bool {
+        ["mp4", "m4v", "mov", "ts"].contains(url.pathExtension.lowercased())
+    }
+}
+
+private final class FileThumbnailOperation {
+    private let lock = NSLock()
+    private var isCancelled = false
+    private var imageGenerator: AVAssetImageGenerator?
+
+    var isActive: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !isCancelled
+    }
+
+    func install(_ generator: AVAssetImageGenerator) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !isCancelled else {
+            generator.cancelAllCGImageGeneration()
+            return false
+        }
+        imageGenerator = generator
+        return true
+    }
+
+    func cancel() {
+        let generator: AVAssetImageGenerator?
+        lock.lock()
+        isCancelled = true
+        generator = imageGenerator
+        imageGenerator = nil
+        lock.unlock()
+        generator?.cancelAllCGImageGeneration()
     }
 }

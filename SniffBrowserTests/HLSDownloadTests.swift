@@ -19,7 +19,9 @@ final class HLSDownloadTests: XCTestCase {
         else { return XCTFail("Expected media playlist") }
         XCTAssertTrue(playlist.isEndList)
         XCTAssertFalse(playlist.isEncrypted)
-        XCTAssertEqual(playlist.outputFileExtension, "ts")
+        XCTAssertEqual(playlist.mergedSegmentFileExtension, "ts")
+        XCTAssertTrue(playlist.requiresTransportStreamExport)
+        XCTAssertEqual(playlist.outputFileExtension, "mp4")
         XCTAssertEqual(playlist.segments.map(\.url.absoluteString), [
             "https://media.example.com/path/first.ts",
             "https://media.example.com/path/second.ts"
@@ -42,6 +44,8 @@ final class HLSDownloadTests: XCTestCase {
         else { return XCTFail("Expected media playlist") }
         XCTAssertEqual(playlist.initializationSegment?.url.lastPathComponent, "init.mp4")
         XCTAssertEqual(playlist.segments.last?.byteRange, HLSByteRange(length: 100, offset: 20))
+        XCTAssertEqual(playlist.mergedSegmentFileExtension, "mp4")
+        XCTAssertFalse(playlist.requiresTransportStreamExport)
         XCTAssertEqual(playlist.outputFileExtension, "mp4")
     }
 

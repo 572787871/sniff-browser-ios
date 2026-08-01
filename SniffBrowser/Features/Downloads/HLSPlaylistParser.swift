@@ -59,13 +59,22 @@ struct HLSMediaPlaylist: Equatable, Sendable {
             || segments.contains(where: { $0.encryption != nil })
     }
 
-    var outputFileExtension: String {
+    /// Container used while concatenating the playlist payload. MPEG-TS still
+    /// needs a native AVFoundation export before it is suitable as a local iOS
+    /// library item.
+    var mergedSegmentFileExtension: String {
         if initializationSegment != nil
             || segments.allSatisfy({ ["m4s", "mp4", "cmfv", "cmfa"].contains($0.url.pathExtension.lowercased()) }) {
             return "mp4"
         }
         return "ts"
     }
+
+    var requiresTransportStreamExport: Bool {
+        mergedSegmentFileExtension == "ts"
+    }
+
+    var outputFileExtension: String { "mp4" }
 }
 
 enum HLSPlaylist: Equatable, Sendable {

@@ -23,6 +23,7 @@ final class DownloadCenter: DownloadManaging {
     private var progressAggregators: [UUID: DownloadProgressAggregator] = [:]
     private var lastProgressEmissionDates: [UUID: Date] = [:]
     private var hlsPreparationTasks: [UUID: Task<Void, Never>] = [:]
+    private var legacyHLSMigrationTask: Task<Void, Never>?
     private var persistenceTask: Task<Void, Never>?
     private var didLoad = false
     private var isReloading = false
@@ -55,6 +56,7 @@ final class DownloadCenter: DownloadManaging {
 
     deinit {
         persistenceTask?.cancel()
+        legacyHLSMigrationTask?.cancel()
         if let preferenceObserver {
             NotificationCenter.default.removeObserver(preferenceObserver)
         }
@@ -89,6 +91,7 @@ final class DownloadCenter: DownloadManaging {
             publish()
             persist(immediately: true)
             scheduleWaitingTasks()
+            migrateLegacyHLSFilesIfNeeded()
         } catch {
             tasks = []
             finishReload()
@@ -597,6 +600,54 @@ final class DownloadCenter: DownloadManaging {
             tasks[index].state = .failed
             tasks[index].errorDescription = "本地文件已不存在。"
             tasks[index].destinationRelativePath = nil
+        }
+    }
+
+    private func migrateLegacyHLSFilesIfNeeded() {
+        guard legacyHLSMigrationTask == nil else { return }
+        let legacyIDs = tasks.compactMap { task -> UUID? in
+            guard task.state == .completed,
+                  task.downloadKind == .hlsAsset,
+                  task.fileExtension?.lowercased() == "ts",
+                  storage.fileURL(relativePath: task.destinationRelativePath) != nil
+            else { return nil }
+            return task.id
+        }
+        guard !legacyIDs.isEmpty else { return }
+        legacyHLSMigrationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.legacyHLSMigrationTask = nil }
+            for id in legacyIDs {
+                guard !Task.isCancelled,
+                      let model = self.task(id: id),
+                      let sourceURL = self.storage.fileURL(
+                        relativePath: model.destinationRelativePath
+                      )
+                else { continue }
+                do {
+                    let stored = try await self.hlsService.finalizeLegacyTransportStream(
+                        at: sourceURL,
+                        preferredFileName: model.fileName
+                    )
+                    self.updateTask(id: id) { task in
+                        task.destinationRelativePath = stored.relativePath
+                        task.fileName = stored.fileURL.lastPathComponent
+                        task.fileExtension = "mp4"
+                        task.downloadedSize = stored.byteCount ?? task.downloadedSize
+                        task.expectedSize = stored.byteCount ?? task.expectedSize
+                        task.errorCode = nil
+                        task.errorDescription = nil
+                    }
+                } catch is CancellationError {
+                    return
+                } catch {
+                    // Keep the original completed TS file intact. A failed
+                    // compatibility migration must never delete user data.
+                    continue
+                }
+            }
+            self.persist(immediately: true)
+            self.publish()
         }
     }
 

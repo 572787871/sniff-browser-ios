@@ -1,3 +1,4 @@
+import AVFoundation
 import CommonCrypto
 import Foundation
 
@@ -22,9 +23,10 @@ protocol HLSAssetDownloadServiceDelegate: AnyObject {
 
 /// Downloads a finite HLS playlist as its declared media segments,
 /// then joins them in playlist order. fMP4 playlists become a local `.mp4`
-/// (initialization segment followed by media fragments); MPEG-TS playlists
-/// become a local `.ts`. Standard identity-key AES-128 segments are decrypted
-/// using the key and IV declared by the playlist. SAMPLE-AES, FairPlay and other
+/// (initialization segment followed by media fragments); MPEG-TS playlists are
+/// exported to an iOS-compatible `.mp4` after joining. Standard identity-key
+/// AES-128 segments are decrypted using the key and IV declared by the playlist.
+/// SAMPLE-AES, FairPlay and other
 /// DRM formats remain unsupported. The service deliberately does not treat the
 /// `.m3u8` text file or an individual fragment as the finished video.
 final class HLSAssetDownloadService: NSObject {
@@ -171,6 +173,32 @@ final class HLSAssetDownloadService: NSObject {
         completionHandler()
     }
 
+    func finalizeLegacyTransportStream(
+        at sourceURL: URL,
+        preferredFileName: String
+    ) async throws -> StoredDownloadFile {
+        let workDirectory = storage.applicationSupportURL
+            .appendingPathComponent("Downloads", isDirectory: true)
+            .appendingPathComponent("LegacyHLSFinalization", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: workDirectory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: workDirectory) }
+        let outputURL = workDirectory.appendingPathComponent("finalized.mp4")
+        try await exportTransportStream(at: sourceURL, to: outputURL)
+        let baseName = (FileNameSanitizer.sanitize(preferredFileName) as NSString)
+            .deletingPathExtension
+        let stored = try storage.storeDownloadedFile(
+            from: outputURL,
+            preferredFileName: "\(baseName.isEmpty ? "HLS 视频" : baseName).mp4",
+            resourceType: .hls
+        )
+        try? FileManager.default.removeItem(at: sourceURL)
+        return stored
+    }
+
     private func resolveMediaPlaylist(
         context: DownloadRequestContext,
         maximumDepth: Int = 3
@@ -297,14 +325,19 @@ final class HLSAssetDownloadService: NSObject {
 
         try Task.checkCancellation()
         let mergedURL = workDirectory.appendingPathComponent(
-            "merged.\(playlist.outputFileExtension)"
+            "merged.\(playlist.mergedSegmentFileExtension)"
         )
         try mergeSegments(count: total, in: workDirectory, destination: mergedURL)
+        let finalizedURL = try await finalizeMergedMedia(
+            at: mergedURL,
+            playlist: playlist,
+            workDirectory: workDirectory
+        )
         let baseName = (FileNameSanitizer.sanitize(plan.fileName) as NSString)
             .deletingPathExtension
         let finalName = "\(baseName.isEmpty ? "HLS 视频" : baseName).\(playlist.outputFileExtension)"
         let stored = try storage.storeDownloadedFile(
-            from: mergedURL,
+            from: finalizedURL,
             preferredFileName: finalName,
             resourceType: .hls
         )
@@ -314,6 +347,48 @@ final class HLSAssetDownloadService: NSObject {
             intentionallyStoppedIDs.remove(taskID)
         }
         return stored
+    }
+
+    private func finalizeMergedMedia(
+        at mergedURL: URL,
+        playlist: HLSMediaPlaylist,
+        workDirectory: URL
+    ) async throws -> URL {
+        guard playlist.requiresTransportStreamExport else { return mergedURL }
+        let outputURL = workDirectory.appendingPathComponent("finalized.mp4")
+        try await exportTransportStream(at: mergedURL, to: outputURL)
+        return outputURL
+    }
+
+    private func exportTransportStream(at sourceURL: URL, to outputURL: URL) async throws {
+        try? FileManager.default.removeItem(at: outputURL)
+        let asset = AVURLAsset(url: sourceURL)
+        let presets = [AVAssetExportPresetPassthrough, AVAssetExportPresetHighestQuality]
+        for preset in presets {
+            try Task.checkCancellation()
+            guard let exporter = AVAssetExportSession(asset: asset, presetName: preset),
+                  exporter.supportedFileTypes.contains(.mp4)
+            else { continue }
+            try? FileManager.default.removeItem(at: outputURL)
+            exporter.outputURL = outputURL
+            exporter.outputFileType = .mp4
+            exporter.shouldOptimizeForNetworkUse = false
+            let succeeded = await export(exporter)
+            if succeeded,
+               let size = try? outputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+               size > 0 {
+                return
+            }
+        }
+        throw DownloadCenterError.hlsFinalizationFailed
+    }
+
+    private func export(_ exporter: AVAssetExportSession) async -> Bool {
+        await withCheckedContinuation { continuation in
+            exporter.exportAsynchronously {
+                continuation.resume(returning: exporter.status == .completed)
+            }
+        }
     }
 
     private func downloadSegment(

@@ -91,6 +91,26 @@ final class ResourceClassifierTests: XCTestCase {
         XCTAssertNil(classifier.makeResource(from: candidate, tabID: UUID()))
     }
 
+    func testBlobPlaybackHandleIsHiddenWhenItCannotBeDownloaded() throws {
+        let candidate = ResourceCandidate(
+            originalURLString: "blob:https://example.com/4A71E4D4-70C8-4ADF-8F84-75A487D5510B",
+            pageURLString: "https://example.com/watch",
+            pageTitle: "Example",
+            mimeType: "video/mp4",
+            estimatedSize: nil,
+            duration: 120,
+            width: 1280,
+            height: 720,
+            bitrate: nil,
+            thumbnailURLString: "https://example.com/poster.jpg",
+            detectionSource: .mediaEvent,
+            elementType: "video",
+            headersHint: [:]
+        )
+
+        XCTAssertNil(classifier.makeResource(from: candidate, tabID: UUID()))
+    }
+
     private func classify(_ rawURL: String) throws -> ResourceType? {
         classifier.classify(
             mimeType: nil,
