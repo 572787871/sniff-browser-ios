@@ -65,7 +65,7 @@ final class ResourceMessageDecoderTests: XCTestCase {
         XCTAssertTrue(batch.candidates.isEmpty)
     }
 
-    func testBlobIsReportedButNotAssumedDownloadable() throws {
+    func testBlobIsSafelyDecodedButFilteredFromDownloadableResources() throws {
         let batch = try decode([
             "kind": "batch",
             "pageURL": "https://example.com",
@@ -77,14 +77,13 @@ final class ResourceMessageDecoderTests: XCTestCase {
             ]]
         ])
         let candidate = try XCTUnwrap(batch.candidates.first)
-        let resource = try XCTUnwrap(
+        XCTAssertNil(
             ResourceClassifier().makeResource(
                 from: candidate,
                 tabID: UUID()
-            )
+            ),
+            "Blob playback handles must not appear as duplicate downloadable videos"
         )
-        XCTAssertFalse(resource.isPotentiallyDownloadable)
-        XCTAssertNotNil(resource.limitationReason)
     }
 
     func testOverlongURLAndWrongFieldTypesAreRejected() throws {
