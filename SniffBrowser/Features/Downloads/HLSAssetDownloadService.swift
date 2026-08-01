@@ -496,7 +496,9 @@ final class HLSAssetDownloadService: NSObject {
         let width = Self.evenDimension(abs(transformedSize.width))
         let height = Self.evenDimension(abs(transformedSize.height))
 
-        let timeRange = try await asset.load(.timeRange)
+        let duration = try await asset.load(.duration)
+        guard duration.isValid, duration.isNumeric, duration > .zero else { return false }
+        let timeRange = CMTimeRange(start: .zero, duration: duration)
         let reader = try AVAssetReader(asset: asset)
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
         let videoOutput = AVAssetReaderTrackOutput(
