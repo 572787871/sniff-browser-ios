@@ -198,11 +198,58 @@ enum ResourceSniffingScriptProvider {
           }
         });
       };
+      const scanPlayerConfigurations = source => {
+        document.querySelectorAll("[data-config]").forEach(element => {
+          const raw = element.getAttribute("data-config");
+          if (!raw || raw.length > 1_000_000) return;
+          try {
+            const config = JSON.parse(raw);
+            const media = config?.video || config?.media || null;
+            if (!media || typeof media !== "object") return;
+            const url = media.url || media.src || media.file;
+            if (!url) return;
+            enqueue({
+              url,
+              mimeType: String(media.type || "").toLowerCase() === "hls"
+                ? "application/vnd.apple.mpegurl" : (media.mimeType || null),
+              duration: media.duration,
+              width: media.width,
+              height: media.height,
+              thumbnailURL: media.poster || media.pic || media.thumbnail || pagePreview(),
+              source,
+              elementType: "source-video"
+            });
+          } catch (_) {}
+        });
+      };
+      const scanEmbeddedHLSURLs = source => {
+        let remaining = 2_000_000;
+        const extract = raw => {
+          if (!raw || remaining <= 0) return;
+          const text = String(raw).slice(0, remaining)
+            .replace(/\\\//g, "/").replace(/&amp;/g, "&");
+          remaining -= text.length;
+          const matches = text.match(/https?:\/\/[^\s"'<>]+?\.m3u8(?:\?[^\s"'<>]*)?/gi) || [];
+          matches.slice(0, 50).forEach(url => enqueue({
+            url,
+            mimeType: "application/vnd.apple.mpegurl",
+            thumbnailURL: pagePreview(),
+            source,
+            elementType: "source-video"
+          }));
+        };
+        document.querySelectorAll("script:not([src])").forEach(script => extract(script.textContent));
+        document.querySelectorAll("[data-media],[data-source],[data-video]").forEach(element => {
+          for (const attribute of element.attributes) extract(attribute.value);
+        });
+      };
       const scan = (reason = "dom", scanID = null) => {
         if (!state.enabled) return false;
         const source = reason === "manualScan" ? "manualScan" : "dom";
         scanDOM(source);
         scanPerformance(source);
+        scanPlayerConfigurations(source);
+        scanEmbeddedHLSURLs(source);
         document.querySelectorAll("video,audio").forEach(element => enqueue(
           mediaItem(element, source === "manualScan" ? "manualScan" : "mediaEvent")
         ));

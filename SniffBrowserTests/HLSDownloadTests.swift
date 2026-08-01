@@ -62,7 +62,7 @@ final class HLSDownloadTests: XCTestCase {
         XCTAssertEqual(variants.last?.url.absoluteString, "https://media.example.com/1080/index.m3u8")
     }
 
-    func testMarksLiveAndEncryptedMediaForRejection() throws {
+    func testParsesLiveStandardAES128WithoutMisclassifyingItAsDRM() throws {
         let url = try XCTUnwrap(URL(string: "https://media.example.com/live.m3u8"))
         let text = """
         #EXTM3U
@@ -74,6 +74,64 @@ final class HLSDownloadTests: XCTestCase {
         else { return XCTFail("Expected media playlist") }
         XCTAssertFalse(playlist.isEndList)
         XCTAssertTrue(playlist.isEncrypted)
+        XCTAssertFalse(playlist.hasUnsupportedEncryption)
+        XCTAssertEqual(playlist.segments.first?.encryption?.keyURL.absoluteString,
+                       "https://media.example.com/key.bin")
+    }
+
+    func testParsesSupportedAES128WithExplicitIVAndMediaSequence() throws {
+        let url = try XCTUnwrap(URL(string: "https://media.example.com/video/index.m3u8"))
+        let text = """
+        #EXTM3U
+        #EXT-X-MEDIA-SEQUENCE:27
+        #EXT-X-KEY:METHOD=AES-128,URI="keys/current.key",IV=0x000102030405060708090A0B0C0D0E0F
+        #EXTINF:6,
+        segment.ts
+        #EXT-X-ENDLIST
+        """
+        guard case let .media(playlist) = try HLSPlaylistParser().parse(text, sourceURL: url)
+        else { return XCTFail("Expected media playlist") }
+
+        XCTAssertFalse(playlist.hasUnsupportedEncryption)
+        XCTAssertTrue(playlist.isEncrypted)
+        XCTAssertEqual(playlist.segments.first?.mediaSequence, 27)
+        XCTAssertEqual(
+            playlist.segments.first?.encryption?.keyURL.absoluteString,
+            "https://media.example.com/video/keys/current.key"
+        )
+        XCTAssertEqual(
+            playlist.segments.first?.encryption?.initializationVector,
+            Data((0...15).map { UInt8($0) })
+        )
+    }
+
+    func testRejectsSampleAESAsUnsupportedProtectedMedia() throws {
+        let url = try XCTUnwrap(URL(string: "https://media.example.com/video.m3u8"))
+        let text = """
+        #EXTM3U
+        #EXT-X-KEY:METHOD=SAMPLE-AES,URI="skd://license"
+        #EXTINF:6,
+        segment.ts
+        #EXT-X-ENDLIST
+        """
+        guard case let .media(playlist) = try HLSPlaylistParser().parse(text, sourceURL: url)
+        else { return XCTFail("Expected media playlist") }
+        XCTAssertTrue(playlist.hasUnsupportedEncryption)
+    }
+
+    func testDecryptsStandardAES128CBCSegment() throws {
+        let cipher = try XCTUnwrap(Data(hexadecimal:
+            "b88518137cfbcab25479a1d023edeafba9f953ef687d3cb4f03bc732eadac43a"
+        ))
+        let key = try XCTUnwrap(Data(hexadecimal: "000102030405060708090a0b0c0d0e0f"))
+        let iv = try XCTUnwrap(Data(hexadecimal: "101112131415161718191a1b1c1d1e1f"))
+
+        let decrypted = try HLSAssetDownloadService.decryptAES128CBC(
+            data: cipher,
+            key: key,
+            iv: iv
+        )
+        XCTAssertEqual(String(data: decrypted, encoding: .utf8), "SniffBrowser HLS AES-128")
     }
 
     func testHLSResourceCreatesHLSDownloadKind() throws {
@@ -90,5 +148,21 @@ final class HLSDownloadTests: XCTestCase {
 
         XCTAssertEqual(resource.resourceType, .hls)
         XCTAssertTrue(resource.isPotentiallyDownloadable)
+    }
+}
+
+private extension Data {
+    init?(hexadecimal: String) {
+        guard hexadecimal.count.isMultiple(of: 2) else { return nil }
+        var bytes: [UInt8] = []
+        bytes.reserveCapacity(hexadecimal.count / 2)
+        var index = hexadecimal.startIndex
+        while index < hexadecimal.endIndex {
+            let next = hexadecimal.index(index, offsetBy: 2)
+            guard let byte = UInt8(hexadecimal[index..<next], radix: 16) else { return nil }
+            bytes.append(byte)
+            index = next
+        }
+        self.init(bytes)
     }
 }

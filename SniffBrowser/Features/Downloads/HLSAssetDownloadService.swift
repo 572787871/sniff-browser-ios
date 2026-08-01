@@ -1,3 +1,4 @@
+import CommonCrypto
 import Foundation
 
 struct HLSDownloadPlan: Sendable {
@@ -19,11 +20,13 @@ protocol HLSAssetDownloadServiceDelegate: AnyObject {
     func hlsDownloadDidCancel(taskID: UUID)
 }
 
-/// Downloads a finite, unencrypted HLS playlist as its declared media segments,
+/// Downloads a finite HLS playlist as its declared media segments,
 /// then joins them in playlist order. fMP4 playlists become a local `.mp4`
 /// (initialization segment followed by media fragments); MPEG-TS playlists
-/// become a local `.ts`. It deliberately does not treat the `.m3u8` text file or
-/// an individual `.m4s` fragment as the finished video.
+/// become a local `.ts`. Standard identity-key AES-128 segments are decrypted
+/// using the key and IV declared by the playlist. SAMPLE-AES, FairPlay and other
+/// DRM formats remain unsupported. The service deliberately does not treat the
+/// `.m3u8` text file or an individual fragment as the finished video.
 final class HLSAssetDownloadService: NSObject {
     // Kept so old background-session callbacks are completed safely after an
     // upgrade from the AVAssetDownloadURLSession implementation.
@@ -200,7 +203,7 @@ final class HLSAssetDownloadService: NSObject {
         guard playlist.isEndList else {
             throw DownloadCenterError.liveHLSUnsupported
         }
-        guard !playlist.isEncrypted else {
+        guard !playlist.hasUnsupportedEncryption else {
             throw DownloadCenterError.protectedMediaUnsupported
         }
     }
@@ -234,6 +237,10 @@ final class HLSAssetDownloadService: NSObject {
         let allSegments = ([playlist.initializationSegment].compactMap { $0 }) + playlist.segments
         let total = allSegments.count
         guard total > 0 else { throw DownloadCenterError.invalidHLSPlaylist }
+        let encryptionKeys = try await fetchEncryptionKeys(
+            for: allSegments,
+            context: context
+        )
 
         var completed = 0
         var receivedBytes: Int64 = 0
@@ -257,6 +264,7 @@ final class HLSAssetDownloadService: NSObject {
                         let data = try await self.downloadSegment(
                             segment,
                             context: context,
+                            encryptionKeys: encryptionKeys,
                             ordinal: index + 1
                         )
                         return (index, data)
@@ -311,6 +319,7 @@ final class HLSAssetDownloadService: NSObject {
     private func downloadSegment(
         _ segment: HLSSegment,
         context: DownloadRequestContext,
+        encryptionKeys: [URL: Data],
         ordinal: Int
     ) async throws -> Data {
         var lastError: Error = DownloadCenterError.hlsSegmentFailed(ordinal)
@@ -331,7 +340,13 @@ final class HLSAssetDownloadService: NSObject {
                 guard !data.isEmpty else {
                     throw DownloadCenterError.hlsSegmentFailed(ordinal)
                 }
-                return data
+                guard let encryption = segment.encryption else { return data }
+                guard let key = encryptionKeys[encryption.keyURL] else {
+                    throw DownloadCenterError.invalidHLSKey
+                }
+                let iv = encryption.initializationVector
+                    ?? Self.initializationVector(mediaSequence: segment.mediaSequence)
+                return try Self.decryptAES128CBC(data: data, key: key, iv: iv)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -347,6 +362,78 @@ final class HLSAssetDownloadService: NSObject {
             throw centerError
         }
         throw DownloadCenterError.hlsSegmentFailed(ordinal)
+    }
+
+    private func fetchEncryptionKeys(
+        for segments: [HLSSegment],
+        context: DownloadRequestContext
+    ) async throws -> [URL: Data] {
+        let urls = Set(segments.compactMap { $0.encryption?.keyURL })
+        guard !urls.isEmpty else { return [:] }
+        var keys: [URL: Data] = [:]
+        for url in urls {
+            try Task.checkCancellation()
+            var keyRequest = request(for: url, context: context)
+            keyRequest.setValue("application/octet-stream,*/*;q=0.5", forHTTPHeaderField: "Accept")
+            let (data, response) = try await session.data(for: keyRequest)
+            try validateHTTP(response)
+            guard data.count == kCCKeySizeAES128 else {
+                throw DownloadCenterError.invalidHLSKey
+            }
+            keys[url] = data
+        }
+        return keys
+    }
+
+    private static func initializationVector(mediaSequence: Int64) -> Data {
+        var bytes = [UInt8](repeating: 0, count: kCCBlockSizeAES128)
+        var value = UInt64(max(mediaSequence, 0))
+        for index in 0..<MemoryLayout<UInt64>.size {
+            bytes[bytes.count - 1 - index] = UInt8(value & 0xff)
+            value >>= 8
+        }
+        return Data(bytes)
+    }
+
+    static func decryptAES128CBC(
+        data: Data,
+        key: Data,
+        iv: Data
+    ) throws -> Data {
+        guard !data.isEmpty,
+              key.count == kCCKeySizeAES128,
+              iv.count == kCCBlockSizeAES128
+        else { throw DownloadCenterError.hlsDecryptionFailed }
+
+        var output = Data(count: data.count + kCCBlockSizeAES128)
+        let outputCapacity = output.count
+        var outputLength = 0
+        let status = output.withUnsafeMutableBytes { outputBytes in
+            data.withUnsafeBytes { dataBytes in
+                key.withUnsafeBytes { keyBytes in
+                    iv.withUnsafeBytes { ivBytes in
+                        CCCrypt(
+                            CCOperation(kCCDecrypt),
+                            CCAlgorithm(kCCAlgorithmAES),
+                            CCOptions(kCCOptionPKCS7Padding),
+                            keyBytes.baseAddress,
+                            key.count,
+                            ivBytes.baseAddress,
+                            dataBytes.baseAddress,
+                            data.count,
+                            outputBytes.baseAddress,
+                            outputCapacity,
+                            &outputLength
+                        )
+                    }
+                }
+            }
+        }
+        guard status == kCCSuccess else {
+            throw DownloadCenterError.hlsDecryptionFailed
+        }
+        output.removeSubrange(outputLength..<output.count)
+        return output
     }
 
     private func request(for url: URL, context: DownloadRequestContext) -> URLRequest {

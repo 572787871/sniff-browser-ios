@@ -17,10 +17,33 @@ struct HLSVariant: Equatable, Sendable {
     let height: Int?
 }
 
+struct HLSAES128Encryption: Equatable, Sendable {
+    let keyURL: URL
+    /// Explicit playlist IV. When absent, RFC 8216 derives the IV from the
+    /// media sequence number of the encrypted segment.
+    let initializationVector: Data?
+}
+
 struct HLSSegment: Equatable, Sendable {
     let url: URL
     let byteRange: HLSByteRange?
     let duration: TimeInterval?
+    let mediaSequence: Int64
+    let encryption: HLSAES128Encryption?
+
+    init(
+        url: URL,
+        byteRange: HLSByteRange?,
+        duration: TimeInterval?,
+        mediaSequence: Int64 = 0,
+        encryption: HLSAES128Encryption? = nil
+    ) {
+        self.url = url
+        self.byteRange = byteRange
+        self.duration = duration
+        self.mediaSequence = mediaSequence
+        self.encryption = encryption
+    }
 }
 
 struct HLSMediaPlaylist: Equatable, Sendable {
@@ -28,7 +51,13 @@ struct HLSMediaPlaylist: Equatable, Sendable {
     let initializationSegment: HLSSegment?
     let segments: [HLSSegment]
     let isEndList: Bool
-    let isEncrypted: Bool
+    let hasUnsupportedEncryption: Bool
+
+    var isEncrypted: Bool {
+        hasUnsupportedEncryption
+            || initializationSegment?.encryption != nil
+            || segments.contains(where: { $0.encryption != nil })
+    }
 
     var outputFileExtension: String {
         if initializationSegment != nil
@@ -111,10 +140,18 @@ struct HLSPlaylistParser {
         var pendingDuration: TimeInterval?
         var pendingByteRange: HLSByteRange?
         var previousRangeEnd: Int64?
-        var isEncrypted = false
+        var mediaSequence: Int64 = 0
+        var nextSequence: Int64 = 0
+        var currentEncryption: HLSAES128Encryption?
+        var hasUnsupportedEncryption = false
 
         for line in lines {
-            if line.hasPrefix("#EXTINF:") {
+            if line.hasPrefix("#EXT-X-MEDIA-SEQUENCE:") {
+                let value = String(line.dropFirst("#EXT-X-MEDIA-SEQUENCE:".count))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                mediaSequence = Int64(value) ?? 0
+                nextSequence = mediaSequence
+            } else if line.hasPrefix("#EXTINF:") {
                 let raw = line.dropFirst("#EXTINF:".count).split(separator: ",", maxSplits: 1).first
                 pendingDuration = raw.flatMap { TimeInterval(String($0)) }
             } else if line.hasPrefix("#EXT-X-BYTERANGE:") {
@@ -132,21 +169,55 @@ struct HLSPlaylistParser {
                     initializationSegment = HLSSegment(
                         url: url,
                         byteRange: range,
-                        duration: nil
+                        duration: nil,
+                        mediaSequence: nextSequence,
+                        encryption: currentEncryption
                     )
                 }
             } else if line.hasPrefix("#EXT-X-KEY:") {
                 let attributes = parseAttributes(String(line.dropFirst("#EXT-X-KEY:".count)))
                 let method = attributes["METHOD"]?.uppercased() ?? ""
-                if !method.isEmpty, method != "NONE" { isEncrypted = true }
+                let keyFormat = attributes["KEYFORMAT"]?.lowercased() ?? "identity"
+                switch method {
+                case "NONE":
+                    currentEncryption = nil
+                case "AES-128" where keyFormat == "identity":
+                    guard let rawURI = attributes["URI"],
+                          let keyURL = URL(string: rawURI, relativeTo: sourceURL)?.absoluteURL
+                    else {
+                        hasUnsupportedEncryption = true
+                        currentEncryption = nil
+                        continue
+                    }
+                    let iv = attributes["IV"].flatMap(parseInitializationVector)
+                    if attributes["IV"] != nil, iv == nil {
+                        hasUnsupportedEncryption = true
+                        currentEncryption = nil
+                    } else {
+                        currentEncryption = HLSAES128Encryption(
+                            keyURL: keyURL,
+                            initializationVector: iv
+                        )
+                    }
+                case "":
+                    break
+                default:
+                    // SAMPLE-AES, FairPlay key formats and unknown methods are
+                    // protected media. They must never be treated as AES-CBC.
+                    hasUnsupportedEncryption = true
+                    currentEncryption = nil
+                }
             } else if !line.isEmpty, !line.hasPrefix("#"),
                       let url = URL(string: line, relativeTo: sourceURL)?.absoluteURL {
                 let range = pendingByteRange
                 segments.append(HLSSegment(
                     url: url,
                     byteRange: range,
-                    duration: pendingDuration
+                    duration: pendingDuration,
+                    mediaSequence: nextSequence,
+                    encryption: currentEncryption
                 ))
+                nextSequence += 1
                 if let range {
                     previousRangeEnd = (range.offset ?? previousRangeEnd ?? 0) + range.length
                 } else {
@@ -165,8 +236,29 @@ struct HLSPlaylistParser {
             initializationSegment: initializationSegment,
             segments: segments,
             isEndList: lines.contains("#EXT-X-ENDLIST"),
-            isEncrypted: isEncrypted
+            hasUnsupportedEncryption: hasUnsupportedEncryption
         )
+    }
+
+    private func parseInitializationVector(_ value: String) -> Data? {
+        var hex = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if hex.lowercased().hasPrefix("0x") {
+            hex.removeFirst(2)
+        }
+        guard !hex.isEmpty, hex.count <= 32,
+              hex.range(of: #"^[0-9a-fA-F]+$"#, options: .regularExpression) != nil
+        else { return nil }
+        hex = String(repeating: "0", count: 32 - hex.count) + hex
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(16)
+        var index = hex.startIndex
+        while index < hex.endIndex {
+            let next = hex.index(index, offsetBy: 2)
+            guard let byte = UInt8(hex[index..<next], radix: 16) else { return nil }
+            bytes.append(byte)
+            index = next
+        }
+        return Data(bytes)
     }
 
     private func parseByteRange(_ value: String, implicitOffset: Int64?) -> HLSByteRange? {

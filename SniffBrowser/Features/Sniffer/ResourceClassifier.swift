@@ -2,10 +2,10 @@ import Foundation
 
 struct ResourceClassifier: Sendable {
     private static let standaloneFragmentExtensions: Set<String> = [
-        "m4s", "cmfv", "cmfa"
+        "m4s", "cmfv", "cmfa", "ts"
     ]
     private static let videoExtensions: Set<String> = [
-        "mp4", "mov", "m4v", "webm", "ts", "mpeg", "mpg", "mkv"
+        "mp4", "mov", "m4v", "webm", "mpeg", "mpg", "mkv"
     ]
     private static let audioExtensions: Set<String> = [
         "mp3", "m4a", "aac", "wav", "flac", "ogg", "opus"
@@ -165,7 +165,7 @@ struct ResourceClassifier: Sendable {
         candidate: ResourceCandidate,
         url: URL
     ) -> Bool {
-        // DASH/fMP4 media fragments are implementation details of a stream, not
+        // HLS/DASH media fragments are implementation details of a stream, not
         // independently playable videos. Keeping them would bury the actual
         // MP4/HLS entry and invite downloads that can never form a full video.
         if Self.standaloneFragmentExtensions.contains(inferredExtension(from: url)) {

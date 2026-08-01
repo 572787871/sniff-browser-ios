@@ -12,7 +12,7 @@
 
 第四轮完成第一阶段资源嗅探：只使用公开 WebKit API 与安全页面脚本识别当前标签资源，建立标签隔离、去重、分类、实时列表和手动重扫；不实现实际下载、HLS 合并、DRM、播放器或文件写入。
 
-第五轮把嗅探改为用户按标签主动开启，并接入原生缩略图、普通后台文件下载、任务持久化与真实文件库。第六轮根据真机反馈将 HLS 改为 Swift 原生清单解析、分片断点下载和顺序合并；直播、加密 HLS、DRM/FairPlay 与 Blob 导出明确不在范围内。
+第五轮把嗅探改为用户按标签主动开启，并接入原生缩略图、普通后台文件下载、任务持久化与真实文件库。第六轮根据真机反馈将 HLS 改为 Swift 原生清单解析、分片断点下载和顺序合并；随后补充标准 identity-key AES-128 解密，直播、SAMPLE-AES、DRM/FairPlay 与 Blob 导出明确不在范围内。
 
 产品边界：
 
@@ -72,7 +72,7 @@
 - 第一阶段资源嗅探默认休眠；用户主动开启后才启用 DOM、MutationObserver、PerformanceResourceTiming、Fetch、XHR、媒体事件与导航响应。
 - 每标签独立资源仓库、规范 URL 去重、元数据合并、手动重扫、扫描状态和真实角标。
 - background URLSession 普通文件下载、Resume Data、持久化队列、并发限制、真实进度与错误验证。
-- Swift 原生下载普通、未加密 HLS VOD 的初始化片段和媒体分片；拒绝直播、加密和受保护内容。
+- Swift 原生下载普通或标准 identity-key AES-128 HLS VOD 的初始化片段和媒体分片；拒绝直播、SAMPLE-AES、FairPlay 和其他受保护内容。
 - 完成文件进入 Documents/Downloads 分类目录，fMP4 保存为 `.mp4`，MPEG-TS 保存为 `.ts`，并由文件库真实展示和打开。
 - 认证的模型与协议。
 - Keychain、偏好、日志、文件名清理等基础服务。
@@ -156,7 +156,7 @@
 - WKWebView 不直接暴露全部底层网络请求，因此第一阶段识别结果不保证完整。
 - Blob URL 只在页面上下文有效，不保证可导出。
 - 跨域响应可能缺少 MIME、长度等元数据。
-- 加密 HLS 不保证可用，DRM/FairPlay 内容不下载、不解密。
+- 标准 identity-key AES-128 HLS 可按公开清单处理；其他加密 HLS 不保证可用，DRM/FairPlay 内容不下载、不解密。
 - 站点脚本和服务端策略变化可能导致资源信息不完整。
 
 ## 7. 下载管理方案
@@ -165,7 +165,7 @@
 
 - 普通资源使用 background `URLSessionDownloadTask`，支持 waiting、preparing、downloading、paused、retrying、finalizing、completed、failed 和 cancelled。
 - 暂停产生 Resume Data 并存入 Application Support；系统/服务器不接受时明确提示从头开始，不伪装断点成功。
-- HLS 使用 Swift Parser 与有限并发分片队列；只接受带 `EXT-X-ENDLIST`、未加密且未受保护的 VOD。
+- HLS 使用 Swift Parser 与有限并发分片队列；只接受带 `EXT-X-ENDLIST`、未受 DRM 保护的 VOD，并支持标准 identity-key AES-128。
 - 任务保存 URL、文件名、类型、大小、进度、速度、剩余时间、目标相对路径、Resume Data 相对路径和用户可读错误；Cookie 和 Authorization 不持久化。
 - 普通文件与合并后的 HLS 文件进入 Documents/Downloads 的分类目录并保存相对引用。
 - 下载页提供暂停、继续、取消、重试、清理与完成文件打开；文件页展示真实完成记录。
@@ -173,7 +173,7 @@
 后续仍需真机强化：
 
 - 后台被杀恢复、网络切换、通知、HLS 分片检查点和不同服务器 Resume Data 兼容性。
-- Swift 原生 M3U8 Parser 与分片队列已落地；合法 AES-128 内容处理仍不在当前实现中。
+- Swift 原生 M3U8 Parser、分片队列及标准 identity-key AES-128 处理已落地；SAMPLE-AES 和 FairPlay 不在实现范围内。
 
 ## 8. 用户系统方案
 

@@ -70,6 +70,27 @@ final class ResourceClassifierTests: XCTestCase {
         XCTAssertNil(classifier.makeResource(from: candidate, tabID: UUID()))
     }
 
+    func testStandaloneHLSTransportSegmentIsHiddenFromResourceResults() throws {
+        let url = try XCTUnwrap(URL(string: "https://example.com/segment_42.ts?token=kept"))
+        let candidate = ResourceCandidate(
+            originalURLString: url.absoluteString,
+            pageURLString: "https://example.com/watch",
+            pageTitle: "Example",
+            mimeType: "video/mp2t",
+            estimatedSize: 128_000,
+            duration: nil,
+            width: nil,
+            height: nil,
+            bitrate: nil,
+            thumbnailURLString: nil,
+            detectionSource: .performance,
+            elementType: "video",
+            headersHint: [:]
+        )
+
+        XCTAssertNil(classifier.makeResource(from: candidate, tabID: UUID()))
+    }
+
     private func classify(_ rawURL: String) throws -> ResourceType? {
         classifier.classify(
             mimeType: nil,

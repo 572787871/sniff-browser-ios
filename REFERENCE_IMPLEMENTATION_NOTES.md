@@ -25,7 +25,7 @@
 - 可借鉴：Master/Media Playlist 区分、Variant 选择、分片调度、重试、文件命名和错误分类。
 - 本阶段采用：用 Swift 独立实现 Master/Media Playlist 区分、Variant 选择、有限并发分片重试、磁盘检查点与顺序合并。
 - 本阶段不采用：Node.js 运行时、命令行程序、Shell、FFmpeg、Electron，以及将 HLS 强制转换成 MP4。
-- 后续方案：继续增强 Variant 选择与媒体封装兼容性；AES-128 内容在没有明确合法密钥处理边界前保持不支持。
+- 当前方案：使用 Swift/CommonCrypto 独立实现公开清单声明的标准 identity-key AES-128 分片解密；继续增强 Variant 选择与媒体封装兼容性，且不支持 SAMPLE-AES、FairPlay 或访问控制绕过。
 
 ## Kingfisher
 
@@ -39,7 +39,7 @@
 
 - 嗅探默认休眠，由用户为当前标签主动开启；标签之间状态和资源互不混合。
 - 普通 HTTP/HTTPS 文件由 background `URLSessionDownloadTask` 下载，并通过 Resume Data 支持系统允许范围内的断点恢复。
-- 普通未加密 HLS VOD 由 Swift 原生分片流程保存；直播、加密清单、DRM/FairPlay 和 Blob 不创建假任务。
+- 普通及标准 identity-key AES-128 HLS VOD 由 Swift 原生分片流程保存；直播、SAMPLE-AES、DRM/FairPlay 和 Blob 不创建假任务。
 - 图片缩略图使用受限大小的 `URLSession` 请求与 ImageIO 下采样；无痕模式只使用内存缓存。
 - Cookie 仅按目标域从当前 `WKHTTPCookieStore` 临时构造请求，不写入任务 JSON 或日志。
 
