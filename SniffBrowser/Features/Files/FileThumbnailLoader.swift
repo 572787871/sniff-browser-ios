@@ -121,7 +121,9 @@ final class FileThumbnailLoader {
     }
 
     private static func isVideoFile(_ url: URL) -> Bool {
-        ["mp4", "m4v", "mov", "ts"].contains(url.pathExtension.lowercased())
+        ["mp4", "m4v", "mov", "movpkg", "m3u8"].contains(
+            url.pathExtension.lowercased()
+        )
     }
 }
 
