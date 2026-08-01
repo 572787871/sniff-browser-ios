@@ -62,7 +62,10 @@ final class DownloadManagerViewController: BaseViewController {
         return tasks
             .filter { $0.isHiddenFromDownloadHistory != true }
             .filter { selectedScope.includes($0.state) }
-            .sorted { $0.updatedAt > $1.updatedAt }
+            .sorted {
+                if $0.createdAt != $1.createdAt { return $0.createdAt > $1.createdAt }
+                return $0.id.uuidString < $1.id.uuidString
+            }
     }
 
     init(manager: DownloadManaging? = nil) {
@@ -528,6 +531,9 @@ private final class DownloadTaskCell: UITableViewCell {
     private var thumbnailToken: FileThumbnailToken?
     private var posterToken: ResourceThumbnailToken?
     private var representedTaskID: UUID?
+    private var representedThumbnailURL: URL?
+    private var representedFileURL: URL?
+    private var hasArtwork = false
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -545,16 +551,14 @@ private final class DownloadTaskCell: UITableViewCell {
         posterToken?.cancel()
         posterToken = nil
         representedTaskID = nil
+        representedThumbnailURL = nil
+        representedFileURL = nil
+        hasArtwork = false
         iconView.image = nil
     }
 
     func configure(task: DownloadTaskModel, fileURL: URL?) {
-        thumbnailToken?.cancel()
-        thumbnailToken = nil
-        posterToken?.cancel()
-        posterToken = nil
-        representedTaskID = task.id
-        loadPosterIfAvailable(for: task)
+        updateArtworkSourceIfNeeded(for: task, fileURL: fileURL)
         nameLabel.text = task.fileName
         var statusParts = [task.state.localizedTitle]
         if task.state == .failed,
@@ -605,35 +609,69 @@ private final class DownloadTaskCell: UITableViewCell {
             accessibilityValue = task.state.localizedTitle
         }
 
-        switch task.state {
-        case .completed:
-            iconView.image = UIImage(systemName: fallbackSymbol(for: task))
-            iconView.tintColor = AppColors.accent
-            if let fileURL {
-                thumbnailToken = FileThumbnailLoader.shared.load(
-                    fileURL: fileURL,
-                    size: CGSize(width: 112, height: 112),
-                    scale: UIScreen.main.scale
-                ) { [weak self] image in
-                    guard let self,
-                          self.representedTaskID == task.id,
-                          let image
-                    else { return }
-                    self.iconView.image = image
-                    self.iconView.tintColor = nil
-                }
+        if !hasArtwork {
+            switch task.state {
+            case .failed:
+                iconView.image = UIImage(systemName: "exclamationmark.circle.fill")
+                iconView.tintColor = AppColors.danger
+            case .cancelled:
+                iconView.image = UIImage(systemName: "xmark.circle")
+                iconView.tintColor = AppColors.secondaryText
+            case .completed:
+                iconView.image = UIImage(systemName: fallbackSymbol(for: task))
+                iconView.tintColor = AppColors.accent
+            default:
+                iconView.image = UIImage(systemName: "arrow.down.doc")
+                iconView.tintColor = AppColors.accent
             }
-        case .failed:
-            iconView.image = UIImage(systemName: "exclamationmark.circle.fill")
-            iconView.tintColor = AppColors.danger
-        case .cancelled:
-            iconView.image = UIImage(systemName: "xmark.circle")
-            iconView.tintColor = AppColors.secondaryText
-        default:
-            iconView.image = UIImage(systemName: "arrow.down.doc")
-            iconView.tintColor = AppColors.accent
         }
         accessibilityLabel = "\(task.fileName)，\(task.state.localizedTitle)，\(sizeLabel.text ?? "")"
+    }
+
+    private func updateArtworkSourceIfNeeded(
+        for task: DownloadTaskModel,
+        fileURL: URL?
+    ) {
+        let taskChanged = representedTaskID != task.id
+        let sourceChanged = representedThumbnailURL != task.thumbnailURL
+            || representedFileURL != fileURL
+        guard taskChanged || sourceChanged else { return }
+
+        thumbnailToken?.cancel()
+        thumbnailToken = nil
+        posterToken?.cancel()
+        posterToken = nil
+        representedTaskID = task.id
+        representedThumbnailURL = task.thumbnailURL
+        representedFileURL = fileURL
+        if taskChanged {
+            hasArtwork = false
+            iconView.image = nil
+        }
+
+        guard let fileURL else {
+            loadPosterIfAvailable(for: task)
+            return
+        }
+        thumbnailToken = FileThumbnailLoader.shared.load(
+            fileURL: fileURL,
+            size: CGSize(width: 112, height: 112),
+            scale: UIScreen.main.scale
+        ) { [weak self] image in
+            guard let self,
+                  self.representedTaskID == task.id,
+                  self.representedFileURL == fileURL
+            else { return }
+            guard let image else {
+                if !self.hasArtwork {
+                    self.loadPosterIfAvailable(for: task)
+                }
+                return
+            }
+            self.hasArtwork = true
+            self.iconView.image = image
+            self.iconView.tintColor = nil
+        }
     }
 
     private func loadPosterIfAvailable(for task: DownloadTaskModel) {
@@ -657,8 +695,10 @@ private final class DownloadTaskCell: UITableViewCell {
         ) { [weak self] image in
             guard let self,
                   self.representedTaskID == task.id,
+                  self.representedThumbnailURL == url,
                   let image
             else { return }
+            self.hasArtwork = true
             self.iconView.image = image
             self.iconView.tintColor = nil
         }
