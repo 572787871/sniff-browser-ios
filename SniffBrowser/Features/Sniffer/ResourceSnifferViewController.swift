@@ -448,20 +448,20 @@ final class ResourceSnifferViewController: BaseViewController {
     }
 
     private func presentDownloadConfirmation(_ resource: DetectedResource) {
-        let kind = resource.resourceType == .hls ? "HLS 离线视频" : resource.resourceType.localizedTitle
+        let kind = resource.resourceType == .hls ? "视频" : resource.resourceType.localizedTitle
         let message = [
             "类型：\(kind)",
             "文件名：\(resource.fileName)",
             "预计大小：\(formattedSize(resource.estimatedSize))"
         ].joined(separator: "\n")
         let sheet = UIAlertController(
-            title: resource.resourceType == .hls ? "离线保存" : "确认下载",
+            title: resource.resourceType == .hls ? "下载视频" : "确认下载",
             message: message,
             preferredStyle: .actionSheet
         )
         sheet.addAction(UIAlertAction(title: "取消", style: .cancel))
         sheet.addAction(UIAlertAction(
-            title: resource.resourceType == .hls ? "开始离线保存" : "开始下载",
+            title: "开始下载",
             style: .default
         ) { [weak self] _ in
             self?.startDownload(resource)

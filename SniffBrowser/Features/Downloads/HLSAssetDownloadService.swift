@@ -1,5 +1,7 @@
 import AVFoundation
+import AudioToolbox
 import CommonCrypto
+import CoreVideo
 import Foundation
 
 struct HLSDownloadPlan: Sendable {
@@ -192,7 +194,7 @@ final class HLSAssetDownloadService: NSObject {
             .deletingPathExtension
         let stored = try storage.storeDownloadedFile(
             from: outputURL,
-            preferredFileName: "\(baseName.isEmpty ? "HLS 视频" : baseName).mp4",
+            preferredFileName: "\(baseName.isEmpty ? "下载视频" : baseName).mp4",
             resourceType: .hls
         )
         try? FileManager.default.removeItem(at: sourceURL)
@@ -335,7 +337,7 @@ final class HLSAssetDownloadService: NSObject {
         )
         let baseName = (FileNameSanitizer.sanitize(plan.fileName) as NSString)
             .deletingPathExtension
-        let finalName = "\(baseName.isEmpty ? "HLS 视频" : baseName).\(playlist.outputFileExtension)"
+        let finalName = "\(baseName.isEmpty ? "下载视频" : baseName).\(playlist.outputFileExtension)"
         let stored = try storage.storeDownloadedFile(
             from: finalizedURL,
             preferredFileName: finalName,
@@ -366,7 +368,13 @@ final class HLSAssetDownloadService: NSObject {
             url: sourceURL,
             options: [AVURLAssetPreferPreciseDurationAndTimingKey: true]
         )
-        let presets = [AVAssetExportPresetPassthrough, AVAssetExportPresetHighestQuality]
+        let presets = [
+            AVAssetExportPresetPassthrough,
+            AVAssetExportPresetHighestQuality,
+            AVAssetExportPreset1280x720,
+            AVAssetExportPreset960x540,
+            AVAssetExportPresetMediumQuality
+        ]
         for preset in presets {
             try Task.checkCancellation()
             guard let exporter = AVAssetExportSession(asset: asset, presetName: preset),
@@ -377,9 +385,7 @@ final class HLSAssetDownloadService: NSObject {
             exporter.outputFileType = .mp4
             exporter.shouldOptimizeForNetworkUse = false
             let succeeded = await export(exporter)
-            if succeeded,
-               let size = try? outputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-               size > 0 {
+            if succeeded, await isPlayableVideo(at: outputURL) {
                 return
             }
         }
@@ -387,8 +393,27 @@ final class HLSAssetDownloadService: NSObject {
         // program even when AVPlayer can inspect its H.264/AAC tracks. Fall
         // back to a native sample-level remux: compressed samples are copied
         // into an MPEG-4 container without changing their media content.
-        if try await remuxTransportStream(asset: asset, to: outputURL) {
-            return
+        do {
+            if try await remuxTransportStream(asset: asset, to: outputURL) {
+                return
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // Some transport streams contain timestamp discontinuities or
+            // compressed sample descriptions that cannot be copied directly
+            // into MP4. Continue with a decode/encode fallback below.
+        }
+        try Task.checkCancellation()
+        do {
+            if try await transcodeTransportStream(asset: asset, to: outputURL) {
+                return
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            // Map AVFoundation's implementation details to one stable,
+            // user-facing finalization error at the service boundary.
         }
         throw DownloadCenterError.hlsFinalizationFailed
     }
@@ -451,11 +476,155 @@ final class HLSAssetDownloadService: NSObject {
                 }
             }
         }
-        guard succeeded,
-              let size = try? outputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+        guard succeeded else { return false }
+        return await isPlayableVideo(at: outputURL)
+    }
+
+    private func transcodeTransportStream(
+        asset: AVURLAsset,
+        to outputURL: URL
+    ) async throws -> Bool {
+        try Task.checkCancellation()
+        try? FileManager.default.removeItem(at: outputURL)
+        let videoTracks = try await asset.loadTracks(withMediaType: .video)
+        guard let videoTrack = videoTracks.first else { return false }
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        let audioTrack = audioTracks.first
+        let naturalSize = try await videoTrack.load(.naturalSize)
+        let preferredTransform = try await videoTrack.load(.preferredTransform)
+        let transformedSize = naturalSize.applying(preferredTransform)
+        let width = Self.evenDimension(abs(transformedSize.width))
+        let height = Self.evenDimension(abs(transformedSize.height))
+
+        let timeRange = try await asset.load(.timeRange)
+        let reader = try AVAssetReader(asset: asset)
+        let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
+        let videoOutput = AVAssetReaderTrackOutput(
+            track: videoTrack,
+            outputSettings: [
+                kCVPixelBufferPixelFormatTypeKey as String:
+                    Int(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+            ]
+        )
+        videoOutput.alwaysCopiesSampleData = false
+        let videoInput = AVAssetWriterInput(
+            mediaType: .video,
+            outputSettings: [
+                AVVideoCodecKey: AVVideoCodecType.h264,
+                AVVideoWidthKey: width,
+                AVVideoHeightKey: height,
+                AVVideoCompressionPropertiesKey: [
+                    AVVideoAverageBitRateKey: Self.videoBitRate(width: width, height: height),
+                    AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel
+                ]
+            ]
+        )
+        videoInput.expectsMediaDataInRealTime = false
+        videoInput.transform = preferredTransform
+        guard reader.canAdd(videoOutput), writer.canAdd(videoInput) else { return false }
+        reader.add(videoOutput)
+        writer.add(videoInput)
+        var pumps = [HLSRemuxTrackPump(
+            input: videoInput,
+            output: videoOutput,
+            queueLabel: "com.example.SniffBrowser.hls-transcode.video"
+        )]
+
+        if let audioTrack,
+           let audioSettings = try await Self.audioTranscodeSettings(for: audioTrack) {
+            let audioOutput = AVAssetReaderTrackOutput(
+                track: audioTrack,
+                outputSettings: audioSettings.reader
+            )
+            audioOutput.alwaysCopiesSampleData = false
+            let audioInput = AVAssetWriterInput(
+                mediaType: .audio,
+                outputSettings: audioSettings.writer
+            )
+            audioInput.expectsMediaDataInRealTime = false
+            if reader.canAdd(audioOutput), writer.canAdd(audioInput) {
+                reader.add(audioOutput)
+                writer.add(audioInput)
+                pumps.append(HLSRemuxTrackPump(
+                    input: audioInput,
+                    output: audioOutput,
+                    queueLabel: "com.example.SniffBrowser.hls-transcode.audio"
+                ))
+            }
+        }
+
+        guard writer.startWriting(), reader.startReading() else { return false }
+        writer.startSession(atSourceTime: timeRange.start)
+        let group = DispatchGroup()
+        pumps.forEach { $0.start(reader: reader, group: group) }
+        let succeeded: Bool = await withCheckedContinuation { continuation in
+            group.notify(queue: DispatchQueue.global(qos: .utility)) {
+                guard reader.status == .completed else {
+                    writer.cancelWriting()
+                    continuation.resume(returning: false)
+                    return
+                }
+                writer.finishWriting {
+                    continuation.resume(returning: writer.status == .completed)
+                }
+            }
+        }
+        guard succeeded else { return false }
+        return await isPlayableVideo(at: outputURL)
+    }
+
+    private func isPlayableVideo(at url: URL) async -> Bool {
+        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
               size > 0
         else { return false }
-        return true
+        let asset = AVURLAsset(url: url)
+        do {
+            let tracks = try await asset.loadTracks(withMediaType: .video)
+            let duration = try await asset.load(.duration)
+            return !tracks.isEmpty && duration.isValid && duration.seconds > 0
+        } catch {
+            return false
+        }
+    }
+
+    private static func evenDimension(_ value: CGFloat) -> Int {
+        let rounded = max(Int(value.rounded()), 2)
+        return rounded.isMultiple(of: 2) ? rounded : rounded + 1
+    }
+
+    private static func videoBitRate(width: Int, height: Int) -> Int {
+        let pixels = width * height
+        if pixels >= 3_500_000 { return 12_000_000 }
+        if pixels >= 1_800_000 { return 8_000_000 }
+        if pixels >= 800_000 { return 5_000_000 }
+        return 2_500_000
+    }
+
+    private static func audioTranscodeSettings(
+        for track: AVAssetTrack
+    ) async throws -> (reader: [String: Any], writer: [String: Any])? {
+        let descriptions = try await track.load(.formatDescriptions)
+        guard let description = descriptions.first,
+              let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(description)
+        else { return nil }
+        let source = streamDescription.pointee
+        let sampleRate = max(source.mSampleRate, 8_000)
+        let channelCount = max(Int(source.mChannelsPerFrame), 1)
+        return (
+            reader: [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVLinearPCMBitDepthKey: 16,
+                AVLinearPCMIsFloatKey: false,
+                AVLinearPCMIsBigEndianKey: false,
+                AVLinearPCMIsNonInterleaved: false
+            ],
+            writer: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: sampleRate,
+                AVNumberOfChannelsKey: channelCount,
+                AVEncoderBitRateKey: min(max(channelCount * 64_000, 96_000), 320_000)
+            ]
+        )
     }
 
     private func downloadSegment(

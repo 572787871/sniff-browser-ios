@@ -526,6 +526,7 @@ private final class DownloadTaskCell: UITableViewCell {
     private let progressView = UIProgressView(progressViewStyle: .default)
     private let indeterminateIndicator = UIActivityIndicatorView(style: .medium)
     private var thumbnailToken: FileThumbnailToken?
+    private var posterToken: ResourceThumbnailToken?
     private var representedTaskID: UUID?
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
@@ -541,6 +542,8 @@ private final class DownloadTaskCell: UITableViewCell {
         super.prepareForReuse()
         thumbnailToken?.cancel()
         thumbnailToken = nil
+        posterToken?.cancel()
+        posterToken = nil
         representedTaskID = nil
         iconView.image = nil
     }
@@ -548,7 +551,10 @@ private final class DownloadTaskCell: UITableViewCell {
     func configure(task: DownloadTaskModel, fileURL: URL?) {
         thumbnailToken?.cancel()
         thumbnailToken = nil
+        posterToken?.cancel()
+        posterToken = nil
         representedTaskID = task.id
+        loadPosterIfAvailable(for: task)
         nameLabel.text = task.fileName
         var statusParts = [task.state.localizedTitle]
         if task.state == .failed,
@@ -628,6 +634,34 @@ private final class DownloadTaskCell: UITableViewCell {
             iconView.tintColor = AppColors.accent
         }
         accessibilityLabel = "\(task.fileName)，\(task.state.localizedTitle)，\(sizeLabel.text ?? "")"
+    }
+
+    private func loadPosterIfAvailable(for task: DownloadTaskModel) {
+        guard let url = task.thumbnailURL,
+              ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+        else { return }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        request.setValue(task.sourceURL.absoluteString, forHTTPHeaderField: "Referer")
+        let scale = UIScreen.main.scale
+        posterToken = ResourceThumbnailLoader.shared.load(
+            ResourceThumbnailRequest(
+                resourceID: task.resourceID ?? task.id,
+                tabID: task.id,
+                request: request,
+                // Match the resource sheet's request dimensions so a poster
+                // already shown there is reused immediately from cache.
+                targetPixelSize: CGSize(width: 80 * scale, height: 64 * scale),
+                allowsDiskCache: true
+            )
+        ) { [weak self] image in
+            guard let self,
+                  self.representedTaskID == task.id,
+                  let image
+            else { return }
+            self.iconView.image = image
+            self.iconView.tintColor = nil
+        }
     }
 
     private func fallbackSymbol(for task: DownloadTaskModel) -> String {

@@ -10,6 +10,7 @@ final class DownloadRepositoryTests: XCTestCase {
         let timestamp = Date(timeIntervalSince1970: 100)
         let task = DownloadTaskModel(
             sourceURL: try XCTUnwrap(URL(string: "https://example.com/movie.mp4?signature=private")),
+            thumbnailURL: try XCTUnwrap(URL(string: "https://example.com/poster.jpg")),
             fileName: "movie.mp4",
             resourceType: .video,
             state: .paused,
@@ -23,6 +24,7 @@ final class DownloadRepositoryTests: XCTestCase {
         let restored = try await repository.load()
 
         XCTAssertEqual(restored, [task])
+        XCTAssertEqual(restored.first?.thumbnailURL?.lastPathComponent, "poster.jpg")
         let data = try Data(contentsOf: root.appendingPathComponent("tasks.json"))
         let json = String(decoding: data, as: UTF8.self)
         XCTAssertFalse(json.localizedCaseInsensitiveContains("cookie"))

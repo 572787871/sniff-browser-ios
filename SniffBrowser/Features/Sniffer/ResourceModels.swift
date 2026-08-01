@@ -14,7 +14,7 @@ enum ResourceType: String, CaseIterable, Codable, Sendable {
         switch self {
         case .video: return "视频"
         case .audio: return "音频"
-        case .hls: return "HLS"
+        case .hls: return "视频"
         case .image: return "图片"
         case .document: return "文档"
         case .subtitle: return "字幕"

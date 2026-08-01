@@ -29,7 +29,7 @@ final class DownloadFileStorageTests: XCTestCase {
         let expected: [(ResourceType, String)] = [
             (.video, "Videos"), (.audio, "Audio"), (.image, "Images"),
             (.document, "Documents"), (.subtitle, "Subtitles"),
-            (.archive, "Archives"), (.hls, "HLS"), (.other, "Other")
+            (.archive, "Archives"), (.hls, "Videos"), (.other, "Other")
         ]
 
         for (index, pair) in expected.enumerated() {

@@ -161,7 +161,7 @@ final class DownloadFileStorage {
         case .document: name = "Documents"
         case .subtitle: name = "Subtitles"
         case .archive: name = "Archives"
-        case .hls: name = "HLS"
+        case .hls: name = "Videos"
         case .other: name = "Other"
         }
         let url = downloadsRootURL.appendingPathComponent(name, isDirectory: true)

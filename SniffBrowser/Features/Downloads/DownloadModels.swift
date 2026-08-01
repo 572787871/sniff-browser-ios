@@ -42,6 +42,7 @@ struct DownloadTaskModel: Identifiable, Codable, Hashable, Sendable {
     let resourceID: UUID?
     let sourceURL: URL
     let displayURL: String
+    let thumbnailURL: URL?
     var fileName: String
     var fileExtension: String?
     var resourceType: ResourceType
@@ -86,6 +87,7 @@ struct DownloadTaskModel: Identifiable, Codable, Hashable, Sendable {
         resourceID: UUID? = nil,
         sourceURL: URL,
         displayURL: String? = nil,
+        thumbnailURL: URL? = nil,
         fileName: String,
         fileExtension: String? = nil,
         resourceType: ResourceType = .other,
@@ -111,6 +113,7 @@ struct DownloadTaskModel: Identifiable, Codable, Hashable, Sendable {
         self.resourceID = resourceID
         self.sourceURL = sourceURL
         self.displayURL = displayURL ?? Self.safeDisplayURL(sourceURL)
+        self.thumbnailURL = thumbnailURL
         self.fileName = fileName
         let inferredExtension = sourceURL.pathExtension.lowercased()
         self.fileExtension = fileExtension
@@ -142,6 +145,7 @@ struct DownloadTaskModel: Identifiable, Codable, Hashable, Sendable {
         sourceURL = try container.decode(URL.self, forKey: .sourceURL)
         displayURL = try container.decodeIfPresent(String.self, forKey: .displayURL)
             ?? Self.safeDisplayURL(sourceURL)
+        thumbnailURL = try container.decodeIfPresent(URL.self, forKey: .thumbnailURL)
         fileName = try container.decode(String.self, forKey: .fileName)
 
         let inferredExtension = sourceURL.pathExtension.lowercased()
@@ -245,7 +249,7 @@ enum DownloadCenterError: LocalizedError, Equatable {
         switch self {
         case .invalidURL: return "资源地址无效。"
         case .unsupportedBlob: return "Blob 资源不能直接下载。"
-        case .liveHLSUnsupported: return "暂不支持直播流离线保存。"
+        case .liveHLSUnsupported: return "暂不支持下载直播视频。"
         case .protectedMediaUnsupported: return "不支持受保护媒体下载。"
         case .taskUnavailable: return "下载任务已不存在。"
         case .resumeDataInvalid: return "断点数据已失效，可以选择从头重新下载。"

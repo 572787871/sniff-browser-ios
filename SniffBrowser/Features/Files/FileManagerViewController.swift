@@ -5,7 +5,7 @@ import UIKit
 @MainActor
 final class FileManagerViewController: BaseViewController {
     enum Category: Int, CaseIterable {
-        case all, video, audio, image, document, hls
+        case all, video, audio, image, document
 
         var title: String {
             switch self {
@@ -14,20 +14,18 @@ final class FileManagerViewController: BaseViewController {
             case .audio: return "音频"
             case .image: return "图片"
             case .document: return "文档"
-            case .hls: return "HLS"
             }
         }
 
         func includes(_ task: DownloadTaskModel) -> Bool {
             switch self {
             case .all: return true
-            case .video: return task.resourceType == .video
+            case .video: return task.resourceType == .video || task.resourceType == .hls
             case .audio: return task.resourceType == .audio
             case .image: return task.resourceType == .image
             case .document:
                 return [.document, .subtitle, .archive, .other]
                     .contains(task.resourceType)
-            case .hls: return task.downloadKind == .hlsAsset
             }
         }
     }
@@ -307,6 +305,7 @@ private final class FileLibraryCell: UITableViewCell {
     private let titleLabel = UILabel()
     private let metadataLabel = UILabel()
     private var thumbnailToken: FileThumbnailToken?
+    private var posterToken: ResourceThumbnailToken?
     private var representedID: UUID?
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
@@ -352,6 +351,8 @@ private final class FileLibraryCell: UITableViewCell {
         super.prepareForReuse()
         thumbnailToken?.cancel()
         thumbnailToken = nil
+        posterToken?.cancel()
+        posterToken = nil
         representedID = nil
         thumbnailView.image = nil
     }
@@ -361,8 +362,9 @@ private final class FileLibraryCell: UITableViewCell {
         titleLabel.text = task.fileName
         let size = ByteCountFormatter.string(fromByteCount: task.downloadedSize, countStyle: .file)
         let date = (task.completedAt ?? task.updatedAt).formatted(date: .abbreviated, time: .shortened)
-        metadataLabel.text = "\(task.downloadKind == .hlsAsset ? "HLS 离线视频" : task.resourceType.localizedTitle) · \(size)\n\(date)"
+        metadataLabel.text = "\(task.downloadKind == .hlsAsset ? "视频" : task.resourceType.localizedTitle) · \(size)\n\(date)"
         thumbnailView.image = UIImage(systemName: symbol(for: task))
+        loadPosterIfAvailable(for: task)
         guard let fileURL else { return }
         thumbnailToken = FileThumbnailLoader.shared.load(
             fileURL: fileURL,
@@ -370,6 +372,32 @@ private final class FileLibraryCell: UITableViewCell {
             scale: UIScreen.main.scale
         ) { [weak self] image in
             guard let self, self.representedID == task.id, let image else { return }
+            self.thumbnailView.image = image
+        }
+    }
+
+    private func loadPosterIfAvailable(for task: DownloadTaskModel) {
+        guard let url = task.thumbnailURL,
+              ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+        else { return }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        request.setValue(task.sourceURL.absoluteString, forHTTPHeaderField: "Referer")
+        let scale = UIScreen.main.scale
+        posterToken = ResourceThumbnailLoader.shared.load(
+            ResourceThumbnailRequest(
+                resourceID: task.resourceID ?? task.id,
+                tabID: task.id,
+                request: request,
+                // Reuse the exact thumbnail cached by ResourceItemCell.
+                targetPixelSize: CGSize(width: 80 * scale, height: 64 * scale),
+                allowsDiskCache: true
+            )
+        ) { [weak self] image in
+            guard let self,
+                  self.representedID == task.id,
+                  let image
+            else { return }
             self.thumbnailView.image = image
         }
     }

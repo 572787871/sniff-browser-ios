@@ -144,6 +144,9 @@ final class DownloadCenter: DownloadManaging {
         let model = DownloadTaskModel(
             resourceID: resource.id,
             sourceURL: resource.canonicalURL,
+            thumbnailURL: resource.resourceType == .image
+                ? resource.canonicalURL
+                : resource.thumbnailURL,
             fileName: fileName,
             fileExtension: resource.fileExtension,
             resourceType: resource.resourceType,
@@ -463,7 +466,7 @@ final class DownloadCenter: DownloadManaging {
                 let readableTitle = FileNameSanitizer.sanitize(pageTitle)
                 if !readableTitle.isEmpty { base = readableTitle }
             }
-            return base.isEmpty ? "HLS 离线视频" : base
+            return base.isEmpty ? "下载视频" : base
         }
         if (name as NSString).pathExtension.isEmpty,
            let fileExtension = resource.fileExtension,

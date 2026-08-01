@@ -149,7 +149,7 @@ final class ResourceListCell: UITableViewCell {
             for: .normal
         )
         downloadButton.accessibilityLabel = resource.resourceType == .hls
-            ? "离线保存"
+            ? "下载视频"
             : "下载"
         downloadButton.isEnabled = onDownload != nil
         downloadButton.alpha = onDownload == nil ? 0.35 : 1
