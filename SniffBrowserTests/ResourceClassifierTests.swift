@@ -49,7 +49,7 @@ final class ResourceClassifierTests: XCTestCase {
         )
     }
 
-    func testStandaloneDASHFragmentIsNotDownloadableAsACompleteVideo() throws {
+    func testStandaloneDASHFragmentIsHiddenFromResourceResults() throws {
         let url = try XCTUnwrap(URL(string: "https://example.com/segment_1.m4s"))
         let candidate = ResourceCandidate(
             originalURLString: url.absoluteString,
@@ -67,11 +67,7 @@ final class ResourceClassifierTests: XCTestCase {
             headersHint: [:]
         )
 
-        let resource = try XCTUnwrap(
-            classifier.makeResource(from: candidate, tabID: UUID())
-        )
-        XCTAssertFalse(resource.isPotentiallyDownloadable)
-        XCTAssertNotNil(resource.limitationReason)
+        XCTAssertNil(classifier.makeResource(from: candidate, tabID: UUID()))
     }
 
     private func classify(_ rawURL: String) throws -> ResourceType? {

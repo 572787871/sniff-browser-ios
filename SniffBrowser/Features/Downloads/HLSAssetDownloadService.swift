@@ -8,7 +8,11 @@ struct HLSDownloadPlan: Sendable {
 @MainActor
 protocol HLSAssetDownloadServiceDelegate: AnyObject {
     func hlsDownloadDidStart(taskID: UUID)
-    func hlsDownload(taskID: UUID, progress: Double)
+    func hlsDownload(
+        taskID: UUID,
+        progress: Double,
+        receivedBytes: Int64
+    )
     func hlsDownloadDidFinish(taskID: UUID, storedFile: StoredDownloadFile)
     func hlsDownloadDidFail(taskID: UUID, error: Error)
     func hlsDownloadDidPause(taskID: UUID)
@@ -232,6 +236,7 @@ final class HLSAssetDownloadService: NSObject {
         guard total > 0 else { throw DownloadCenterError.invalidHLSPlaylist }
 
         var completed = 0
+        var receivedBytes: Int64 = 0
         let batchSize = min(max(DownloadPreferences().maximumConcurrentDownloads, 1), 5)
         var startIndex = 0
         while startIndex < total {
@@ -243,6 +248,7 @@ final class HLSAssetDownloadService: NSObject {
                     if let size = try? target.resourceValues(forKeys: [.fileSizeKey]).fileSize,
                        size > 0 {
                         completed += 1
+                        receivedBytes += Int64(size)
                         continue
                     }
                     let segment = allSegments[index]
@@ -263,11 +269,20 @@ final class HLSAssetDownloadService: NSObject {
                         options: .atomic
                     )
                     completed += 1
-                    let progress = Double(completed) / Double(total)
-                    await MainActor.run { [weak self] in
-                        self?.delegate?.hlsDownload(taskID: taskID, progress: progress)
-                    }
+                    receivedBytes += Int64(data.count)
                 }
+            }
+            // Publish once per bounded batch. This is frequent enough for a
+            // smooth speed display without sending a UI update for every
+            // fragment or racing mutable counters across actor boundaries.
+            let reportedProgress = Double(completed) / Double(total)
+            let reportedBytes = receivedBytes
+            await MainActor.run { [weak self] in
+                self?.delegate?.hlsDownload(
+                    taskID: taskID,
+                    progress: reportedProgress,
+                    receivedBytes: reportedBytes
+                )
             }
             startIndex = endIndex
         }

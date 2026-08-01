@@ -10,7 +10,6 @@ final class ResourceSnifferViewController: BaseViewController {
         case all
         case video
         case audio
-        case hls
         case image
         case document
         case subtitle
@@ -21,7 +20,6 @@ final class ResourceSnifferViewController: BaseViewController {
             case .all: return "全部"
             case .video: return "视频"
             case .audio: return "音频"
-            case .hls: return "HLS"
             case .image: return "图片"
             case .document: return "文档"
             case .subtitle: return "字幕"
@@ -32,9 +30,8 @@ final class ResourceSnifferViewController: BaseViewController {
         func includes(_ type: ResourceType) -> Bool {
             switch self {
             case .all: return true
-            case .video: return type == .video
+            case .video: return type == .video || type == .hls
             case .audio: return type == .audio
-            case .hls: return type == .hls
             case .image: return type == .image
             case .document: return type == .document
             case .subtitle: return type == .subtitle

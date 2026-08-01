@@ -358,7 +358,11 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
         ) as? DownloadTaskCell else {
             return UITableViewCell()
         }
-        cell.configure(task: visibleTasks[indexPath.row])
+        let task = visibleTasks[indexPath.row]
+        cell.configure(
+            task: task,
+            fileURL: task.state == .completed ? manager?.fileURL(for: task.id) : nil
+        )
         return cell
     }
 
@@ -500,6 +504,8 @@ private final class DownloadTaskCell: UITableViewCell {
     private let sizeLabel = UILabel()
     private let progressView = UIProgressView(progressViewStyle: .default)
     private let indeterminateIndicator = UIActivityIndicatorView(style: .medium)
+    private var thumbnailToken: FileThumbnailToken?
+    private var representedTaskID: UUID?
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -510,7 +516,18 @@ private final class DownloadTaskCell: UITableViewCell {
         return nil
     }
 
-    func configure(task: DownloadTaskModel) {
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        thumbnailToken?.cancel()
+        thumbnailToken = nil
+        representedTaskID = nil
+        iconView.image = nil
+    }
+
+    func configure(task: DownloadTaskModel, fileURL: URL?) {
+        thumbnailToken?.cancel()
+        thumbnailToken = nil
+        representedTaskID = task.id
         nameLabel.text = task.fileName
         var statusParts = [task.state.localizedTitle]
         if task.state == .failed,
@@ -563,8 +580,22 @@ private final class DownloadTaskCell: UITableViewCell {
 
         switch task.state {
         case .completed:
-            iconView.image = UIImage(systemName: "checkmark.circle.fill")
-            iconView.tintColor = AppColors.success
+            iconView.image = UIImage(systemName: fallbackSymbol(for: task))
+            iconView.tintColor = AppColors.accent
+            if let fileURL {
+                thumbnailToken = FileThumbnailLoader.shared.load(
+                    fileURL: fileURL,
+                    size: CGSize(width: 112, height: 112),
+                    scale: UIScreen.main.scale
+                ) { [weak self] image in
+                    guard let self,
+                          self.representedTaskID == task.id,
+                          let image
+                    else { return }
+                    self.iconView.image = image
+                    self.iconView.tintColor = nil
+                }
+            }
         case .failed:
             iconView.image = UIImage(systemName: "exclamationmark.circle.fill")
             iconView.tintColor = AppColors.danger
@@ -576,6 +607,18 @@ private final class DownloadTaskCell: UITableViewCell {
             iconView.tintColor = AppColors.accent
         }
         accessibilityLabel = "\(task.fileName)，\(task.state.localizedTitle)，\(sizeLabel.text ?? "")"
+    }
+
+    private func fallbackSymbol(for task: DownloadTaskModel) -> String {
+        switch task.resourceType {
+        case .video, .hls: return "film"
+        case .audio: return "waveform"
+        case .image: return "photo"
+        case .document: return "doc.text"
+        case .subtitle: return "captions.bubble"
+        case .archive: return "archivebox"
+        case .other: return "doc"
+        }
     }
 
     private func configureView() {
@@ -590,7 +633,8 @@ private final class DownloadTaskCell: UITableViewCell {
 
         iconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 24)
         iconView.tintColor = AppColors.accent
-        iconView.contentMode = .center
+        iconView.contentMode = .scaleAspectFill
+        iconView.clipsToBounds = true
         iconView.backgroundColor = AppColors.accentFill
         iconView.layer.cornerRadius = AppRadius.control
         iconView.translatesAutoresizingMaskIntoConstraints = false

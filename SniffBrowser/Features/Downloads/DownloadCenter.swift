@@ -696,10 +696,26 @@ extension DownloadCenter: HLSAssetDownloadServiceDelegate {
         updateTask(id: taskID) { $0.state = .downloading }
     }
 
-    func hlsDownload(taskID: UUID, progress: Double) {
+    func hlsDownload(
+        taskID: UUID,
+        progress: Double,
+        receivedBytes: Int64
+    ) {
+        var aggregator = progressAggregators[taskID] ?? DownloadProgressAggregator()
+        let sample = aggregator.update(
+            receivedBytes: receivedBytes,
+            expectedBytes: nil
+        )
+        progressAggregators[taskID] = aggregator
         updateProgressTask(id: taskID) { task in
             task.state = .downloading
             task.progressFraction = progress
+            task.downloadedSize = sample.receivedBytes
+            task.speedBytesPerSecond = sample.speedBytesPerSecond
+            // HLS playlists generally do not publish segment byte totals. Keep
+            // total size and ETA unknown instead of presenting an estimate as
+            // authoritative; finishTask writes the exact merged file size.
+            task.estimatedRemainingTime = nil
         }
     }
 
@@ -712,13 +728,21 @@ extension DownloadCenter: HLSAssetDownloadServiceDelegate {
     }
 
     func hlsDownloadDidPause(taskID: UUID) {
-        updateTask(id: taskID) { $0.state = .paused }
+        updateTask(id: taskID) { task in
+            task.state = .paused
+            task.speedBytesPerSecond = nil
+            task.estimatedRemainingTime = nil
+        }
         scheduleWaitingTasks()
     }
 
     func hlsDownloadDidCancel(taskID: UUID) {
         guard task(id: taskID)?.state != .cancelled else { return }
-        updateTask(id: taskID) { $0.state = .cancelled }
+        updateTask(id: taskID) { task in
+            task.state = .cancelled
+            task.speedBytesPerSecond = nil
+            task.estimatedRemainingTime = nil
+        }
         scheduleWaitingTasks()
     }
 }

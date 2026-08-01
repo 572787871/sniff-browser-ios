@@ -1,6 +1,9 @@
 import Foundation
 
 struct ResourceClassifier: Sendable {
+    private static let standaloneFragmentExtensions: Set<String> = [
+        "m4s", "cmfv", "cmfa"
+    ]
     private static let videoExtensions: Set<String> = [
         "mp4", "mov", "m4v", "webm", "ts", "mpeg", "mpg", "mkv"
     ]
@@ -123,16 +126,11 @@ struct ResourceClassifier: Sendable {
         let scheme = canonicalURL.scheme?.lowercased()
         let isBlob = scheme == "blob"
         let isFile = scheme == "file"
-        let isStandaloneMediaFragment = ["m4s", "cmfv", "cmfa"].contains(
-            fileExtension
-        )
         let limitation: String?
         if isBlob {
             limitation = "Blob 地址仅在当前网页会话中有效，暂不能直接下载。"
         } else if isFile {
             limitation = "本地网页资源受 App 沙盒权限限制。"
-        } else if isStandaloneMediaFragment {
-            limitation = "这是 DASH 媒体分片，不能作为完整视频单独下载。"
         } else {
             limitation = nil
         }
@@ -157,8 +155,7 @@ struct ResourceClassifier: Sendable {
             lastSeenAt: now,
             tabID: tabID,
             headersHint: candidate.headersHint,
-            isPotentiallyDownloadable: !isBlob && !isFile
-                && !isStandaloneMediaFragment,
+            isPotentiallyDownloadable: !isBlob && !isFile,
             limitationReason: limitation
         )
     }
@@ -168,6 +165,12 @@ struct ResourceClassifier: Sendable {
         candidate: ResourceCandidate,
         url: URL
     ) -> Bool {
+        // DASH/fMP4 media fragments are implementation details of a stream, not
+        // independently playable videos. Keeping them would bury the actual
+        // MP4/HLS entry and invite downloads that can never form a full video.
+        if Self.standaloneFragmentExtensions.contains(inferredExtension(from: url)) {
+            return false
+        }
         if type == .image {
             if let width = candidate.width, let height = candidate.height,
                width <= 2, height <= 2 {
