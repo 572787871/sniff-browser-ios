@@ -461,10 +461,20 @@ final class DownloadCenter: DownloadManaging {
             let opaqueCharacters = CharacterSet(charactersIn: "0123456789abcdefABCDEF-_ ")
             let looksOpaque = base.count >= 32
                 && base.unicodeScalars.allSatisfy { opaqueCharacters.contains($0) }
-            if looksOpaque,
+            let genericNames: Set<String> = [
+                "master", "index", "playlist", "video", "stream", "hls"
+            ]
+            if (looksOpaque || genericNames.contains(base.lowercased())),
                let pageTitle = resource.sourcePageTitle {
                 let readableTitle = FileNameSanitizer.sanitize(pageTitle)
                 if !readableTitle.isEmpty { base = readableTitle }
+            }
+            if let quality = HLSQualityLabel.make(
+                width: resource.width,
+                height: resource.height,
+                bitrate: resource.bitrate
+            ), !base.lowercased().contains(quality.lowercased()) {
+                base += " - \(quality)"
             }
             return base.isEmpty ? "下载视频" : base
         }

@@ -124,10 +124,28 @@ struct ResourceDeduplicator: Sendable {
         existing: DetectedResource,
         incoming: DetectedResource
     ) -> String {
-        if existing.fileName == "未命名文件" {
+        if existing.resourceType == .hls,
+           incoming.resourceType == .hls,
+           let quality = HLSQualityLabel.make(
+            width: incoming.width,
+            height: incoming.height,
+            bitrate: incoming.bitrate
+           ),
+           !existing.fileName.localizedCaseInsensitiveContains(quality) {
+            return incoming.fileName
+        }
+        if existing.fileName == "未命名文件"
+            || (isGenericHLSName(existing.fileName)
+                && !isGenericHLSName(incoming.fileName)) {
             return incoming.fileName
         }
         return existing.fileName
+    }
+
+    private func isGenericHLSName(_ name: String) -> Bool {
+        let base = (name as NSString).deletingPathExtension.lowercased()
+        return ["master", "index", "playlist", "video", "stream", "hls"]
+            .contains(base)
     }
 
     private func nonEmpty(_ value: String?) -> String? {

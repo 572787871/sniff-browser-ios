@@ -275,6 +275,18 @@ final class TabResourceStore {
             if (lhs.width != nil) != (rhs.width != nil) {
                 return lhs.width != nil
             }
+            if lhs.resourceType == .hls, rhs.resourceType == .hls {
+                let leftHeight = lhs.height ?? 0
+                let rightHeight = rhs.height ?? 0
+                if leftHeight != rightHeight {
+                    return leftHeight > rightHeight
+                }
+                let leftBitrate = lhs.bitrate ?? 0
+                let rightBitrate = rhs.bitrate ?? 0
+                if leftBitrate != rightBitrate {
+                    return leftBitrate > rightBitrate
+                }
+            }
             return lhs.lastSeenAt > rhs.lastSeenAt
         }
     }

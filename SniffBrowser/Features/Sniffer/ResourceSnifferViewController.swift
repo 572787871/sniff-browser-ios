@@ -527,13 +527,28 @@ final class ResourceSnifferViewController: BaseViewController {
                 self.navigationController?.pushViewController(controller, animated: true)
                 return
             }
-            let asset = AVURLAsset(
-                url: context.targetURL,
-                options: context.assetOptions()
-            )
-            let player = AVPlayerViewController()
-            player.player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
-            self.present(player, animated: true) { player.player?.play() }
+            do {
+                let playbackURL: URL
+                let options: [String: Any]
+                if resource.resourceType == .hls {
+                    playbackURL = try await RemoteHLSPlaybackServer.shared
+                        .playbackURL(context: context)
+                    options = [:]
+                } else {
+                    playbackURL = context.targetURL
+                    options = context.assetOptions()
+                }
+                guard !Task.isCancelled else { return }
+                let asset = AVURLAsset(url: playbackURL, options: options)
+                let player = AVPlayerViewController()
+                player.player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
+                self.present(player, animated: true) { player.player?.play() }
+            } catch {
+                self.showMessage(
+                    title: "无法在线播放",
+                    message: error.localizedDescription
+                )
+            }
         }
     }
 

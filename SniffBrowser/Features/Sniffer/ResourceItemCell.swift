@@ -54,17 +54,29 @@ final class ResourceListCell: UITableViewCell {
         thumbnailToken = nil
         representedResourceID = resource.id
         nameLabel.text = resource.fileName
-        var metadata = [
-            resource.fileExtension?.uppercased()
-                ?? resource.resourceType.localizedTitle,
-            resource.estimatedSize.map {
-                ByteCountFormatter.string(
-                    fromByteCount: $0,
-                    countStyle: .file
-                )
-            } ?? "大小未知"
-        ]
-        if let width = resource.width, let height = resource.height {
+        var metadata = [resource.fileExtension?.uppercased()
+            ?? resource.resourceType.localizedTitle]
+        if resource.resourceType == .hls,
+           let quality = HLSQualityLabel.make(
+            width: resource.width,
+            height: resource.height,
+            bitrate: nil
+           ) {
+            metadata.append(quality)
+        }
+        if let size = resource.estimatedSize {
+            let formatted = ByteCountFormatter.string(
+                fromByteCount: size,
+                countStyle: .file
+            )
+            metadata.append(resource.resourceType == .hls
+                ? "约 \(formatted)"
+                : formatted)
+        } else {
+            metadata.append("大小未知")
+        }
+        if resource.resourceType != .hls,
+           let width = resource.width, let height = resource.height {
             metadata.append("\(width)×\(height)")
         }
         if let duration = resource.duration, duration.isFinite, duration > 0 {

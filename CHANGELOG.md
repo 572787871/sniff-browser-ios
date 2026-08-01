@@ -1,5 +1,12 @@
 # 更新记录
 
+## 0.6.7 - 2026-08-01
+
+- HLS 资源页按需读取 Master/Media Playlist，用实际选中的 Variant 补齐清晰度、码率、时长与估算大小，同类资源按清晰度降序显示。
+- 通用的 `master.m3u8` 名称替换为“网页视频标题 - 1080p”类可读名称，下载任务和成品文件沿用该名称。
+- 过滤被网页播放器错误标记为 `video/mp4` 的主页面 URL，避免将 `view_video.php` 当成视频。
+- HLS 在线播放通过仅绑定 `127.0.0.1` 的临时转发服务复用当前网页的 User-Agent、Referer 和按域匹配 Cookie，并重写嵌套清单、密钥与分片 URL。
+
 ## 0.6.6 - 2026-08-01
 
 - HLS 下载改为不依赖特定网站的通用清单管线：解析 Master/Media Playlist，以当前网页的 User-Agent、Referer 和按目标域匹配的内存 Cookie 请求清单、密钥与分片。

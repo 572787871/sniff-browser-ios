@@ -22,7 +22,10 @@ final class ResourceSnifferViewModel {
     private let service: ResourceSniffingService
     private let requestContextProvider: RequestContextProvider
     private let downloadCenter: DownloadCenter
+    private let hlsMetadataResolver = HLSResourceMetadataResolver()
     private var observationToken: UUID?
+    private var hlsMetadataTasks: [URL: Task<Void, Never>] = [:]
+    private var attemptedHLSMetadataURLs: Set<URL> = []
 
     init(
         tabID: UUID,
@@ -71,15 +74,19 @@ final class ResourceSnifferViewModel {
                 activationState: snapshot.activationState
             )
             self.onStateChange?(self.state)
+            self.resolveHLSMetadataIfNeeded(in: snapshot.resources)
         }
     }
 
     func stop() {
         store.removeObserver(observationToken)
         observationToken = nil
+        hlsMetadataTasks.values.forEach { $0.cancel() }
+        hlsMetadataTasks.removeAll()
     }
 
     func refresh() async throws {
+        attemptedHLSMetadataURLs.removeAll()
         if !state.activationState.isEnabled {
             try await service.enableSniffing(for: state.tabID)
             return
@@ -97,6 +104,9 @@ final class ResourceSnifferViewModel {
     }
 
     func clearResults() {
+        hlsMetadataTasks.values.forEach { $0.cancel() }
+        hlsMetadataTasks.removeAll()
+        attemptedHLSMetadataURLs.removeAll()
         service.resetResources(for: state.tabID)
     }
 
@@ -118,6 +128,36 @@ final class ResourceSnifferViewModel {
             resource: resource,
             context: context
         )
+    }
+
+    private func resolveHLSMetadataIfNeeded(
+        in resources: [DetectedResource]
+    ) {
+        for resource in resources where resource.resourceType == .hls {
+            let url = resource.canonicalURL
+            guard !attemptedHLSMetadataURLs.contains(url),
+                  hlsMetadataTasks[url] == nil
+            else { continue }
+            attemptedHLSMetadataURLs.insert(url)
+            hlsMetadataTasks[url] = Task { [weak self] in
+                guard let self else { return }
+                defer { self.hlsMetadataTasks[url] = nil }
+                let context = await self.requestContextProvider(url)
+                do {
+                    let enriched = try await self.hlsMetadataResolver.resolve(
+                        resource: resource,
+                        context: context
+                    )
+                    guard !Task.isCancelled else { return }
+                    self.store.upsert([enriched], tabID: resource.tabID)
+                } catch is CancellationError {
+                    return
+                } catch {
+                    // Metadata is supplemental. A failure must not hide a
+                    // resource that the established downloader can still use.
+                }
+            }
+        }
     }
 }
 

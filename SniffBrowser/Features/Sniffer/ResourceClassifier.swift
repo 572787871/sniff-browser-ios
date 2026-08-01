@@ -120,9 +120,17 @@ struct ResourceClassifier: Sendable {
             : (canonicalURL.pathExtension.isEmpty && !fileExtension.isEmpty
                 ? "\(rawName).\(fileExtension)"
                 : rawName)
-        let fileName = FileNameSanitizer.sanitize(
-            inferredName
-        )
+        let displayName: String
+        if type == .hls, Self.isGenericHLSName(inferredName) {
+            let title = HLSResourceMetadataResolver.readableTitle(
+                pageTitle: candidate.pageTitle,
+                existingName: inferredName
+            )
+            displayName = "\(title).m3u8"
+        } else {
+            displayName = inferredName
+        }
+        let fileName = FileNameSanitizer.sanitize(displayName)
         let scheme = canonicalURL.scheme?.lowercased()
         let isBlob = scheme == "blob"
         let isFile = scheme == "file"
@@ -180,6 +188,16 @@ struct ResourceClassifier: Sendable {
         if Self.standaloneFragmentExtensions.contains(inferredExtension(from: url)) {
             return false
         }
+        // The main document can be reported as a video by players that attach
+        // a video MIME hint to their page URL (for example view_video.php).
+        // It is still HTML, not a downloadable media response.
+        if [.video, .audio].contains(type),
+           let pageURL = candidate.pageURLString.flatMap(URL.init(string:)),
+           ResourceDeduplicator.canonicalURL(for: pageURL)
+            == ResourceDeduplicator.canonicalURL(for: url),
+           Self.looksLikeHTMLDocument(pageURL) {
+            return false
+        }
         if type == .image {
             if let width = candidate.width, let height = candidate.height,
                width <= 2, height <= 2 {
@@ -198,6 +216,19 @@ struct ResourceClassifier: Sendable {
         return [
             "/pixel", "tracking", "analytics", "doubleclick", "/beacon"
         ].contains { value.contains($0) }
+    }
+
+    private static func isGenericHLSName(_ name: String) -> Bool {
+        let base = (name as NSString).deletingPathExtension.lowercased()
+        return ["master", "index", "playlist", "video", "stream", "hls"]
+            .contains(base)
+    }
+
+    private static func looksLikeHTMLDocument(_ url: URL) -> Bool {
+        let fileExtension = url.pathExtension.lowercased()
+        return fileExtension.isEmpty
+            || ["html", "htm", "php", "asp", "aspx", "jsp"]
+                .contains(fileExtension)
     }
 
     private func normalizedMIME(_ value: String?) -> String {
