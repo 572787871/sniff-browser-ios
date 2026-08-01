@@ -49,6 +49,31 @@ final class ResourceClassifierTests: XCTestCase {
         )
     }
 
+    func testStandaloneDASHFragmentIsNotDownloadableAsACompleteVideo() throws {
+        let url = try XCTUnwrap(URL(string: "https://example.com/segment_1.m4s"))
+        let candidate = ResourceCandidate(
+            originalURLString: url.absoluteString,
+            pageURLString: "https://example.com/watch",
+            pageTitle: "Example",
+            mimeType: "video/iso.segment",
+            estimatedSize: 4_096,
+            duration: nil,
+            width: nil,
+            height: nil,
+            bitrate: nil,
+            thumbnailURLString: nil,
+            detectionSource: .performance,
+            elementType: "video",
+            headersHint: [:]
+        )
+
+        let resource = try XCTUnwrap(
+            classifier.makeResource(from: candidate, tabID: UUID())
+        )
+        XCTAssertFalse(resource.isPotentiallyDownloadable)
+        XCTAssertNotNil(resource.limitationReason)
+    }
+
     private func classify(_ rawURL: String) throws -> ResourceType? {
         classifier.classify(
             mimeType: nil,

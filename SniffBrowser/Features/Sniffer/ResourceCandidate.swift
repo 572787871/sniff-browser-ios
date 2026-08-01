@@ -10,6 +10,7 @@ struct ResourceCandidate: Equatable, Sendable {
     let width: Int?
     let height: Int?
     let bitrate: Int?
+    let thumbnailURLString: String?
     let detectionSource: DetectionSource
     let elementType: String?
     let headersHint: [String: String]

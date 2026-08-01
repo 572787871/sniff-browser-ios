@@ -210,6 +210,7 @@ final class WebResourceSniffingService: ResourceSniffingService {
             width: nil,
             height: nil,
             bitrate: nil,
+            thumbnailURLString: nil,
             detectionSource: .navigationResponse,
             elementType: nil,
             headersHint: response.mimeType.map {

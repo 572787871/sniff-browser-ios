@@ -24,6 +24,23 @@ final class ResourceMessageDecoderTests: XCTestCase {
         XCTAssertEqual(batch.candidates.first?.estimatedSize, 1_024)
     }
 
+    func testDecodesSafeVideoThumbnailURL() throws {
+        let batch = try decode([
+            "kind": "batch",
+            "pageURL": "https://example.com/page",
+            "candidates": [[
+                "url": "https://cdn.example.com/video.mp4",
+                "thumbnailURL": "https://cdn.example.com/poster.jpg",
+                "mimeType": "video/mp4"
+            ]]
+        ])
+
+        XCTAssertEqual(
+            batch.candidates.first?.thumbnailURLString,
+            "https://cdn.example.com/poster.jpg"
+        )
+    }
+
     func testMissingAndInvalidURLsAreRejected() throws {
         let batch = try decode([
             "kind": "batch",

@@ -79,10 +79,25 @@ struct ResourceMessageDecoder: Sendable {
             width: positiveInt(value["width"]),
             height: positiveInt(value["height"]),
             bitrate: positiveInt(value["bitrate"]),
+            thumbnailURLString: allowedThumbnailURL(
+                value["thumbnailURL"],
+                pageURL: pageURL
+            ),
             detectionSource: source,
             elementType: boundedString(value["elementType"], maximum: 64),
             headersHint: headers
         )
+    }
+
+    private func allowedThumbnailURL(_ value: Any?, pageURL: String?) -> String? {
+        guard let rawURL = boundedString(
+            value,
+            maximum: Self.maximumURLLength
+        ), isAllowed(rawURL, pageURL: pageURL),
+        let scheme = URL(string: rawURL)?.scheme?.lowercased(),
+        ["http", "https"].contains(scheme)
+        else { return nil }
+        return rawURL
     }
 
     private func isAllowed(_ rawURL: String, pageURL: String?) -> Bool {

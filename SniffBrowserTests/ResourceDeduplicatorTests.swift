@@ -58,6 +58,26 @@ final class ResourceDeduplicatorTests: XCTestCase {
         XCTAssertEqual(merged.detectedAt, first.detectedAt)
     }
 
+    func testMergeKeepsVideoThumbnailDiscoveredFromDOM() throws {
+        let tabID = UUID()
+        let url = try XCTUnwrap(URL(string: "https://example.com/video.mp4"))
+        let poster = try XCTUnwrap(URL(string: "https://example.com/poster.jpg"))
+        let first = makeResource(url: url, tabID: tabID, source: .performance)
+        let second = DetectedResource(
+            canonicalURL: url,
+            originalURLString: url.absoluteString,
+            fileName: "video.mp4",
+            fileExtension: "mp4",
+            resourceType: .video,
+            thumbnailURL: poster,
+            detectionSource: .dom,
+            tabID: tabID
+        )
+
+        let merged = deduplicator.merge(existing: first, incoming: second)
+        XCTAssertEqual(merged.thumbnailURL, poster)
+    }
+
     private func makeResource(
         url: URL,
         tabID: UUID,

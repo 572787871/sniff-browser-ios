@@ -236,6 +236,34 @@ extension BackgroundFileDownloadService: URLSessionTaskDelegate {
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        var redirectedRequest = request
+        redirectedRequest.httpShouldHandleCookies = false
+        let originalRequest = task.originalRequest
+        for header in ["User-Agent", "Referer", "Accept", "Accept-Language"] {
+            if redirectedRequest.value(forHTTPHeaderField: header) == nil,
+               let value = originalRequest?.value(forHTTPHeaderField: header) {
+                redirectedRequest.setValue(value, forHTTPHeaderField: header)
+            }
+        }
+        // A WebKit Cookie header is safe to retain only for redirects that stay
+        // on the exact host. Never forward authenticated cookies to another CDN.
+        if request.url?.host?.caseInsensitiveCompare(
+            originalRequest?.url?.host ?? ""
+        ) == .orderedSame,
+        redirectedRequest.value(forHTTPHeaderField: "Cookie") == nil,
+        let cookie = originalRequest?.value(forHTTPHeaderField: "Cookie") {
+            redirectedRequest.setValue(cookie, forHTTPHeaderField: "Cookie")
+        }
+        completionHandler(redirectedRequest)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
         didCompleteWithError error: Error?
     ) {
         guard let id = taskID(for: task) else { return }

@@ -51,7 +51,20 @@ final class DownloadFileStorage {
         let directory = try categoryDirectory(for: resourceType)
         let fileName = FileNameSanitizer.sanitize(preferredFileName)
         let destination = uniqueDestination(in: directory, fileName: fileName)
-        try FileManager.default.moveItem(at: temporaryURL, to: destination)
+        do {
+            try FileManager.default.moveItem(at: temporaryURL, to: destination)
+        } catch {
+            // Background URLSession may place its temporary file on a different
+            // APFS volume. A cross-volume move fails even though the download is
+            // complete, so fall back to a copy before the delegate returns.
+            do {
+                try FileManager.default.copyItem(at: temporaryURL, to: destination)
+                try? FileManager.default.removeItem(at: temporaryURL)
+            } catch {
+                try? FileManager.default.removeItem(at: destination)
+                throw DownloadCenterError.fileOperationFailed
+            }
+        }
         return storedFile(for: destination)
     }
 

@@ -394,11 +394,16 @@ final class DownloadCenter: DownloadManaging {
                     scheduleWaitingTasks()
                 }
             } else {
+                var request = context.makeRequest(
+                    allowsCellularAccess: preferences.allowsCellularDownloads
+                )
+                request.setValue(
+                    acceptHeader(for: model.resourceType),
+                    forHTTPHeaderField: "Accept"
+                )
                 fileService.start(
                     taskID: model.id,
-                    request: context.makeRequest(
-                        allowsCellularAccess: preferences.allowsCellularDownloads
-                    )
+                    request: request
                 )
             }
         } else {
@@ -424,6 +429,18 @@ final class DownloadCenter: DownloadManaging {
                 self.hlsPreparationTasks[model.id] = nil
             }
             hlsPreparationTasks[model.id] = preparationTask
+        }
+    }
+
+    private func acceptHeader(for resourceType: ResourceType) -> String {
+        switch resourceType {
+        case .video: return "video/*,application/octet-stream;q=0.9,*/*;q=0.8"
+        case .audio: return "audio/*,application/octet-stream;q=0.9,*/*;q=0.8"
+        case .image: return "image/avif,image/webp,image/*,*/*;q=0.8"
+        case .document: return "application/pdf,text/plain,*/*;q=0.8"
+        case .subtitle: return "text/vtt,text/plain,*/*;q=0.8"
+        case .archive, .other: return "application/octet-stream,*/*;q=0.8"
+        case .hls: return "application/vnd.apple.mpegurl,*/*;q=0.8"
         }
     }
 

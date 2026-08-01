@@ -621,9 +621,9 @@ extension ResourceSnifferViewController: UITableViewDataSource {
         cell.configure(
             resource: resource,
             allowsThumbnailDiskCache: !viewModel.state.isPrivate,
-            thumbnailRequestProvider: { [weak viewModel] in
+            thumbnailRequestProvider: { [weak viewModel] url in
                 guard let viewModel else { return nil }
-                return await viewModel.thumbnailRequest(for: resource)
+                return await viewModel.thumbnailRequest(for: url)
             },
             onCopy: { [weak self] in self?.copy(resource) },
             onShare: { [weak self] in self?.share(resource) },

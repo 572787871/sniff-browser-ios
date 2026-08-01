@@ -58,6 +58,9 @@ struct DownloadRequestContext: Sendable {
     ) -> URLRequest {
         var request = URLRequest(url: targetURL, cachePolicy: cachePolicy)
         request.allowsCellularAccess = allowsCellularAccess
+        // Cookies are copied from WKWebView after domain/path filtering. Do not
+        // let URLSession's separate cookie store replace that explicit context.
+        request.httpShouldHandleCookies = false
         headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
         return request
     }
@@ -119,19 +122,10 @@ final class DownloadRequestContextBuilder {
         guard let pageURL,
               ["http", "https"].contains(pageURL.scheme?.lowercased() ?? "")
         else { return [:] }
-        var headers = ["Referer": pageURL.absoluteString]
-        if let origin = URLComponents(url: pageURL, resolvingAgainstBaseURL: false)
-            .flatMap({ components -> String? in
-                guard let scheme = components.scheme,
-                      let host = components.host
-                else { return nil }
-                var value = "\(scheme)://\(host)"
-                if let port = components.port { value += ":\(port)" }
-                return value
-            }) {
-            headers["Origin"] = origin
-        }
-        return headers
+        // A direct file GET normally carries Referer but no Origin. Adding an
+        // Origin header to every resource request causes several CDNs to route
+        // the request through their CORS/error response instead of the file.
+        return ["Referer": pageURL.absoluteString]
     }
 
     private func resolveUserAgent(in webView: WKWebView) async -> String? {

@@ -513,6 +513,11 @@ private final class DownloadTaskCell: UITableViewCell {
     func configure(task: DownloadTaskModel) {
         nameLabel.text = task.fileName
         var statusParts = [task.state.localizedTitle]
+        if task.state == .failed,
+           let reason = task.errorDescription,
+           !reason.isEmpty {
+            statusParts.append(reason)
+        }
         if let speed = task.speedBytesPerSecond, speed > 0 {
             statusParts.append(
                 "\(ByteCountFormatter.string(fromByteCount: Int64(speed), countStyle: .file))/秒"
@@ -597,6 +602,7 @@ private final class DownloadTaskCell: UITableViewCell {
         statusLabel.font = UIFont.preferredFont(forTextStyle: .subheadline)
         statusLabel.adjustsFontForContentSizeCategory = true
         statusLabel.textColor = AppColors.secondaryText
+        statusLabel.numberOfLines = 2
 
         sizeLabel.font = UIFont.preferredFont(forTextStyle: .caption1)
         sizeLabel.adjustsFontForContentSizeCategory = true

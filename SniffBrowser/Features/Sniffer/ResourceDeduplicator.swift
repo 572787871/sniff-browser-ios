@@ -95,6 +95,7 @@ struct ResourceDeduplicator: Sendable {
             width: maximum(existing.width, incoming.width),
             height: maximum(existing.height, incoming.height),
             bitrate: maximum(existing.bitrate, incoming.bitrate),
+            thumbnailURL: incoming.thumbnailURL ?? existing.thumbnailURL,
             detectionSource: preferredSource,
             detectedAt: min(existing.detectedAt, incoming.detectedAt),
             lastSeenAt: max(existing.lastSeenAt, incoming.lastSeenAt),

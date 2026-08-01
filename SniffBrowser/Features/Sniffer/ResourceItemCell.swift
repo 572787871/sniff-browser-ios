@@ -41,7 +41,7 @@ final class ResourceListCell: UITableViewCell {
     func configure(
         resource: DetectedResource,
         allowsThumbnailDiskCache: Bool,
-        thumbnailRequestProvider: @escaping @MainActor () async -> URLRequest?,
+        thumbnailRequestProvider: @escaping @MainActor (URL) async -> URLRequest?,
         onCopy: @escaping () -> Void,
         onShare: @escaping () -> Void,
         onDetails: @escaping () -> Void,
@@ -83,15 +83,18 @@ final class ResourceListCell: UITableViewCell {
             systemName: symbolName(for: resource.resourceType)
         )
         typeIconView.backgroundColor = AppColors.accentFill
-        iconWidthConstraint?.constant = resource.resourceType == .image ? 80 : 48
-        typeIconView.contentMode = resource.resourceType == .image
-            ? .scaleAspectFill
-            : .center
+        let thumbnailURL = resource.resourceType == .image
+            ? resource.canonicalURL
+            : resource.thumbnailURL
+        iconWidthConstraint?.constant = thumbnailURL == nil ? 48 : 80
+        typeIconView.contentMode = thumbnailURL == nil
+            ? .center
+            : .scaleAspectFill
         typeIconView.clipsToBounds = true
-        if resource.resourceType == .image {
+        if let thumbnailURL {
             let scale = UIScreen.main.scale
             thumbnailTask = Task { [weak self] in
-                guard let request = await thumbnailRequestProvider(),
+                guard let request = await thumbnailRequestProvider(thumbnailURL),
                       !Task.isCancelled
                 else { return }
                 let thumbnail = ResourceThumbnailRequest(

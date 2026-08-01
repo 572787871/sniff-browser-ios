@@ -104,6 +104,7 @@ struct DetectedResource: Identifiable, Codable, Hashable, Sendable {
     let width: Int?
     let height: Int?
     let bitrate: Int?
+    let thumbnailURL: URL?
     let detectionSource: DetectionSource
     let detectedAt: Date
     let lastSeenAt: Date
@@ -129,6 +130,7 @@ struct DetectedResource: Identifiable, Codable, Hashable, Sendable {
         width: Int? = nil,
         height: Int? = nil,
         bitrate: Int? = nil,
+        thumbnailURL: URL? = nil,
         detectionSource: DetectionSource,
         detectedAt: Date = Date(),
         lastSeenAt: Date = Date(),
@@ -151,6 +153,7 @@ struct DetectedResource: Identifiable, Codable, Hashable, Sendable {
         self.width = width
         self.height = height
         self.bitrate = bitrate
+        self.thumbnailURL = thumbnailURL
         self.detectionSource = detectionSource
         self.detectedAt = detectedAt
         self.lastSeenAt = lastSeenAt

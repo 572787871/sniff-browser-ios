@@ -123,11 +123,16 @@ struct ResourceClassifier: Sendable {
         let scheme = canonicalURL.scheme?.lowercased()
         let isBlob = scheme == "blob"
         let isFile = scheme == "file"
+        let isStandaloneMediaFragment = ["m4s", "cmfv", "cmfa"].contains(
+            fileExtension
+        )
         let limitation: String?
         if isBlob {
             limitation = "Blob 地址仅在当前网页会话中有效，暂不能直接下载。"
         } else if isFile {
             limitation = "本地网页资源受 App 沙盒权限限制。"
+        } else if isStandaloneMediaFragment {
+            limitation = "这是 DASH 媒体分片，不能作为完整视频单独下载。"
         } else {
             limitation = nil
         }
@@ -146,12 +151,14 @@ struct ResourceClassifier: Sendable {
             width: candidate.width,
             height: candidate.height,
             bitrate: candidate.bitrate,
+            thumbnailURL: candidate.thumbnailURLString.flatMap(URL.init(string:)),
             detectionSource: candidate.detectionSource,
             detectedAt: now,
             lastSeenAt: now,
             tabID: tabID,
             headersHint: candidate.headersHint,
-            isPotentiallyDownloadable: !isBlob && !isFile,
+            isPotentiallyDownloadable: !isBlob && !isFile
+                && !isStandaloneMediaFragment,
             limitationReason: limitation
         )
     }

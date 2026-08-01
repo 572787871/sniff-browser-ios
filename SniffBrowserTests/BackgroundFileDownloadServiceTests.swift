@@ -41,6 +41,30 @@ final class BackgroundFileDownloadServiceTests: XCTestCase {
         ) { XCTAssertEqual($0 as? DownloadCenterError, .unexpectedHTML) }
     }
 
+    func testDownloadRequestKeepsExplicitWebKitContextDeterministic() throws {
+        let target = try XCTUnwrap(
+            URL(string: "https://cdn.example.com/file.mp4")
+        )
+        let page = try XCTUnwrap(URL(string: "https://example.com/watch"))
+        let context = DownloadRequestContext(
+            targetURL: target,
+            pageURL: page,
+            headers: [
+                "Cookie": "session=redacted",
+                "Referer": page.absoluteString
+            ]
+        )
+
+        let request = context.makeRequest()
+
+        XCTAssertFalse(request.httpShouldHandleCookies)
+        XCTAssertEqual(
+            request.value(forHTTPHeaderField: "Referer"),
+            page.absoluteString
+        )
+        XCTAssertNil(request.value(forHTTPHeaderField: "Origin"))
+    }
+
     func testProgressAggregatorReportsSmoothedSpeedAndRemainingTime() throws {
         var aggregator = DownloadProgressAggregator()
         let start = Date(timeIntervalSince1970: 100)
