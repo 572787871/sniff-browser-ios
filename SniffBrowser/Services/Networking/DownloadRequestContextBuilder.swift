@@ -112,6 +112,11 @@ struct DownloadRequestContext: Sendable {
 
 @MainActor
 final class DownloadRequestContextBuilder {
+    private let userAgentCache = NSMapTable<WKWebView, NSString>(
+        keyOptions: .weakMemory,
+        valueOptions: .strongMemory
+    )
+
     func build(
         targetURL: URL,
         pageURL: URL?,
@@ -165,11 +170,18 @@ final class DownloadRequestContextBuilder {
 
     private func resolveUserAgent(in webView: WKWebView) async -> String? {
         if let custom = webView.customUserAgent, !custom.isEmpty { return custom }
-        return await withCheckedContinuation { continuation in
+        if let cached = userAgentCache.object(forKey: webView) {
+            return cached as String
+        }
+        let resolved: String? = await withCheckedContinuation { continuation in
             webView.evaluateJavaScript("navigator.userAgent") { value, _ in
                 continuation.resume(returning: value as? String)
             }
         }
+        if let resolved, !resolved.isEmpty {
+            userAgentCache.setObject(resolved as NSString, forKey: webView)
+        }
+        return resolved
     }
 
     private func resolveCookies(store: WKHTTPCookieStore) async -> [HTTPCookie] {

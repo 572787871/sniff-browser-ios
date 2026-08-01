@@ -126,19 +126,13 @@ final class DownloadCenter: DownloadManaging {
         let kind: DownloadKind = resource.resourceType == .hls
             ? .hlsAsset
             : .regularFile
-        if kind == .hlsAsset {
-            // Resolve the media playlist before persisting a task. This keeps
-            // a small manifest, an expired signed URL, a live stream, or an
-            // unsupported encryption method out of the download queue while
-            // still allowing standard identity-key AES-128 HLS.
-            try await hlsService.validate(context: context)
-            // Playlist loading suspends this MainActor method. Recheck after
-            // the await so two simultaneous confirmations cannot create
-            // duplicate records for the same canonical URL.
-            if let existing = existingDownloadResult(for: resource.canonicalURL) {
-                return existing
-            }
-        }
+        // Do not fetch an HLS playlist inside the user-triggered creation
+        // transaction. Playlist redirects and signed CDN URLs can take several
+        // seconds to resolve, which previously kept the resource sheet waiting
+        // before it could confirm that the task was queued. The task is now
+        // registered immediately; `start(_:)` performs playlist validation in
+        // the existing asynchronous preparing phase and reports a real failure
+        // on the task if the stream is invalid, live, expired, or protected.
         let fileName = preferredFileName(for: resource, kind: kind)
         let model = DownloadTaskModel(
             resourceID: resource.id,
