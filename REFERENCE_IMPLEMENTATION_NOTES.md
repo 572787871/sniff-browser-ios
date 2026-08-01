@@ -16,16 +16,16 @@
 - 许可证：GPL-2.0
 - 可借鉴：下载队列、暂停/恢复、缓存状态、任务详情与失败恢复的设计思路。
 - 不采用：Java/Android 源码、CrossWalk/Android WebView 组件、Android Service 与存储实现。
-- iOS 替代：background `URLSessionDownloadTask`、`AVAssetDownloadURLSession`、App Sandbox 和 UIKit 管理页面。
+- iOS 替代：background `URLSessionDownloadTask`、Swift 原生 HLS Parser/分片队列、App Sandbox 和 UIKit 管理页面。
 
 ## m3u8-dl
 
 - 仓库：<https://github.com/lzwme/m3u8-dl>
 - 许可证：MIT
 - 可借鉴：Master/Media Playlist 区分、Variant 选择、分片调度、重试、文件命名和错误分类。
-- 本阶段采用：仅采用任务状态和错误边界的设计思想；HLS 下载先使用 Apple 的 `AVAssetDownloadURLSession`。
+- 本阶段采用：用 Swift 独立实现 Master/Media Playlist 区分、Variant 选择、有限并发分片重试、磁盘检查点与顺序合并。
 - 本阶段不采用：Node.js 运行时、命令行程序、Shell、FFmpeg、Electron，以及将 HLS 强制转换成 MP4。
-- 后续方案：如系统 HLS 路线不能覆盖合法内容，再独立编写 Swift Parser、有限并发分片队列及可验证的 AES-128 合法内容处理。
+- 后续方案：继续增强 Variant 选择与媒体封装兼容性；AES-128 内容在没有明确合法密钥处理边界前保持不支持。
 
 ## Kingfisher
 
@@ -39,7 +39,7 @@
 
 - 嗅探默认休眠，由用户为当前标签主动开启；标签之间状态和资源互不混合。
 - 普通 HTTP/HTTPS 文件由 background `URLSessionDownloadTask` 下载，并通过 Resume Data 支持系统允许范围内的断点恢复。
-- 普通未受保护的 HLS VOD 由 `AVAssetDownloadURLSession` 离线保存；直播、DRM/FairPlay 和 Blob 不创建假任务。
+- 普通未加密 HLS VOD 由 Swift 原生分片流程保存；直播、加密清单、DRM/FairPlay 和 Blob 不创建假任务。
 - 图片缩略图使用受限大小的 `URLSession` 请求与 ImageIO 下采样；无痕模式只使用内存缓存。
 - Cookie 仅按目标域从当前 `WKHTTPCookieStore` 临时构造请求，不写入任务 JSON 或日志。
 

@@ -306,13 +306,11 @@ final class DownloadCenter: DownloadManaging {
             safeName += ".\(extensionName)"
         }
         guard !safeName.isEmpty else { throw DownloadCenterError.fileOperationFailed }
-        if model.downloadKind == .hlsAsset {
-            // AVFoundation owns the offline asset package and its on-disk name.
-            // Renaming the package can invalidate internal references, so HLS
-            // renames intentionally update only the user-facing metadata.
-            updateTask(id: id) { task in
-                task.fileName = safeName
-            }
+        if model.downloadKind == .hlsAsset,
+           model.destinationRelativePath?.hasPrefix("Container/") == true {
+            // Preserve rename behavior for legacy AVFoundation asset packages
+            // created before the segmented HLS implementation.
+            updateTask(id: id) { task in task.fileName = safeName }
             return
         }
         let stored = try storage.renameFile(
@@ -403,7 +401,8 @@ final class DownloadCenter: DownloadManaging {
                 )
                 fileService.start(
                     taskID: model.id,
-                    request: request
+                    request: request,
+                    prefersForeground: model.resourceType == .image
                 )
             }
         } else {
@@ -411,7 +410,8 @@ final class DownloadCenter: DownloadManaging {
                 try hlsService.resume(taskID: model.id)
                 return
             } catch {
-                // New and unrestorable HLS tasks are prepared through AVURLAsset.
+                // New and unrestorable HLS tasks re-fetch their playlist and
+                // continue from segment checkpoints already present on disk.
             }
             let preparationTask = Task { [weak self] in
                 guard let self else { return }
@@ -451,7 +451,15 @@ final class DownloadCenter: DownloadManaging {
         var name = FileNameSanitizer.sanitize(resource.fileName)
         if name.isEmpty { name = "下载资源" }
         if kind == .hlsAsset {
-            let base = (name as NSString).deletingPathExtension
+            var base = (name as NSString).deletingPathExtension
+            let opaqueCharacters = CharacterSet(charactersIn: "0123456789abcdefABCDEF-_ ")
+            let looksOpaque = base.count >= 32
+                && base.unicodeScalars.allSatisfy { opaqueCharacters.contains($0) }
+            if looksOpaque,
+               let pageTitle = resource.sourcePageTitle {
+                let readableTitle = FileNameSanitizer.sanitize(pageTitle)
+                if !readableTitle.isEmpty { base = readableTitle }
+            }
             return base.isEmpty ? "HLS 离线视频" : base
         }
         if (name as NSString).pathExtension.isEmpty,
@@ -544,6 +552,8 @@ final class DownloadCenter: DownloadManaging {
             task.expectedSize = storedFile.byteCount ?? task.expectedSize
             task.progressFraction = 1
             task.destinationRelativePath = storedFile.relativePath
+            task.fileName = storedFile.fileURL.lastPathComponent
+            task.fileExtension = storedFile.fileURL.pathExtension.lowercased()
             task.completedAt = Date()
             task.speedBytesPerSecond = nil
             task.estimatedRemainingTime = 0
@@ -722,6 +732,9 @@ enum DownloadErrorMapper {
             switch urlError.code {
             case .notConnectedToInternet: return "网络连接已断开。"
             case .timedOut: return "下载请求超时，请稍后重试。"
+            case .networkConnectionLost: return "下载连接中断，已保留可恢复的数据。"
+            case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
+                return "无法连接资源服务器，请返回网页重新识别后重试。"
             case .cancelled: return "下载已取消。"
             default: return "下载失败，请检查网络后重试。"
             }

@@ -234,6 +234,9 @@ enum DownloadCenterError: LocalizedError, Equatable {
     case unexpectedHTML
     case signedURLExpired
     case fileOperationFailed
+    case invalidHLSPlaylist
+    case hlsSegmentFailed(Int)
+    case hlsMergeFailed
 
     var errorDescription: String? {
         switch self {
@@ -247,6 +250,9 @@ enum DownloadCenterError: LocalizedError, Equatable {
         case .unexpectedHTML: return "服务器返回了网页而不是目标文件，资源可能已失效。"
         case .signedURLExpired: return "资源链接可能已过期，请返回网页重新识别。"
         case .fileOperationFailed: return "文件保存失败，请检查可用存储空间。"
+        case .invalidHLSPlaylist: return "HLS 清单无效或已过期，请返回网页重新识别。"
+        case let .hlsSegmentFailed(index): return "第 \(index) 个视频分片下载失败，请重试。"
+        case .hlsMergeFailed: return "视频分片已下载，但合并文件失败，请检查存储空间。"
         }
     }
 }

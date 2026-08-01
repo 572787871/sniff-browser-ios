@@ -12,7 +12,7 @@
 
 第四轮完成第一阶段资源嗅探：只使用公开 WebKit API 与安全页面脚本识别当前标签资源，建立标签隔离、去重、分类、实时列表和手动重扫；不实现实际下载、HLS 合并、DRM、播放器或文件写入。
 
-第五轮把嗅探改为用户按标签主动开启，并接入原生缩略图、普通后台文件下载、Apple HLS 离线下载、任务持久化与真实文件库。直播、DRM/FairPlay、Blob 导出和 HLS 转 MP4 明确不在范围内。
+第五轮把嗅探改为用户按标签主动开启，并接入原生缩略图、普通后台文件下载、任务持久化与真实文件库。第六轮根据真机反馈将 HLS 改为 Swift 原生清单解析、分片断点下载和顺序合并；直播、加密 HLS、DRM/FairPlay 与 Blob 导出明确不在范围内。
 
 产品边界：
 
@@ -72,8 +72,8 @@
 - 第一阶段资源嗅探默认休眠；用户主动开启后才启用 DOM、MutationObserver、PerformanceResourceTiming、Fetch、XHR、媒体事件与导航响应。
 - 每标签独立资源仓库、规范 URL 去重、元数据合并、手动重扫、扫描状态和真实角标。
 - background URLSession 普通文件下载、Resume Data、持久化队列、并发限制、真实进度与错误验证。
-- `AVAssetDownloadURLSession` 普通 HLS VOD 离线下载；拒绝直播和受保护内容。
-- 完成文件进入 Documents/Downloads 分类目录或系统管理的 HLS Asset Package，并由文件库真实展示和打开。
+- Swift 原生下载普通、未加密 HLS VOD 的初始化片段和媒体分片；拒绝直播、加密和受保护内容。
+- 完成文件进入 Documents/Downloads 分类目录，fMP4 保存为 `.mp4`，MPEG-TS 保存为 `.ts`，并由文件库真实展示和打开。
 - 认证的模型与协议。
 - Keychain、偏好、日志、文件名清理等基础服务。
 
@@ -165,15 +165,15 @@
 
 - 普通资源使用 background `URLSessionDownloadTask`，支持 waiting、preparing、downloading、paused、retrying、finalizing、completed、failed 和 cancelled。
 - 暂停产生 Resume Data 并存入 Application Support；系统/服务器不接受时明确提示从头开始，不伪装断点成功。
-- HLS 使用 `AVAssetDownloadURLSession`；只接受系统可播放、有限时长且未受保护的 VOD。
+- HLS 使用 Swift Parser 与有限并发分片队列；只接受带 `EXT-X-ENDLIST`、未加密且未受保护的 VOD。
 - 任务保存 URL、文件名、类型、大小、进度、速度、剩余时间、目标相对路径、Resume Data 相对路径和用户可读错误；Cookie 和 Authorization 不持久化。
-- 普通文件进入 Documents/Downloads 的分类目录；系统 HLS Asset Package 保留其受管理位置并存相对引用。
+- 普通文件与合并后的 HLS 文件进入 Documents/Downloads 的分类目录并保存相对引用。
 - 下载页提供暂停、继续、取消、重试、清理与完成文件打开；文件页展示真实完成记录。
 
 后续仍需真机强化：
 
-- 后台被杀恢复、网络切换、通知、系统 HLS 包生命周期和不同服务器 Resume Data 兼容性。
-- Swift 原生 M3U8 Parser、分片队列和合法 AES-128 内容处理属于第二阶段，不在当前实现中。
+- 后台被杀恢复、网络切换、通知、HLS 分片检查点和不同服务器 Resume Data 兼容性。
+- Swift 原生 M3U8 Parser 与分片队列已落地；合法 AES-128 内容处理仍不在当前实现中。
 
 ## 8. 用户系统方案
 
@@ -209,8 +209,8 @@ CI 只能证明工程可生成、编译和自动测试通过，不能证明签�
 3. 第三轮：修复四宫格标签布局、普通/无痕左右分页、收藏持久化、网页顶栏主题色、用户中心首次布局和下载设置路由。
 4. 第一阶段资源嗅探引擎、标签隔离、去重、分类和真实资源列表。
 5. 历史持久化。
-6. 主动嗅探、普通后台文件下载、断点恢复、系统 HLS 离线保存、任务持久化与基础文件库。
-7. HLS 第二阶段 Parser、文件夹/批量操作和完整播放器体验。
+6. 主动嗅探、普通后台文件下载、断点恢复、原生 HLS 分片下载与合并、任务持久化与基础文件库。
+7. HLS Variant 交互、文件夹/批量操作和完整播放器体验。
 8. Supabase Auth、同步和 Keychain 会话。
 9. 内容过滤、权限、隐私与存储管理。
 10. Instruments、无障碍、UI 测试、App Store 上线准备。

@@ -78,4 +78,19 @@ final class BackgroundFileDownloadServiceTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(sample.speedBytesPerSecond), 1_000, accuracy: 0.001)
         XCTAssertEqual(try XCTUnwrap(sample.estimatedRemainingTime), 3, accuracy: 0.001)
     }
+
+    func testRetryableBackgroundFailureFallsBackButCancellationDoesNot() {
+        XCTAssertTrue(FileDownloadTransportPolicy.shouldRetryInForeground(
+            URLError(.networkConnectionLost)
+        ))
+        XCTAssertTrue(FileDownloadTransportPolicy.shouldRetryInForeground(
+            URLError(.cannotConnectToHost)
+        ))
+        XCTAssertFalse(FileDownloadTransportPolicy.shouldRetryInForeground(
+            URLError(.cancelled)
+        ))
+        XCTAssertFalse(FileDownloadTransportPolicy.shouldRetryInForeground(
+            URLError(.serverCertificateUntrusted)
+        ))
+    }
 }
