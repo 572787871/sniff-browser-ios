@@ -590,6 +590,8 @@ private final class DownloadTaskCell: UITableViewCell {
         if let expected = task.expectedSize, expected > 0 {
             let total = ByteCountFormatter.string(fromByteCount: expected, countStyle: .file)
             sizeLabel.text = "\(downloaded) / \(total)"
+        } else if task.downloadKind == .hlsAsset, task.downloadedSize == 0 {
+            sizeLabel.text = "大小未知"
         } else {
             sizeLabel.text = "\(downloaded) / 大小未知"
         }

@@ -123,6 +123,31 @@ final class HLSDownloadTests: XCTestCase {
         XCTAssertTrue(playlist.hasUnsupportedEncryption)
     }
 
+    func testHLSDisplaySizeDoesNotUsePlaylistContentLength() throws {
+        let candidate = ResourceCandidate(
+            originalURLString: "https://media.example.com/video.m3u8",
+            pageURLString: "https://example.com/watch",
+            pageTitle: "Video",
+            mimeType: "application/vnd.apple.mpegurl",
+            estimatedSize: 9_216,
+            duration: 120,
+            width: 1280,
+            height: 720,
+            bitrate: nil,
+            thumbnailURLString: nil,
+            detectionSource: .dom,
+            elementType: "video",
+            headersHint: [:]
+        )
+        let resource = try XCTUnwrap(ResourceClassifier().makeResource(
+            from: candidate,
+            tabID: UUID()
+        ))
+
+        XCTAssertEqual(resource.resourceType, .hls)
+        XCTAssertNil(resource.estimatedSize)
+    }
+
     func testDecryptsStandardAES128CBCSegment() throws {
         let cipher = try XCTUnwrap(Data(hexadecimal:
             "b88518137cfbcab25479a1d023edeafba9f953ef687d3cb4f03bc732eadac43a"

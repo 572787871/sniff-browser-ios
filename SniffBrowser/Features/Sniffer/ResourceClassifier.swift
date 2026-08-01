@@ -144,7 +144,10 @@ struct ResourceClassifier: Sendable {
             fileExtension: fileExtension.isEmpty ? nil : fileExtension,
             mimeType: normalizedMIME(candidate.mimeType).nilIfEmpty,
             resourceType: type,
-            estimatedSize: candidate.estimatedSize,
+            // Content-Length for HLS is only the playlist text (often a few
+            // KB), not the size of the video segments. Keep it unknown until
+            // the system offline asset has completed and can be measured.
+            estimatedSize: type == .hls ? nil : candidate.estimatedSize,
             duration: candidate.duration,
             width: candidate.width,
             height: candidate.height,

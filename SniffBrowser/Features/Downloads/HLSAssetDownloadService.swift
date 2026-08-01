@@ -5,14 +5,10 @@ import Foundation
 enum HLSDownloadEligibility {
     static func validate(
         isPlayable: Bool,
-        isProtected: Bool,
         durationSeconds: Double,
         isDurationIndefinite: Bool
     ) throws {
         guard isPlayable else { throw DownloadCenterError.invalidURL }
-        guard !isProtected else {
-            throw DownloadCenterError.protectedMediaUnsupported
-        }
         guard !isDurationIndefinite,
               durationSeconds.isFinite,
               durationSeconds > 0
@@ -47,6 +43,7 @@ final class HLSAssetDownloadService: NSObject {
     weak var delegate: HLSAssetDownloadServiceDelegate?
 
     private let storage: DownloadFileStorage
+    private let playlistParser = HLSPlaylistParser()
     private let lock = NSLock()
     private var plans: [UUID: HLSDownloadPlan] = [:]
     private var systemTasks: [UUID: AVAssetDownloadTask] = [:]
@@ -79,6 +76,7 @@ final class HLSAssetDownloadService: NSObject {
     }
 
     func validate(context: DownloadRequestContext) async throws {
+        try await validatePlaylist(context: context)
         try await validate(asset: makeAsset(context: context))
     }
 
@@ -87,6 +85,8 @@ final class HLSAssetDownloadService: NSObject {
         context: DownloadRequestContext,
         title: String
     ) async throws {
+        try Task.checkCancellation()
+        try await validatePlaylist(context: context)
         try Task.checkCancellation()
         let asset = makeAsset(context: context)
         try await validate(asset: asset)
@@ -167,15 +167,89 @@ final class HLSAssetDownloadService: NSObject {
     private func validate(asset: AVURLAsset) async throws {
         let isPlayable = try await asset.load(.isPlayable)
         try Task.checkCancellation()
-        let isProtected = try await asset.load(.hasProtectedContent)
-        try Task.checkCancellation()
         let duration = try await asset.load(.duration)
         try HLSDownloadEligibility.validate(
             isPlayable: isPlayable,
-            isProtected: isProtected,
             durationSeconds: duration.seconds,
             isDurationIndefinite: duration.isIndefinite
         )
+    }
+
+    /// AVFoundation reports ordinary identity-key AES-128 HLS as protected on
+    /// some servers even though AVAssetDownloadURLSession can save and play it.
+    /// Inspect the public playlist tags instead: allow standard AES-128 and
+    /// reject only unsupported encryption such as SAMPLE-AES/FairPlay.
+    private func validatePlaylist(
+        context: DownloadRequestContext,
+        maximumDepth: Int = 3
+    ) async throws {
+        var url = context.targetURL
+        for _ in 0..<maximumDepth {
+            try Task.checkCancellation()
+            let text = try await fetchPlaylist(at: url, context: context)
+            switch try playlistParser.parse(text, sourceURL: url) {
+            case let .media(playlist):
+                guard playlist.isEndList else {
+                    throw DownloadCenterError.liveHLSUnsupported
+                }
+                guard !playlist.hasUnsupportedEncryption else {
+                    throw DownloadCenterError.protectedMediaUnsupported
+                }
+                return
+            case let .master(variants):
+                guard let preferred = variants.max(by: { lhs, rhs in
+                    let leftBandwidth = lhs.bandwidth ?? 0
+                    let rightBandwidth = rhs.bandwidth ?? 0
+                    if leftBandwidth != rightBandwidth {
+                        return leftBandwidth < rightBandwidth
+                    }
+                    return (lhs.height ?? 0) < (rhs.height ?? 0)
+                }) else {
+                    throw DownloadCenterError.invalidHLSPlaylist
+                }
+                url = preferred.url
+            }
+        }
+        throw DownloadCenterError.invalidHLSPlaylist
+    }
+
+    private func fetchPlaylist(
+        at url: URL,
+        context: DownloadRequestContext
+    ) async throws -> String {
+        var request = URLRequest(
+            url: url,
+            cachePolicy: .reloadIgnoringLocalCacheData,
+            timeoutInterval: 20
+        )
+        request.allowsCellularAccess = DownloadPreferences().allowsCellularDownloads
+        request.httpShouldHandleCookies = false
+        context.headers.forEach {
+            // A playlist variant may live on another CDN. Never forward a
+            // page-origin Cookie header to a different host.
+            if $0.key.caseInsensitiveCompare("Cookie") != .orderedSame
+                || url.host?.caseInsensitiveCompare(context.targetURL.host ?? "") == .orderedSame {
+                request.setValue($0.value, forHTTPHeaderField: $0.key)
+            }
+        }
+        request.setValue(
+            "application/vnd.apple.mpegurl,application/x-mpegURL,text/plain,*/*;q=0.5",
+            forHTTPHeaderField: "Accept"
+        )
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        let session = URLSession(configuration: configuration)
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode),
+              data.count <= 5_000_000,
+              let text = String(data: data, encoding: .utf8)
+                ?? String(data: data, encoding: .isoLatin1),
+              text.contains("#EXTM3U")
+        else {
+            throw DownloadCenterError.invalidHLSPlaylist
+        }
+        return text
     }
 
     private func taskID(for task: URLSessionTask) -> UUID? {

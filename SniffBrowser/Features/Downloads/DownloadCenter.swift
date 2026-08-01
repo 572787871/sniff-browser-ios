@@ -148,7 +148,7 @@ final class DownloadCenter: DownloadManaging {
             fileExtension: resource.fileExtension,
             resourceType: resource.resourceType,
             downloadKind: kind,
-            expectedSize: resource.estimatedSize
+            expectedSize: kind == .hlsAsset ? nil : resource.estimatedSize
         )
         tasks.append(model)
         requestContexts[model.id] = context
