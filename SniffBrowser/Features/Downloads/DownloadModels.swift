@@ -258,7 +258,7 @@ enum DownloadCenterError: LocalizedError, Equatable {
         case .hlsDecryptionFailed: return "视频分片解密失败，该资源可能已过期或使用了不支持的保护格式。"
         case let .hlsSegmentFailed(index): return "第 \(index) 个视频分片下载失败，请重试。"
         case .hlsMergeFailed: return "视频分片已下载，但合并文件失败，请检查存储空间。"
-        case .hlsFinalizationFailed: return "视频分片已合并，但生成可播放视频失败。"
+        case .hlsFinalizationFailed: return "视频分片已合并，但生成 MPEG-4 文件失败，请重试。"
         }
     }
 }

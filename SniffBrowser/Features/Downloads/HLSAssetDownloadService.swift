@@ -362,7 +362,10 @@ final class HLSAssetDownloadService: NSObject {
 
     private func exportTransportStream(at sourceURL: URL, to outputURL: URL) async throws {
         try? FileManager.default.removeItem(at: outputURL)
-        let asset = AVURLAsset(url: sourceURL)
+        let asset = AVURLAsset(
+            url: sourceURL,
+            options: [AVURLAssetPreferPreciseDurationAndTimingKey: true]
+        )
         let presets = [AVAssetExportPresetPassthrough, AVAssetExportPresetHighestQuality]
         for preset in presets {
             try Task.checkCancellation()
@@ -380,6 +383,13 @@ final class HLSAssetDownloadService: NSObject {
                 return
             }
         }
+        // AVAssetExportSession does not reliably accept every long MPEG-TS
+        // program even when AVPlayer can inspect its H.264/AAC tracks. Fall
+        // back to a native sample-level remux: compressed samples are copied
+        // into an MPEG-4 container without changing their media content.
+        if try await remuxTransportStream(asset: asset, to: outputURL) {
+            return
+        }
         throw DownloadCenterError.hlsFinalizationFailed
     }
 
@@ -389,6 +399,63 @@ final class HLSAssetDownloadService: NSObject {
                 continuation.resume(returning: exporter.status == .completed)
             }
         }
+    }
+
+    private func remuxTransportStream(
+        asset: AVURLAsset,
+        to outputURL: URL
+    ) async throws -> Bool {
+        try Task.checkCancellation()
+        try? FileManager.default.removeItem(at: outputURL)
+        let videoTracks = try await asset.loadTracks(withMediaType: .video)
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        let tracks = Array(videoTracks.prefix(1)) + Array(audioTracks.prefix(1))
+        guard !videoTracks.isEmpty, !tracks.isEmpty else { return false }
+
+        let reader = try AVAssetReader(asset: asset)
+        let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
+        var pumps: [HLSRemuxTrackPump] = []
+        for (index, track) in tracks.enumerated() {
+            let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
+            output.alwaysCopiesSampleData = false
+            let formatDescriptions = try await track.load(.formatDescriptions)
+            let input = AVAssetWriterInput(
+                mediaType: track.mediaType,
+                outputSettings: nil,
+                sourceFormatHint: formatDescriptions.first
+            )
+            input.expectsMediaDataInRealTime = false
+            guard reader.canAdd(output), writer.canAdd(input) else { return false }
+            reader.add(output)
+            writer.add(input)
+            pumps.append(HLSRemuxTrackPump(
+                input: input,
+                output: output,
+                queueLabel: "com.example.SniffBrowser.hls-remux.\(index)"
+            ))
+        }
+
+        guard writer.startWriting(), reader.startReading() else { return false }
+        writer.startSession(atSourceTime: .zero)
+        let group = DispatchGroup()
+        pumps.forEach { $0.start(reader: reader, group: group) }
+        let succeeded = await withCheckedContinuation { continuation in
+            group.notify(queue: DispatchQueue.global(qos: .utility)) {
+                guard reader.status == .completed else {
+                    writer.cancelWriting()
+                    continuation.resume(returning: false)
+                    return
+                }
+                writer.finishWriting {
+                    continuation.resume(returning: writer.status == .completed)
+                }
+            }
+        }
+        guard succeeded,
+              let size = try? outputURL.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+              size > 0
+        else { return false }
+        return true
     }
 
     private func downloadSegment(
@@ -576,5 +643,53 @@ final class HLSAssetDownloadService: NSObject {
         } catch {
             throw DownloadCenterError.hlsMergeFailed
         }
+    }
+}
+
+private final class HLSRemuxTrackPump {
+    private let input: AVAssetWriterInput
+    private let output: AVAssetReaderTrackOutput
+    private let queue: DispatchQueue
+    private let lock = NSLock()
+    private var didFinish = false
+
+    init(
+        input: AVAssetWriterInput,
+        output: AVAssetReaderTrackOutput,
+        queueLabel: String
+    ) {
+        self.input = input
+        self.output = output
+        queue = DispatchQueue(label: queueLabel, qos: .utility)
+    }
+
+    func start(reader: AVAssetReader, group: DispatchGroup) {
+        group.enter()
+        input.requestMediaDataWhenReady(on: queue) { [self] in
+            while input.isReadyForMoreMediaData {
+                guard let sample = output.copyNextSampleBuffer() else {
+                    input.markAsFinished()
+                    finish(group: group)
+                    return
+                }
+                guard input.append(sample) else {
+                    reader.cancelReading()
+                    input.markAsFinished()
+                    finish(group: group)
+                    return
+                }
+            }
+        }
+    }
+
+    private func finish(group: DispatchGroup) {
+        lock.lock()
+        guard !didFinish else {
+            lock.unlock()
+            return
+        }
+        didFinish = true
+        lock.unlock()
+        group.leave()
     }
 }

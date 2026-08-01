@@ -41,6 +41,7 @@ final class DownloadManagerViewController: BaseViewController {
 
     private let manager: DownloadManaging?
     private var selectedScope = Scope.all
+    private var displayedTasks: [DownloadTaskModel] = []
     private var operationTask: Task<Void, Never>?
     private var previewURL: URL?
 
@@ -56,7 +57,7 @@ final class DownloadManagerViewController: BaseViewController {
         )
     )
 
-    private var visibleTasks: [DownloadTaskModel] {
+    private var filteredTasks: [DownloadTaskModel] {
         guard let tasks = manager?.tasks else { return [] }
         return tasks
             .filter { $0.isHiddenFromDownloadHistory != true }
@@ -86,8 +87,28 @@ final class DownloadManagerViewController: BaseViewController {
 
     func updateContent() {
         guard isViewLoaded else { return }
-        tableView.reloadData()
-        let isEmpty = visibleTasks.isEmpty
+        let nextTasks = filteredTasks
+        let oldTasks = displayedTasks
+        displayedTasks = nextTasks
+
+        if oldTasks.map(\.id) != nextTasks.map(\.id) {
+            tableView.reloadData()
+        } else {
+            let oldByID = Dictionary(uniqueKeysWithValues: oldTasks.map { ($0.id, $0) })
+            for indexPath in tableView.indexPathsForVisibleRows ?? [] {
+                guard nextTasks.indices.contains(indexPath.row),
+                      let oldTask = oldByID[nextTasks[indexPath.row].id],
+                      oldTask != nextTasks[indexPath.row],
+                      let cell = tableView.cellForRow(at: indexPath) as? DownloadTaskCell
+                else { continue }
+                let task = nextTasks[indexPath.row]
+                cell.configure(
+                    task: task,
+                    fileURL: task.state == .completed ? manager?.fileURL(for: task.id) : nil
+                )
+            }
+        }
+        let isEmpty = nextTasks.isEmpty
         tableView.isHidden = isEmpty
         emptyState.isHidden = !isEmpty
         configureNavigationActions()
@@ -345,7 +366,7 @@ final class DownloadManagerViewController: BaseViewController {
 
 extension DownloadManagerViewController: UITableViewDataSource, UITableViewDelegate {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        visibleTasks.count
+        displayedTasks.count
     }
 
     func tableView(
@@ -358,7 +379,7 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
         ) as? DownloadTaskCell else {
             return UITableViewCell()
         }
-        let task = visibleTasks[indexPath.row]
+        let task = displayedTasks[indexPath.row]
         cell.configure(
             task: task,
             fileURL: task.state == .completed ? manager?.fileURL(for: task.id) : nil
@@ -368,7 +389,7 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        let task = visibleTasks[indexPath.row]
+        let task = displayedTasks[indexPath.row]
         guard task.state == .completed,
               let url = manager?.fileURL(for: task.id)
         else { return }
@@ -392,7 +413,7 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
         _ tableView: UITableView,
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
-        let task = visibleTasks[indexPath.row]
+        let task = displayedTasks[indexPath.row]
         var actions: [UIContextualAction] = []
 
         switch task.state {
