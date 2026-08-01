@@ -219,8 +219,7 @@ final class DownloadFileStorage {
             of: documentsURL.path + "/",
             with: ""
         )
-        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize)
-            .map(Int64.init)
+        let size = recursiveByteCount(at: url)
         return StoredDownloadFile(relativePath: relative, fileURL: url, byteCount: size)
     }
 
