@@ -126,12 +126,13 @@ final class DownloadCenter: DownloadManaging {
             ? .hlsAsset
             : .regularFile
         if kind == .hlsAsset {
-            // Validate with AVFoundation before persisting a task. Live and
-            // protected streams are rejected without leaving a fake failure
-            // record in the user's download queue.
+            // Resolve the media playlist before persisting a task. This keeps
+            // a small manifest, an expired signed URL, a live stream, or an
+            // unsupported encryption method out of the download queue while
+            // still allowing standard identity-key AES-128 HLS.
             try await hlsService.validate(context: context)
-            // AVAsset property loading suspends this MainActor method. Recheck
-            // after the await so two simultaneous confirmations cannot create
+            // Playlist loading suspends this MainActor method. Recheck after
+            // the await so two simultaneous confirmations cannot create
             // duplicate records for the same canonical URL.
             if let existing = existingDownloadResult(for: resource.canonicalURL) {
                 return existing
