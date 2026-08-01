@@ -112,7 +112,9 @@ struct DownloadTaskModel: Identifiable, Codable, Hashable, Sendable {
         self.sourceURL = sourceURL
         self.displayURL = displayURL ?? Self.safeDisplayURL(sourceURL)
         self.fileName = fileName
+        let inferredExtension = sourceURL.pathExtension.lowercased()
         self.fileExtension = fileExtension
+            ?? (inferredExtension.isEmpty ? nil : inferredExtension)
         self.resourceType = resourceType
         self.downloadKind = downloadKind
         self.state = state
