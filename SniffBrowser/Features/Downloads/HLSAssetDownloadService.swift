@@ -444,7 +444,7 @@ final class HLSAssetDownloadService: NSObject {
                 .map(\.start)
                 .min(by: { CMTimeCompare($0, $1) < 0 }) ?? .zero
             let sourceEnd = validRanges
-                .map(\.end)
+                .map { CMTimeAdd($0.start, $0.duration) }
                 .max(by: { CMTimeCompare($0, $1) < 0 }) ?? sourceStart
             let segmentDuration = CMTimeSubtract(sourceEnd, sourceStart)
             guard segmentDuration.isValid,
