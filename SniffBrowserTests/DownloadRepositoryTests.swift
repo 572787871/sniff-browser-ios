@@ -83,9 +83,9 @@ final class DownloadRepositoryTests: XCTestCase {
         """
         try Data(json.utf8).write(to: fileURL, options: .atomic)
 
-        let task = try XCTUnwrap(
-            try await DownloadRepository(fileURL: fileURL).load().first
-        )
+        let repository = DownloadRepository(fileURL: fileURL)
+        let restoredTasks = try await repository.load()
+        let task = try XCTUnwrap(restoredTasks.first)
 
         XCTAssertEqual(task.id, id)
         XCTAssertEqual(task.resourceType, .video)
