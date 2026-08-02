@@ -94,7 +94,7 @@ final class DownloadManagerViewController: BaseViewController {
         let oldTasks = displayedTasks
         displayedTasks = nextTasks
 
-        if oldTasks.map(\.id) != nextTasks.map(\.id) {
+        if oldTasks.count != nextTasks.count || oldTasks.map(\.id) != nextTasks.map(\.id) {
             tableView.reloadData()
         } else {
             let oldByID = Dictionary(uniqueKeysWithValues: oldTasks.map { ($0.id, $0) })
@@ -609,15 +609,19 @@ private final class DownloadTaskCell: UITableViewCell {
         if let progress = task.progress {
             progressView.isHidden = false
             progressView.progress = Float(progress)
+            progressView.progressTintColor = AppColors.accent
             indeterminateIndicator.stopAnimating()
             accessibilityValue = "\(Int(progress * 100))%"
+        } else if task.state == .waiting || task.state.isInProgress {
+            // Show indeterminate progress bar for tasks in progress without known size
+            progressView.isHidden = false
+            progressView.progress = 0
+            progressView.progressTintColor = AppColors.accent.withAlphaComponent(0.5)
+            indeterminateIndicator.startAnimating()
+            accessibilityValue = task.state.localizedTitle
         } else {
             progressView.isHidden = true
-            if task.state == .waiting || task.state.isInProgress {
-                indeterminateIndicator.startAnimating()
-            } else {
-                indeterminateIndicator.stopAnimating()
-            }
+            indeterminateIndicator.stopAnimating()
             accessibilityValue = task.state.localizedTitle
         }
 
