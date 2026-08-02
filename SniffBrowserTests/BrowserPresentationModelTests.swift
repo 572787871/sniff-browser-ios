@@ -9,7 +9,7 @@ final class BrowserPresentationModelTests: XCTestCase {
     )
     XCTAssertEqual(
       BrowserMenuDestination.allCases,
-      [.downloads, .files, .history, .userCenter, .settings]
+      [.downloads, .files, .favorites, .history, .userCenter, .settings]
     )
   }
 
