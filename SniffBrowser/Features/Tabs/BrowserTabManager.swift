@@ -144,6 +144,20 @@ final class BrowserTabManager {
         closingIDs.forEach { snapshotService.removeSnapshot(for: $0) }
         tabs.removeAll { $0.isPrivate == isPrivate }
 
+        if !isPrivate, !tabs.contains(where: { !$0.isPrivate }) {
+            // Ensure at least one normal tab exists
+            let tab = BrowserTab(
+                lifecycleState: tabs.isEmpty ? .active : .suspended,
+                createsWebView: tabs.isEmpty,
+                webViewFactory: webViewFactory
+            )
+            tabs.append(tab)
+            if tabs.count == 1 {
+                selectedTabID = tab.id
+                tab.activate()
+            }
+        }
+
         if tabs.isEmpty {
             _ = createInitialTab()
         } else if let selectedID = selectedTabID, closingIDs.contains(selectedID) {
@@ -151,12 +165,6 @@ final class BrowserTabManager {
                 selectTabWithoutPublishing(id: firstNormal.id)
             } else {
                 selectTabWithoutPublishing(id: tabs[0].id)
-            }
-        }
-
-        if isPrivate, tabs.count == 1, !tabs[0].isPrivate {
-            if tabs[0].id == selectedTabID {
-                tabs[0].activate()
             }
         }
 

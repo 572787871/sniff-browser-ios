@@ -308,9 +308,11 @@ final class BrowserTabManagerTests: XCTestCase {
 
         manager.closeAllTabs(isPrivate: false)
 
+        // A new normal tab is auto-created since all normal tabs were closed
         XCTAssertEqual(manager.normalTabCount, 1)
         XCTAssertEqual(manager.privateTabCount, 1)
         XCTAssertEqual(manager.count, 2)
+        XCTAssertFalse(try XCTUnwrap(manager.selectedTab).isPrivate)
     }
 
     @MainActor
@@ -350,8 +352,12 @@ final class BrowserTabManagerTests: XCTestCase {
 
         manager.closeAllTabs(isPrivate: false)
 
-        XCTAssertEqual(manager.count, 1)
-        XCTAssertEqual(manager.selectedTabID, privateTab.id)
+        // A new normal tab is created since all normal tabs were closed
+        XCTAssertEqual(manager.count, 2)
+        XCTAssertEqual(manager.privateTabCount, 1)
+        XCTAssertEqual(manager.normalTabCount, 1)
+        // Selection should be on the new normal tab
+        XCTAssertFalse(try XCTUnwrap(manager.selectedTab).isPrivate)
     }
 
     @MainActor
