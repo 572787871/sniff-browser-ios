@@ -400,8 +400,7 @@ final class DownloadCenter: DownloadManaging {
                 )
                 fileService.start(
                     taskID: model.id,
-                    request: request,
-                    prefersForeground: model.resourceType == .image
+                    request: request
                 )
             }
         } else {
