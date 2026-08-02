@@ -28,6 +28,7 @@ enum BrowserQuickAction: CaseIterable, Equatable {
 enum BrowserMenuDestination: CaseIterable, Equatable {
   case downloads
   case files
+  case favorites
   case history
   case userCenter
   case settings
@@ -36,6 +37,7 @@ enum BrowserMenuDestination: CaseIterable, Equatable {
     switch self {
     case .downloads: return "下载管理"
     case .files: return "文件管理"
+    case .favorites: return "收藏夹"
     case .history: return "历史记录"
     case .userCenter: return "用户中心"
     case .settings: return "浏览器设置"
@@ -46,6 +48,7 @@ enum BrowserMenuDestination: CaseIterable, Equatable {
     switch self {
     case .downloads: return "arrow.down.circle"
     case .files: return "folder"
+    case .favorites: return "star"
     case .history: return "clock.arrow.circlepath"
     case .userCenter: return "person.crop.circle"
     case .settings: return "gearshape"
@@ -89,7 +92,7 @@ struct BrowserMoreMenuState: Equatable {
     case .downloads: return downloadSummary
     case .files: return fileSummary
     case .userCenter: return accountSummary
-    case .history, .settings: return nil
+    case .favorites, .history, .settings: return nil
     }
   }
 }
@@ -204,7 +207,7 @@ extension BrowserMoreMenuViewController: UITableViewDataSource, UITableViewDeleg
     _ tableView: UITableView,
     numberOfRowsInSection section: Int
   ) -> Int {
-    section == 0 ? 3 : 2
+    section == 0 ? 4 : 2
   }
 
   func tableView(
@@ -212,7 +215,7 @@ extension BrowserMoreMenuViewController: UITableViewDataSource, UITableViewDeleg
     cellForRowAt indexPath: IndexPath
   ) -> UITableViewCell {
     let destinations: [[BrowserMenuDestination]] = [
-      [.downloads, .files, .history],
+      [.downloads, .files, .favorites, .history],
       [.userCenter, .settings],
     ]
     let destination = destinations[indexPath.section][indexPath.row]
@@ -238,7 +241,7 @@ extension BrowserMoreMenuViewController: UITableViewDataSource, UITableViewDeleg
   func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
     tableView.deselectRow(at: indexPath, animated: true)
     let destinations: [[BrowserMenuDestination]] = [
-      [.downloads, .files, .history],
+      [.downloads, .files, .favorites, .history],
       [.userCenter, .settings],
     ]
     let destination = destinations[indexPath.section][indexPath.row]
