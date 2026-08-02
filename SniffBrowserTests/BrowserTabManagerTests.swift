@@ -296,6 +296,65 @@ final class BrowserTabManagerTests: XCTestCase {
     }
 
     @MainActor
+    func testCloseAllTabsRemovesNormalTabsAndKeepsPrivateTabs() throws {
+        let manager = try makeManager()
+        let normalTab = try XCTUnwrap(manager.selectedTab)
+        let privateTab = try manager.createTab(isPrivate: true, select: false)
+        _ = try manager.createTab(select: false)
+
+        XCTAssertEqual(manager.count, 3)
+        XCTAssertEqual(manager.normalTabCount, 2)
+        XCTAssertEqual(manager.privateTabCount, 1)
+
+        manager.closeAllTabs(isPrivate: false)
+
+        XCTAssertEqual(manager.normalTabCount, 1)
+        XCTAssertEqual(manager.privateTabCount, 1)
+        XCTAssertEqual(manager.count, 2)
+    }
+
+    @MainActor
+    func testCloseAllTabsRemovesPrivateTabsAndKeepsNormalTabs() throws {
+        let manager = try makeManager()
+        let normalTab = try XCTUnwrap(manager.selectedTab)
+        _ = try manager.createTab(isPrivate: true, select: false)
+        _ = try manager.createTab(isPrivate: true, select: false)
+
+        XCTAssertEqual(manager.count, 3)
+        XCTAssertEqual(manager.privateTabCount, 2)
+
+        manager.closeAllTabs(isPrivate: true)
+
+        XCTAssertEqual(manager.privateTabCount, 0)
+        XCTAssertEqual(manager.normalTabCount, 1)
+        XCTAssertEqual(manager.count, 1)
+    }
+
+    @MainActor
+    func testCloseAllTabsWhenLastNormalTabClosesCreatesNewNormalTab() throws {
+        let manager = try makeManager()
+
+        manager.closeAllTabs(isPrivate: false)
+
+        XCTAssertEqual(manager.count, 1)
+        XCTAssertFalse(try XCTUnwrap(manager.selectedTab).isPrivate)
+    }
+
+    @MainActor
+    func testCloseAllTabsUpdatesSelectionWhenSelectedTabIsClosed() throws {
+        let manager = try makeManager()
+        let privateTab = try manager.createTab(isPrivate: true, select: false)
+        let normalTab = try XCTUnwrap(manager.selectedTab)
+
+        XCTAssertEqual(manager.selectedTabID, normalTab.id)
+
+        manager.closeAllTabs(isPrivate: false)
+
+        XCTAssertEqual(manager.count, 1)
+        XCTAssertEqual(manager.selectedTabID, privateTab.id)
+    }
+
+    @MainActor
     func testSuspendTabRejectsCurrentTabAndSuspendsInactiveTab() async throws {
         let snapshotService = SnapshotServiceStub()
         let manager = try makeManager(snapshotService: snapshotService)

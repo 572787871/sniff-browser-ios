@@ -54,6 +54,9 @@ extension BrowserViewController {
     controller.onCloseAllNormalTabs = { [weak self] in
       self?.closeAllNormalTabs()
     }
+    controller.onCloseAllTabs = { [weak self] isPrivate in
+      self?.closeAllTabs(isPrivate: isPrivate)
+    }
     controller.onCopyTabURL = { _, url in
       UIPasteboard.general.url = url
       UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -136,6 +139,23 @@ extension BrowserViewController {
       lastFailedURLs[$0] = nil
     }
     if selectedWasNormal {
+      attachSelectedTab()
+      tabOverviewController?.selectMode(
+        isPrivate: tabManager.selectedTab?.isPrivate == true
+      )
+    }
+    refreshTabOverview()
+  }
+
+  func closeAllTabs(isPrivate: Bool) {
+    let selectedWasThisMode = activeTab?.isPrivate == isPrivate
+    let closingIDs = tabManager.tabs.filter { $0.isPrivate == isPrivate }.map(\.id)
+    tabManager.closeAllTabs(isPrivate: isPrivate)
+    closingIDs.forEach {
+      lastRequestedURLs[$0] = nil
+      lastFailedURLs[$0] = nil
+    }
+    if selectedWasThisMode {
       attachSelectedTab()
       tabOverviewController?.selectMode(
         isPrivate: tabManager.selectedTab?.isPrivate == true

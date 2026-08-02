@@ -8,6 +8,7 @@ final class TabOverviewViewController: BaseViewController {
 
     var onCloseOtherTabs: ((UUID) -> Void)?
     var onCloseAllNormalTabs: (() -> Void)?
+    var onCloseAllTabs: ((Bool) -> Void)?
     var onCopyTabURL: ((UUID, URL) -> Void)?
     var onShareTab: ((UUID, URL?) -> Void)?
     var favoriteActionStateProvider: ((URL?) -> FavoriteActionState)?
@@ -147,6 +148,9 @@ final class TabOverviewViewController: BaseViewController {
         bottomBar.mode = pagingState.selectedMode
         bottomBar.onNewTab = { [weak self] mode in
             self?.createTab(isPrivate: mode.isPrivate)
+        }
+        bottomBar.onCloseAllTabs = { [weak self] mode in
+            self?.closeAllTabs(isPrivate: mode.isPrivate)
         }
         bottomBar.onDone = { [weak self] in
             self?.finish()
@@ -450,6 +454,13 @@ final class TabOverviewViewController: BaseViewController {
         allItems.removeAll { !$0.isPrivate }
         updatePages(animated: true)
         onCloseAllNormalTabs?()
+    }
+
+    private func closeAllTabs(isPrivate: Bool) {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        allItems.removeAll { $0.isPrivate == isPrivate }
+        updatePages(animated: true)
+        onCloseAllTabs?(isPrivate)
     }
 
     private func copyURL(for item: TabOverviewItem) {

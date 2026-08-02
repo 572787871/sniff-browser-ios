@@ -139,6 +139,30 @@ final class BrowserTabManager {
         return closedTab
     }
 
+    func closeAllTabs(isPrivate: Bool) {
+        let closingIDs = tabs.filter { $0.isPrivate == isPrivate }.map(\.id)
+        closingIDs.forEach { snapshotService.removeSnapshot(for: $0) }
+        tabs.removeAll { $0.isPrivate == isPrivate }
+
+        if tabs.isEmpty {
+            _ = createInitialTab()
+        } else if let selectedID = selectedTabID, closingIDs.contains(selectedID) {
+            if let firstNormal = tabs.first(where: { !$0.isPrivate }) {
+                selectTabWithoutPublishing(id: firstNormal.id)
+            } else {
+                selectTabWithoutPublishing(id: tabs[0].id)
+            }
+        }
+
+        if isPrivate, tabs.count == 1, !tabs[0].isPrivate {
+            if tabs[0].id == selectedTabID {
+                tabs[0].activate()
+            }
+        }
+
+        persistAndPublish()
+    }
+
     func updateTab(
         id: UUID,
         title: String?,
