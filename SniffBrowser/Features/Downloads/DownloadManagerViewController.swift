@@ -44,6 +44,7 @@ final class DownloadManagerViewController: BaseViewController {
     private var displayedTasks: [DownloadTaskModel] = []
     private var operationTask: Task<Void, Never>?
     private var previewURL: URL?
+    private var navigationMenuTasksHash: Int = 0
 
     private let scopeControl = UISegmentedControl(items: Scope.allCases.map(\.title))
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
@@ -180,11 +181,13 @@ final class DownloadManagerViewController: BaseViewController {
     private func configureNavigationActions() {
         guard let allTasks = manager?.tasks else {
             navigationItem.rightBarButtonItem = nil
+            navigationMenuTasksHash = 0
             return
         }
         let tasks = allTasks.filter { $0.isHiddenFromDownloadHistory != true }
         guard !tasks.isEmpty else {
             navigationItem.rightBarButtonItem = nil
+            navigationMenuTasksHash = 0
             return
         }
         let pausable = tasks.filter {
@@ -192,6 +195,13 @@ final class DownloadManagerViewController: BaseViewController {
         }
         let resumable = tasks.filter { $0.state == .paused }
         let completed = tasks.filter { $0.state == .completed }
+
+        // Compute a hash of the menu-affecting state to avoid rebuilding on every progress tick
+        let newHash = pausable.count ^ (resumable.count << 8) ^ (completed.count << 16)
+        guard newHash != navigationMenuTasksHash || navigationItem.rightBarButtonItem == nil else {
+            return
+        }
+        navigationMenuTasksHash = newHash
 
         let pauseAll = UIAction(
             title: "全部暂停",
