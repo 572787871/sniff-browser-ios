@@ -110,8 +110,8 @@ final class TabOverviewCell: UICollectionViewCell {
             ? UIColor.white.withAlphaComponent(0.42)
             : AppColors.tertiaryText
         closeButton.configuration?.baseForegroundColor = displaysPrivateMode
-            ? UIColor.white.withAlphaComponent(0.88)
-            : UIColor.label.withAlphaComponent(0.86)
+            ? UIColor.white.withAlphaComponent(0.78)
+            : UIColor.secondaryLabel
         selectedBadge.tintColor = displaysPrivateMode
             ? AppColors.privateBrowsingAccent
             : AppColors.accent
@@ -163,18 +163,31 @@ final class TabOverviewCell: UICollectionViewCell {
         closeConfiguration.image = UIImage(
             systemName: "xmark",
             withConfiguration: UIImage.SymbolConfiguration(
-                pointSize: 22,
-                weight: .semibold
+                pointSize: 14,
+                weight: .medium
             )
         )
-        closeConfiguration.baseForegroundColor = UIColor.label.withAlphaComponent(0.86)
+        closeConfiguration.baseForegroundColor = UIColor.secondaryLabel
         closeConfiguration.contentInsets = .zero
         closeButton.configuration = closeConfiguration
+        closeButton.backgroundColor = .clear
+        closeButton.layer.cornerRadius = 18
+        closeButton.clipsToBounds = true
         closeButton.accessibilityLabel = "关闭标签页"
         closeButton.addTarget(
             self,
             action: #selector(closePressed),
             for: .touchUpInside
+        )
+        closeButton.addTarget(
+            self,
+            action: #selector(closeButtonTouchDown),
+            for: .touchDown
+        )
+        closeButton.addTarget(
+            self,
+            action: #selector(closeButtonTouchUp),
+            for: [.touchUpInside, .touchUpOutside, .touchCancel]
         )
         closeButton.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.addSubview(closeButton)
@@ -227,14 +240,14 @@ final class TabOverviewCell: UICollectionViewCell {
 
             closeButton.topAnchor.constraint(
                 equalTo: previewContainer.topAnchor,
-                constant: AppSpacing.xxs
+                constant: 10
             ),
             closeButton.trailingAnchor.constraint(
                 equalTo: previewContainer.trailingAnchor,
-                constant: -AppSpacing.xxs
+                constant: -10
             ),
             closeButton.widthAnchor.constraint(
-                equalToConstant: AppMetrics.minimumTapSize
+                equalToConstant: 36
             ),
             closeButton.heightAnchor.constraint(equalTo: closeButton.widthAnchor),
 
@@ -280,6 +293,33 @@ final class TabOverviewCell: UICollectionViewCell {
     @objc
     private func closePressed() {
         onClose?()
+    }
+
+    @objc
+    private func closeButtonTouchDown() {
+        let pressColor: UIColor = displaysPrivateMode
+            ? UIColor.white.withAlphaComponent(0.15)
+            : UIColor.systemGray5.withAlphaComponent(0.5)
+        closeButton.backgroundColor = pressColor
+        UIView.animate(
+            withDuration: 0.12,
+            delay: 0,
+            options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]
+        ) {
+            self.closeButton.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+        }
+    }
+
+    @objc
+    private func closeButtonTouchUp() {
+        UIView.animate(
+            withDuration: 0.12,
+            delay: 0,
+            options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]
+        ) {
+            self.closeButton.transform = .identity
+            self.closeButton.backgroundColor = .clear
+        }
     }
 
     @objc

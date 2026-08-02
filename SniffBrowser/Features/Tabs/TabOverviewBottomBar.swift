@@ -3,7 +3,6 @@ import UIKit
 @MainActor
 final class TabOverviewBottomBar: UIView {
     var onNewTab: ((TabOverviewMode) -> Void)?
-    var onCloseAllTabs: ((TabOverviewMode) -> Void)?
     var onDone: (() -> Void)?
 
     var mode: TabOverviewMode = .standard {
@@ -12,13 +11,19 @@ final class TabOverviewBottomBar: UIView {
         }
     }
 
+    var tabCount: Int = 0 {
+        didSet {
+            tabCountLabel.text = "\(tabCount) 个标签页"
+        }
+    }
+
     private let materialView = AppMaterialView(
         style: .systemChromeMaterial,
         fallbackColor: AppColors.chromeFallback
     )
     private let newTabButton = UIButton(type: .system)
-    private let closeAllTabsButton = UIButton(type: .system)
     private let doneButton = UIButton(type: .system)
+    private let tabCountLabel = UILabel()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -50,11 +55,11 @@ final class TabOverviewBottomBar: UIView {
         addSubview(materialView)
 
         configureNewTabButton()
-        configureCloseAllTabsButton()
+        configureTabCountLabel()
         configureDoneButton()
 
         materialView.contentView.addSubview(newTabButton)
-        materialView.contentView.addSubview(closeAllTabsButton)
+        materialView.contentView.addSubview(tabCountLabel)
         materialView.contentView.addSubview(doneButton)
 
         NSLayoutConstraint.activate([
@@ -78,17 +83,13 @@ final class TabOverviewBottomBar: UIView {
                 constant: -AppSpacing.xs
             ),
 
-            closeAllTabsButton.leadingAnchor.constraint(
+            tabCountLabel.leadingAnchor.constraint(
                 equalTo: materialView.contentView.leadingAnchor,
-                constant: AppSpacing.sm
+                constant: AppSpacing.md
             ),
-            closeAllTabsButton.centerYAnchor.constraint(
+            tabCountLabel.centerYAnchor.constraint(
                 equalTo: materialView.contentView.centerYAnchor
             ),
-            closeAllTabsButton.heightAnchor.constraint(
-                greaterThanOrEqualToConstant: AppMetrics.minimumTapSize
-            ),
-            closeAllTabsButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 52),
 
             doneButton.trailingAnchor.constraint(
                 equalTo: materialView.contentView.trailingAnchor,
@@ -123,32 +124,11 @@ final class TabOverviewBottomBar: UIView {
         newTabButton.translatesAutoresizingMaskIntoConstraints = false
     }
 
-    private func configureCloseAllTabsButton() {
-        var configuration = UIButton.Configuration.plain()
-        configuration.image = UIImage(systemName: "trash")
-        configuration.title = "关闭全部"
-        configuration.imagePadding = AppSpacing.xxs
-        configuration.baseForegroundColor = AppColors.danger
-        configuration.contentInsets = NSDirectionalEdgeInsets(
-            top: 0,
-            leading: AppSpacing.xs,
-            bottom: 0,
-            trailing: AppSpacing.xs
-        )
-        configuration.titleTextAttributesTransformer =
-            UIConfigurationTextAttributesTransformer {
-                var attributes = $0
-                attributes.font = AppTypography.subheadline
-                return attributes
-            }
-        closeAllTabsButton.configuration = configuration
-        closeAllTabsButton.addTarget(
-            self,
-            action: #selector(closeAllTabsPressed),
-            for: .touchUpInside
-        )
-        closeAllTabsButton.accessibilityLabel = "关闭所有标签页"
-        closeAllTabsButton.translatesAutoresizingMaskIntoConstraints = false
+    private func configureTabCountLabel() {
+        tabCountLabel.font = AppTypography.subheadline
+        tabCountLabel.textColor = AppColors.primaryText
+        tabCountLabel.text = "\(tabCount) 个标签页"
+        tabCountLabel.translatesAutoresizingMaskIntoConstraints = false
     }
 
     private func configureDoneButton() {
@@ -192,9 +172,9 @@ final class TabOverviewBottomBar: UIView {
         doneButton.configuration?.baseForegroundColor = isPrivate
             ? AppColors.privateBrowsingAccent
             : AppColors.accent
-        closeAllTabsButton.configuration?.baseForegroundColor = isPrivate
-            ? AppColors.privateBrowsingAccent.withAlphaComponent(0.78)
-            : AppColors.danger
+        tabCountLabel.textColor = isPrivate
+            ? UIColor.white.withAlphaComponent(0.88)
+            : AppColors.primaryText
         newTabButton.accessibilityLabel = mode.isPrivate
             ? "新建无痕标签页"
             : "新建普通标签页"
@@ -227,11 +207,6 @@ final class TabOverviewBottomBar: UIView {
     @objc
     private func newTabPressed() {
         onNewTab?(mode)
-    }
-
-    @objc
-    private func closeAllTabsPressed() {
-        onCloseAllTabs?(mode)
     }
 
     @objc

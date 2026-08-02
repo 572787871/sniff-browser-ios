@@ -84,6 +84,7 @@ final class TabOverviewViewController: BaseViewController {
         allItems = items
         guard isViewLoaded else { return }
         updatePages(animated: true)
+        updateBottomBarTabCount()
     }
 
     func selectMode(isPrivate: Bool, animated: Bool = true) {
@@ -102,6 +103,7 @@ final class TabOverviewViewController: BaseViewController {
     private func configureNavigation() {
         navigationItem.largeTitleDisplayMode = .never
         navigationItem.backButtonDisplayMode = .minimal
+        navigationItem.rightBarButtonItem = makeMoreMenuButton()
         modeControl.selectedSegmentIndex = pagingState.selectedMode.rawValue
         modeControl.selectedSegmentTintColor = AppColors.elevatedSurface
         modeControl.setTitleTextAttributes(
@@ -128,6 +130,100 @@ final class TabOverviewViewController: BaseViewController {
         navigationItem.titleView = modeControl
     }
 
+    private func makeMoreMenuButton() -> UIBarButtonItem {
+        let button = UIButton(type: .system)
+        let symbolConfig = UIImage.SymbolConfiguration(pointSize: 19, weight: .medium)
+        button.setImage(UIImage(systemName: "ellipsis", withConfiguration: symbolConfig), for: .normal)
+        button.tintColor = AppColors.accent
+        button.menu = makeMoreMenu()
+        button.showsMenuAsPrimaryAction = true
+        button.accessibilityLabel = "更多操作"
+        button.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(equalToConstant: AppMetrics.minimumTapSize),
+            button.heightAnchor.constraint(equalToConstant: AppMetrics.minimumTapSize)
+        ])
+        return UIBarButtonItem(customView: button)
+    }
+
+    private func makeMoreMenu() -> UIMenu {
+        let isPrivate = pagingState.selectedMode.isPrivate
+        let currentCount = allItems.filter { $0.isPrivate == isPrivate }.count
+
+        let selectAction = UIAction(
+            title: "选择标签页",
+            image: UIImage(systemName: "checkmark.circle")
+        ) { _ in
+            // Placeholder — no action yet
+        }
+
+        let groupAction = UIAction(
+            title: "按网站分组",
+            image: UIImage(systemName: "square.grid.2x2")
+        ) { _ in
+            // Placeholder — no action yet
+        }
+
+        let closeAllAction = UIAction(
+            title: "关闭全部标签页",
+            image: UIImage(systemName: "trash"),
+            attributes: currentCount > 0 ? [.destructive] : [.disabled, .destructive]
+        ) { [weak self] _ in
+            self?.showCloseAllConfirmation()
+        }
+
+        let groupMenu = UIMenu(options: .displayInline, children: [selectAction, groupAction])
+        let closeMenu = UIMenu(options: .displayInline, children: [closeAllAction])
+
+        return UIMenu(children: [groupMenu, closeMenu])
+    }
+
+    private func showCloseAllConfirmation() {
+        let isPrivate = pagingState.selectedMode.isPrivate
+        let currentCount = allItems.filter { $0.isPrivate == isPrivate }.count
+
+        guard currentCount > 1 else {
+            performCloseAllTabs(isPrivate: isPrivate)
+            return
+        }
+
+        let modeName = isPrivate ? "无痕" : "普通"
+        let alert = UIAlertController(
+            title: "关闭全部标签页？",
+            message: "这将关闭当前分组中的全部 \(currentCount) 个\(modeName)标签页。",
+            preferredStyle: .actionSheet
+        )
+
+        let closeAction = UIAlertAction(
+            title: "关闭全部",
+            style: .destructive
+        ) { [weak self] _ in
+            self?.performCloseAllTabs(isPrivate: isPrivate)
+        }
+        alert.addAction(closeAction)
+
+        let cancelAction = UIAlertAction(title: "取消", style: .cancel)
+        alert.addAction(cancelAction)
+
+        // For iPad: set popover source
+        if let popover = alert.popoverPresentationController {
+            if let rightBarButton = navigationItem.rightBarButtonItem {
+                popover.barButtonItem = rightBarButton
+            }
+        }
+
+        present(alert, animated: true)
+    }
+
+    private func performCloseAllTabs(isPrivate: Bool) {
+        guard allItems.contains(where: { $0.isPrivate == isPrivate }) else { return }
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        allItems.removeAll { $0.isPrivate == isPrivate }
+        updatePages(animated: true)
+        updateBottomBarTabCount()
+        onCloseAllTabs?(isPrivate)
+    }
+
     private func configureBackground() {
         privacyTintView.backgroundColor = AppColors.privateBrowsingBackground
         privacyTintView.isUserInteractionEnabled = false
@@ -148,9 +244,6 @@ final class TabOverviewViewController: BaseViewController {
         bottomBar.mode = pagingState.selectedMode
         bottomBar.onNewTab = { [weak self] mode in
             self?.createTab(isPrivate: mode.isPrivate)
-        }
-        bottomBar.onCloseAllTabs = { [weak self] mode in
-            self?.closeAllTabs(isPrivate: mode.isPrivate)
         }
         bottomBar.onDone = { [weak self] in
             self?.finish()
@@ -427,6 +520,11 @@ final class TabOverviewViewController: BaseViewController {
         }
     }
 
+    private func updateBottomBarTabCount() {
+        let isPrivate = pagingState.selectedMode.isPrivate
+        bottomBar.tabCount = allItems.filter { $0.isPrivate == isPrivate }.count
+    }
+
     private func createTab(isPrivate: Bool) {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         onNewTab?(isPrivate)
@@ -437,6 +535,7 @@ final class TabOverviewViewController: BaseViewController {
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         allItems.removeAll { $0.id == itemID }
         updatePages(animated: true)
+        updateBottomBarTabCount()
         onCloseTab?(itemID)
     }
 
@@ -446,6 +545,7 @@ final class TabOverviewViewController: BaseViewController {
             $0.isPrivate == item.isPrivate && $0.id != item.id
         }
         updatePages(animated: true)
+        updateBottomBarTabCount()
         onCloseOtherTabs?(item.id)
     }
 
@@ -453,14 +553,13 @@ final class TabOverviewViewController: BaseViewController {
         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         allItems.removeAll { !$0.isPrivate }
         updatePages(animated: true)
+        updateBottomBarTabCount()
         onCloseAllNormalTabs?()
     }
 
     private func closeAllTabs(isPrivate: Bool) {
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-        allItems.removeAll { $0.isPrivate == isPrivate }
-        updatePages(animated: true)
-        onCloseAllTabs?(isPrivate)
+        // Legacy method — delegates to the new confirmation flow
+        showCloseAllConfirmation()
     }
 
     private func copyURL(for item: TabOverviewItem) {
