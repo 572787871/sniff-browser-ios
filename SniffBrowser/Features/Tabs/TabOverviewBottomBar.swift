@@ -128,7 +128,7 @@ final class TabOverviewBottomBar: UIView {
         configuration.image = UIImage(systemName: "trash")
         configuration.title = "关闭全部"
         configuration.imagePadding = AppSpacing.xxs
-        configuration.baseForegroundColor = AppColors.destructive
+        configuration.baseForegroundColor = AppColors.danger
         configuration.contentInsets = NSDirectionalEdgeInsets(
             top: 0,
             leading: AppSpacing.xs,
@@ -194,7 +194,7 @@ final class TabOverviewBottomBar: UIView {
             : AppColors.accent
         closeAllTabsButton.configuration?.baseForegroundColor = isPrivate
             ? AppColors.privateBrowsingAccent.withAlphaComponent(0.78)
-            : AppColors.destructive
+            : AppColors.danger
         newTabButton.accessibilityLabel = mode.isPrivate
             ? "新建无痕标签页"
             : "新建普通标签页"
