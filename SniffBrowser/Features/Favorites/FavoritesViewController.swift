@@ -379,6 +379,42 @@ private final class FavoriteCell: UITableViewCell {
         dateLabel.text = "收藏于 \(formattedDate)"
         accessibilityLabel =
             "\(item.title)，\(item.host)，收藏于 \(formattedDate)"
+        loadFavicon(for: item)
+    }
+
+    private func loadFavicon(for item: FavoriteItem) {
+        // Reset to default star icon
+        symbolView.image = UIImage(systemName: "star.fill")
+        symbolView.tintColor = AppColors.accent
+        symbolContainer.backgroundColor = AppColors.accentFill
+
+        let faviconURL = item.faviconURL ?? Self.faviconURL(for: item.url)
+        guard let url = faviconURL else { return }
+
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
+            guard let data, let image = UIImage(data: data), error == nil,
+                  image.size.width > 0, image.size.height > 0 else { return }
+            Task { @MainActor in
+                guard let self else { return }
+                self.symbolView.image = image
+                self.symbolView.contentMode = .scaleAspectFill
+                self.symbolView.tintColor = nil
+                self.symbolContainer.backgroundColor = AppColors.tertiarySurface
+            }
+        }.resume()
+    }
+
+    private static func faviconURL(for url: URL) -> URL? {
+        guard let host = url.host, !host.isEmpty else { return nil }
+        if let encoded = host.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+           let googleFavicon = URL(string: "https://www.google.com/s2/favicons?domain=\(encoded)&sz=64") {
+            return googleFavicon
+        }
+        var components = URLComponents()
+        components.scheme = url.scheme ?? "https"
+        components.host = host
+        components.path = "/favicon.ico"
+        return components.url
     }
 
     private func configureView() {
@@ -392,7 +428,7 @@ private final class FavoriteCell: UITableViewCell {
 
         symbolView.image = UIImage(systemName: "star.fill")
         symbolView.tintColor = AppColors.accent
-        symbolView.contentMode = .scaleAspectFit
+        symbolView.contentMode = .scaleAspectFill
         symbolView.translatesAutoresizingMaskIntoConstraints = false
         symbolContainer.addSubview(symbolView)
 

@@ -428,37 +428,43 @@ final class NewTabView: UIView {
     iconView.clipsToBounds = true
     iconView.tintColor = AppColors.secondaryText
 
-    // Try to load favicon
-    if let faviconURL = item.faviconURL {
-      URLSession.shared.dataTask(with: faviconURL) { [weak iconView] data, _, error in
-        guard let data, let image = UIImage(data: data), error == nil else { return }
-        Task { @MainActor in
-          iconView?.image = image
-          iconView?.contentMode = .scaleAspectFill
-          iconView?.backgroundColor = .clear
-        }
-      }.resume()
+    // Derive favicon URL from domain if not provided
+    let effectiveFaviconURL = item.faviconURL ?? faviconURL(for: item.url)
+
+    // Show fallback immediately (synchronous)
+    let firstLetter = item.title.trimmingCharacters(in: .whitespaces).first.map(String.init)
+    if let letter = firstLetter {
+      let fallbackLabel = UILabel()
+      fallbackLabel.text = letter
+      fallbackLabel.font = UIFont.systemFont(ofSize: 22, weight: .medium)
+      fallbackLabel.textColor = AppColors.primaryText
+      fallbackLabel.textAlignment = .center
+      fallbackLabel.translatesAutoresizingMaskIntoConstraints = false
+      iconView.addSubview(fallbackLabel)
+      NSLayoutConstraint.activate([
+        fallbackLabel.centerXAnchor.constraint(equalTo: iconView.centerXAnchor),
+        fallbackLabel.centerYAnchor.constraint(equalTo: iconView.centerYAnchor)
+      ])
+    } else {
+      iconView.image = UIImage(systemName: "globe")
+      iconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 24, weight: .regular)
     }
 
-    // Fallback: first letter or globe
-    if iconView.image == nil {
-      let firstLetter = item.title.trimmingCharacters(in: .whitespaces).first.map(String.init)
-      if let letter = firstLetter {
-        let label = UILabel()
-        label.text = letter
-        label.font = UIFont.systemFont(ofSize: 22, weight: .medium)
-        label.textColor = AppColors.primaryText
-        label.textAlignment = .center
-        label.translatesAutoresizingMaskIntoConstraints = false
-        iconView.addSubview(label)
-        NSLayoutConstraint.activate([
-          label.centerXAnchor.constraint(equalTo: iconView.centerXAnchor),
-          label.centerYAnchor.constraint(equalTo: iconView.centerYAnchor)
-        ])
-      } else {
-        iconView.image = UIImage(systemName: "globe")
-        iconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 24, weight: .regular)
+    // Try to load favicon asynchronously (overrides fallback when loaded)
+    if let faviconURL = effectiveFaviconURL {
+      let task = URLSession.shared.dataTask(with: faviconURL) { [weak iconView, weak container] data, _, error in
+        guard let data, let image = UIImage(data: data), error == nil,
+              image.size.width > 0, image.size.height > 0 else { return }
+        Task { @MainActor in
+          // Remove fallback label
+          iconView?.subviews.forEach { $0.removeFromSuperview() }
+          iconView?.image = nil
+          iconView?.contentMode = .scaleAspectFill
+          iconView?.backgroundColor = .clear
+          iconView?.image = image
+        }
       }
+      task.resume()
     }
 
     let nameLabel = UILabel()
@@ -531,6 +537,21 @@ final class NewTabView: UIView {
           let index = findFavoriteIndex(for: container) else { return }
     let point = gesture.location(in: self)
     delegate?.newTabView(self, didLongPressFavorite: favoriteItems[index], at: point)
+  }
+
+  private func faviconURL(for url: URL) -> URL? {
+    guard let host = url.host, !host.isEmpty else { return nil }
+    // Try Google's favicon service as it handles most websites
+    if let encoded = host.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+       let googleFavicon = URL(string: "https://www.google.com/s2/favicons?domain=\(encoded)&sz=64") {
+      return googleFavicon
+    }
+    // Fallback: try direct /favicon.ico
+    var components = URLComponents()
+    components.scheme = url.scheme ?? "https"
+    components.host = host
+    components.path = "/favicon.ico"
+    return components.url
   }
 
   private func findFavoriteIndex(for view: UIView) -> Int? {
