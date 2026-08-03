@@ -127,9 +127,8 @@ final class FaviconLoaderTests: XCTestCase {
             "https://www.google.com/s2/favicons?domain=example.com&sz=64"
         )
 
-        XCTAssertNil(
-            FaviconLoader.faviconURL(for: XCTUnwrap(URL(string: "file:///tmp/page")))
-        )
+        let fileURL = try XCTUnwrap(URL(string: "file:///tmp/page"))
+        XCTAssertNil(FaviconLoader.faviconURL(for: fileURL))
     }
 
     func testCacheKeyIsStableAndURLDerived() throws {
