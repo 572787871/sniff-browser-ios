@@ -434,7 +434,7 @@ final class NewTabView: UIView {
     iconView.tintColor = AppColors.secondaryText
 
     // Derive favicon URL from domain if not provided
-    let effectiveFaviconURL = item.faviconURL ?? faviconURL(for: item.url)
+    let effectiveFaviconURL = item.faviconURL ?? FaviconLoader.faviconURL(for: item.url)
 
     // Show fallback immediately (synchronous)
     let firstLetter = item.title.trimmingCharacters(in: .whitespaces).first.map(String.init)
@@ -457,19 +457,15 @@ final class NewTabView: UIView {
 
     // Try to load favicon asynchronously (overrides fallback when loaded)
     if let faviconURL = effectiveFaviconURL {
-      let task = URLSession.shared.dataTask(with: faviconURL) { [weak iconView, weak container] data, _, error in
-        guard let data, let image = UIImage(data: data), error == nil,
-              image.size.width > 0, image.size.height > 0 else { return }
-        Task { @MainActor in
-          // Remove fallback label
-          iconView?.subviews.forEach { $0.removeFromSuperview() }
-          iconView?.image = nil
-          iconView?.contentMode = .scaleAspectFill
-          iconView?.backgroundColor = .clear
-          iconView?.image = image
-        }
+      FaviconLoader.shared.load(url: faviconURL) { [weak iconView] image in
+        guard let image, let iconView else { return }
+        // Remove fallback label
+        iconView.subviews.forEach { $0.removeFromSuperview() }
+        iconView.image = nil
+        iconView.contentMode = .scaleAspectFill
+        iconView.backgroundColor = .clear
+        iconView.image = image
       }
-      task.resume()
     }
 
     let nameLabel = UILabel()
@@ -542,21 +538,6 @@ final class NewTabView: UIView {
           let index = findFavoriteIndex(for: container) else { return }
     let point = gesture.location(in: self)
     delegate?.newTabView(self, didLongPressFavorite: favoriteItems[index], at: point)
-  }
-
-  private func faviconURL(for url: URL) -> URL? {
-    guard let host = url.host, !host.isEmpty else { return nil }
-    // Try Google's favicon service as it handles most websites
-    if let encoded = host.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-       let googleFavicon = URL(string: "https://www.google.com/s2/favicons?domain=\(encoded)&sz=64") {
-      return googleFavicon
-    }
-    // Fallback: try direct /favicon.ico
-    var components = URLComponents()
-    components.scheme = url.scheme ?? "https"
-    components.host = host
-    components.path = "/favicon.ico"
-    return components.url
   }
 
   private func findFavoriteIndex(for view: UIView) -> Int? {

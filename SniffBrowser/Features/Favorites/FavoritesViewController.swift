@@ -359,6 +359,8 @@ private final class FavoriteCell: UITableViewCell {
     private let hostLabel = UILabel()
     private let dateLabel = UILabel()
     private let textStack = UIStackView()
+    private var currentFaviconURL: URL?
+    private var faviconRequestID: UUID?
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -382,39 +384,39 @@ private final class FavoriteCell: UITableViewCell {
         loadFavicon(for: item)
     }
 
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        if let url = currentFaviconURL, let faviconRequestID {
+            FaviconLoader.shared.cancel(url: url, requestID: faviconRequestID)
+        }
+        currentFaviconURL = nil
+        faviconRequestID = nil
+    }
+
     private func loadFavicon(for item: FavoriteItem) {
+        if let url = currentFaviconURL, let faviconRequestID {
+            FaviconLoader.shared.cancel(url: url, requestID: faviconRequestID)
+        }
         // Reset to default star icon
         symbolView.image = UIImage(systemName: "star.fill")
         symbolView.tintColor = AppColors.accent
         symbolContainer.backgroundColor = AppColors.accentFill
 
-        let faviconURL = item.faviconURL ?? Self.faviconURL(for: item.url)
+        let faviconURL = item.faviconURL ?? FaviconLoader.faviconURL(for: item.url)
         guard let url = faviconURL else { return }
 
-        URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
-            guard let data, let image = UIImage(data: data), error == nil,
-                  image.size.width > 0, image.size.height > 0 else { return }
-            Task { @MainActor in
-                guard let self else { return }
-                self.symbolView.image = image
-                self.symbolView.contentMode = .scaleAspectFill
-                self.symbolView.tintColor = nil
-                self.symbolContainer.backgroundColor = AppColors.tertiarySurface
+        currentFaviconURL = url
+        var requestID: UUID?
+        requestID = FaviconLoader.shared.load(url: url) { [weak self] image in
+            guard let self, let image, self.faviconRequestID == requestID else {
+                return
             }
-        }.resume()
-    }
-
-    private static func faviconURL(for url: URL) -> URL? {
-        guard let host = url.host, !host.isEmpty else { return nil }
-        if let encoded = host.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-           let googleFavicon = URL(string: "https://www.google.com/s2/favicons?domain=\(encoded)&sz=64") {
-            return googleFavicon
+            self.symbolView.image = image
+            self.symbolView.contentMode = .scaleAspectFill
+            self.symbolView.tintColor = nil
+            self.symbolContainer.backgroundColor = AppColors.tertiarySurface
         }
-        var components = URLComponents()
-        components.scheme = url.scheme ?? "https"
-        components.host = host
-        components.path = "/favicon.ico"
-        return components.url
+        faviconRequestID = requestID
     }
 
     private func configureView() {

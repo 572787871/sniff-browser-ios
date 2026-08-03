@@ -81,7 +81,9 @@
 		D6E4F0A24AF1ED8D46C3E759 /* FavoritesViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CE59A6EB422BA762283895E /* FavoritesViewController.swift */; };
 		E42F1BEC5004F5C4C7EE0B95 /* AppAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 758E8B8BA3D673C1F52A218D /* AppAppearance.swift */; };
 		E62B31179B9AF6A97376DCDC /* TabOverviewLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A8A79597E70CF552B3ACA4 /* TabOverviewLayoutTests.swift */; };
+		D0F2A4B6C8E130425D6F7082 /* FaviconLoaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E1F3A5B7D920314C5E6F71 /* FaviconLoaderTests.swift */; };
 		E77F3544D6F837472F5C81D3 /* ExternalURLHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30BC74D9AB3C7CBCDF2834F8 /* ExternalURLHandler.swift */; };
+		B8D0E2F4A6C819203B4D5E60 /* FaviconLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C9E1F3B5D708192A3C4E5F /* FaviconLoader.swift */; };
 		EA53679BEA08FBE6F2512E04 /* DownloadManagerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8926E1AA2A5D398CAB8652F /* DownloadManagerViewController.swift */; };
 		EAD9A0CBCB76337A2C408E59 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45FE2B2B2A71AF731ACD33DD /* AppDelegate.swift */; };
 		EEF81A5AD74DF8A6AF2E5FEF /* AppRadius.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85E92E827684F2D4BD8E7C04 /* AppRadius.swift */; };
@@ -105,6 +107,7 @@
 		02AC3C7976250845B41B1F0B /* WebPageThemeColorService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebPageThemeColorService.swift; sourceTree = "<group>"; };
 		13C0D613C6F2016F788AFABB /* BrowserTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserTab.swift; sourceTree = "<group>"; };
 		16C912B6F8B88EAC4C446A69 /* UserCenterCountsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserCenterCountsTests.swift; sourceTree = "<group>"; };
+		C9E1F3A5B7D920314C5E6F71 /* FaviconLoaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaviconLoaderTests.swift; sourceTree = "<group>"; };
 		17A8A79597E70CF552B3ACA4 /* TabOverviewLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabOverviewLayoutTests.swift; sourceTree = "<group>"; };
 		19623EBEB0C5A9940978A7EE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		258A35D45AB1CCA24CEFE731 /* NewTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewTabView.swift; sourceTree = "<group>"; };
@@ -112,6 +115,7 @@
 		2A60CACC6A02E08D27992E46 /* BrowserViewController+Presentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrowserViewController+Presentation.swift"; sourceTree = "<group>"; };
 		2CDE9EE6C92948BC828E02BD /* FileManagerViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileManagerViewController.swift; sourceTree = "<group>"; };
 		2DBFA6299C8DDDB5B1CBAA03 /* FavoriteService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteService.swift; sourceTree = "<group>"; };
+		A7C9E1F3B5D708192A3C4E5F /* FaviconLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaviconLoader.swift; sourceTree = "<group>"; };
 		304B3C72D2FF22CA29D64B69 /* AuthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModels.swift; sourceTree = "<group>"; };
 		30BC74D9AB3C7CBCDF2834F8 /* ExternalURLHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalURLHandler.swift; sourceTree = "<group>"; };
 		35602A0ECBA03991C8DC640F /* HistoryViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryViewController.swift; sourceTree = "<group>"; };
@@ -343,6 +347,7 @@
 				FDE847E70C4020D90E60FA78 /* FavoriteRepositoryTests.swift */,
 				612DD1A2E8273ECE5BA574F0 /* FileNameSanitizerTests.swift */,
 				5C04523F74EFE680163B673E /* SearchEngineTests.swift */,
+				C9E1F3A5B7D920314C5E6F71 /* FaviconLoaderTests.swift */,
 				17A8A79597E70CF552B3ACA4 /* TabOverviewLayoutTests.swift */,
 				582F0ECE83A4C93EC6C59D9A /* URLNormalizerTests.swift */,
 				16C912B6F8B88EAC4C446A69 /* UserCenterCountsTests.swift */,
@@ -453,6 +458,7 @@
 			isa = PBXGroup;
 			children = (
 				30BC74D9AB3C7CBCDF2834F8 /* ExternalURLHandler.swift */,
+				A7C9E1F3B5D708192A3C4E5F /* FaviconLoader.swift */,
 			);
 			path = Networking;
 			sourceTree = "<group>";
@@ -598,6 +604,7 @@
 				B866F2E5791C0CA13D2001D9 /* EmptyStateView.swift in Sources */,
 				C3A5941ADA9D0484898B3069 /* ErrorStateView.swift in Sources */,
 				E77F3544D6F837472F5C81D3 /* ExternalURLHandler.swift in Sources */,
+				B8D0E2F4A6C819203B4D5E60 /* FaviconLoader.swift in Sources */,
 				2BE75A6AFEB1E84EE6E353A0 /* FavoriteItem.swift in Sources */,
 				9BDF4C3B4238217273B5FC4C /* FavoriteRepository.swift in Sources */,
 				69A67F13FEA8C883198CFAB3 /* FavoriteService.swift in Sources */,
@@ -645,6 +652,7 @@
 				732622B960CD8897C112947D /* FavoriteRepositoryTests.swift in Sources */,
 				4B2458A044953DA6ABC7D899 /* FileNameSanitizerTests.swift in Sources */,
 				57D33009FA966D18C66141A6 /* SearchEngineTests.swift in Sources */,
+				D0F2A4B6C8E130425D6F7082 /* FaviconLoaderTests.swift in Sources */,
 				E62B31179B9AF6A97376DCDC /* TabOverviewLayoutTests.swift in Sources */,
 				09BEB7B81B7EF421CF51D36B /* URLNormalizerTests.swift in Sources */,
 				0B05F19E9A8E24622AB406A8 /* UserCenterCountsTests.swift in Sources */,
