@@ -238,8 +238,8 @@ final class FileManagerViewController: BaseViewController {
             alert.addAction(UIAlertAction(title: "合并为 MP4 并导出", style: .default) { [weak self] _ in
                 self?.mergeAndShareHLSVideo(packageURL: url, fileName: task.fileName)
             })
-            alert.addAction(UIAlertAction(title: "直接导出原始包", style: .default) { _ in
-                present(UIActivityViewController(activityItems: [url], applicationActivities: nil), animated: true)
+            alert.addAction(UIAlertAction(title: "直接导出原始包", style: .default) { [weak self] _ in
+                self?.present(UIActivityViewController(activityItems: [url], applicationActivities: nil), animated: true)
             })
             alert.addAction(UIAlertAction(title: "取消", style: .cancel))
             // For iPad: set popover source
