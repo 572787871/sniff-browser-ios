@@ -535,6 +535,7 @@ final class TabOverviewViewController: BaseViewController {
         navigationController?.navigationBar.standardAppearance = navAppearance
         navigationController?.navigationBar.compactAppearance = navAppearance
         navigationController?.navigationBar.scrollEdgeAppearance = navAppearance
+        updateBottomBarTabCount()
         let changes = {
             self.privacyTintView.alpha = mode.isPrivate ? 1 : 0
             self.contentView.backgroundColor = mode.isPrivate
