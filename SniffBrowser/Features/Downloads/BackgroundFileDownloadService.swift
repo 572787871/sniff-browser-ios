@@ -77,15 +77,14 @@ final class BackgroundFileDownloadService: NSObject {
     private var suppressedCompletionIDs: Set<UUID> = []
     private var finishedIDs: Set<UUID> = []
     private var backgroundCompletionHandler: (() -> Void)?
-    private lazy var session: URLSession = {
+    private let session: URLSession = {
         let configuration = URLSessionConfiguration.background(
             withIdentifier: Self.sessionIdentifier
         )
         configuration.sessionSendsLaunchEvents = true
         configuration.isDiscretionary = false
-        configuration.allowsCellularAccess = DownloadPreferences().allowsCellularDownloads
-        configuration.httpMaximumConnectionsPerHost = DownloadPreferences()
-            .maximumConcurrentDownloads
+        configuration.allowsCellularAccess = true
+        configuration.httpMaximumConnectionsPerHost = 6
         let queue = OperationQueue()
         queue.name = "com.example.SniffBrowser.file-download-delegate"
         queue.maxConcurrentOperationCount = 1
@@ -96,6 +95,9 @@ final class BackgroundFileDownloadService: NSObject {
     init(storage: DownloadFileStorage) {
         self.storage = storage
         super.init()
+        // Eagerly initialize the background session so the system can deliver
+        // background events even when the app is launched in the background.
+        _ = session
     }
 
     func register(plan: FileDownloadPlan) {
