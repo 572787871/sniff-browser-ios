@@ -220,11 +220,17 @@ extension BackgroundFileDownloadService: URLSessionDownloadDelegate {
             : nil
         // Fallback: try to get content length from HTTP response headers
         if expected == nil,
-           let response = downloadTask.response as? HTTPURLResponse,
-           let contentLength = response.allHeaderFields["Content-Length"] as? String,
-           let length = Int64(contentLength),
-           length > 0 {
-            expected = length
+           let response = downloadTask.response as? HTTPURLResponse {
+            // Case-insensitive lookup for Content-Length
+            for (key, value) in response.allHeaderFields {
+                guard let keyStr = key as? String,
+                      keyStr.lowercased() == "content-length",
+                      let valueStr = value as? String,
+                      let length = Int64(valueStr),
+                      length > 0 else { continue }
+                expected = length
+                break
+            }
         }
         Task { @MainActor [weak self] in
             self?.delegate?.fileDownload(

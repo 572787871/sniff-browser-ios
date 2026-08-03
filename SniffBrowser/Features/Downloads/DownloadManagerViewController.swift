@@ -610,6 +610,12 @@ private final class DownloadTaskCell: UITableViewCell {
         if let expected = task.expectedSize, expected > 0 {
             let total = ByteCountFormatter.string(fromByteCount: expected, countStyle: .file)
             sizeLabel.text = "\(downloaded) / \(total)"
+        } else if let progressFraction = task.progressFraction, progressFraction > 0,
+                  task.downloadedSize > 0 {
+            // Estimate total size from progress
+            let estimated = Int64(Double(task.downloadedSize) / progressFraction)
+            let total = ByteCountFormatter.string(fromByteCount: estimated, countStyle: .file)
+            sizeLabel.text = "\(downloaded) / ~\(total)"
         } else if task.downloadKind == .hlsAsset, task.downloadedSize == 0 {
             sizeLabel.text = "大小未知"
         } else {
