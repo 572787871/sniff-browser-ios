@@ -77,7 +77,7 @@ final class BackgroundFileDownloadService: NSObject {
     private var suppressedCompletionIDs: Set<UUID> = []
     private var finishedIDs: Set<UUID> = []
     private var backgroundCompletionHandler: (() -> Void)?
-    private let session: URLSession = {
+    private lazy var session: URLSession = {
         let configuration = URLSessionConfiguration.background(
             withIdentifier: Self.sessionIdentifier
         )
@@ -95,8 +95,9 @@ final class BackgroundFileDownloadService: NSObject {
     init(storage: DownloadFileStorage) {
         self.storage = storage
         super.init()
-        // Eagerly initialize the background session so the system can deliver
-        // background events even when the app is launched in the background.
+    }
+
+    func ensureSession() {
         _ = session
     }
 

@@ -38,6 +38,7 @@ final class DownloadCenter: DownloadManaging {
         self.storage = storage
         self.preferences = preferences
         fileService = BackgroundFileDownloadService(storage: storage)
+        fileService.ensureSession()
         hlsService = HLSAssetDownloadService(storage: storage)
         notificationService = DownloadNotificationService(preferences: preferences)
         fileService.delegate = self
