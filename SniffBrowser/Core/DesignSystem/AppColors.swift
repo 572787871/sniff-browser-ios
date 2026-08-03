@@ -8,29 +8,31 @@ enum AppColors {
     /// 管理页面的分组背景。
     static let background = UIColor.systemGroupedBackground
     static let canvas = background
-    /// 无痕模式始终使用独立深色层级，避免在浅色系统外观下与普通标签混淆。
+    /// 无痕模式始终使用独立深色层级，在深色系统外观下也能与普通模式明显区分。
+    /// 使用紫黑色调，与系统深色的灰蓝色调形成视觉差异。
     static let privateBrowsingBackground = UIColor(
-        red: 0.075,
-        green: 0.078,
-        blue: 0.095,
+        red: 0.055,
+        green: 0.04,
+        blue: 0.09,
         alpha: 1
     )
     static let privateBrowsingSurface = UIColor(
-        red: 0.13,
-        green: 0.135,
+        red: 0.10,
+        green: 0.07,
         blue: 0.16,
         alpha: 1
     )
     static let privateBrowsingChrome = UIColor(
-        red: 0.105,
-        green: 0.11,
-        blue: 0.135,
+        red: 0.08,
+        green: 0.05,
+        blue: 0.13,
         alpha: 1
     )
+    /// 无痕模式强调色：紫蓝调，与系统蓝色区分。
     static let privateBrowsingAccent = UIColor(
-        red: 0.50,
-        green: 0.63,
-        blue: 0.90,
+        red: 0.55,
+        green: 0.55,
+        blue: 0.95,
         alpha: 1
     )
 

@@ -14,6 +14,7 @@ final class NewTabView: UIView {
   weak var delegate: NewTabViewDelegate?
 
   private let titleLabel = UILabel()
+  private let privacyBadge = UILabel()
   private let welcomeLabel = UILabel()
   private let dateLabel = UILabel()
   private let scrollView = UIScrollView()
@@ -66,6 +67,7 @@ final class NewTabView: UIView {
     backgroundColor = isPrivate
       ? AppColors.privateBrowsingBackground
       : AppColors.background
+    privacyBadge.isHidden = !isPrivate
     titleLabel.text = isPrivate ? "无痕浏览" : "嗅探浏览器"
     welcomeLabel.text = isPrivate
       ? "无痕标签不会保存到浏览历史，下载和主动收藏的内容仍会保留。"
@@ -187,6 +189,9 @@ final class NewTabView: UIView {
     contentStack.alignment = .fill
     contentStack.spacing = AppSpacing.xs
     contentStack.addArrangedSubview(titleLabel)
+    privacyBadge.isHidden = true
+    contentStack.addArrangedSubview(privacyBadge)
+    contentStack.setCustomSpacing(AppSpacing.xxs, after: privacyBadge)
     contentStack.addArrangedSubview(welcomeLabel)
     contentStack.setCustomSpacing(AppSpacing.sm, after: welcomeLabel)
     contentStack.addArrangedSubview(dateLabel)

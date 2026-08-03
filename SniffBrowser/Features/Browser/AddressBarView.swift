@@ -32,6 +32,7 @@ final class AddressBarView: UIView {
   private var pageThemeColor: UIColor?
   private var pageThemeForegroundStyle: BrowserChromeForegroundStyle?
   private var isPrivateMode = false
+  private let privacyBadge = UILabel()
 
   var isEditing: Bool {
     textField.isFirstResponder
@@ -157,6 +158,22 @@ final class AddressBarView: UIView {
     securityImageView.accessibilityTraits = .image
     materialView.contentView.addSubview(securityImageView)
 
+    privacyBadge.translatesAutoresizingMaskIntoConstraints = false
+    privacyBadge.text = "无痕"
+    privacyBadge.font = UIFont.systemFont(ofSize: 11, weight: .semibold)
+    privacyBadge.textColor = UIColor(red: 0.55, green: 0.55, blue: 0.95, alpha: 1)
+    privacyBadge.backgroundColor = UIColor(red: 0.55, green: 0.55, blue: 0.95, alpha: 0.15)
+    privacyBadge.layer.cornerRadius = 4
+    privacyBadge.layer.cornerCurve = .continuous
+    privacyBadge.clipsToBounds = true
+    privacyBadge.textAlignment = .center
+    privacyBadge.isHidden = true
+    privacyBadge.isAccessibilityElement = true
+    privacyBadge.accessibilityLabel = "无痕浏览模式"
+    privacyBadge.setContentHuggingPriority(.required, for: .horizontal)
+    privacyBadge.setContentCompressionResistancePriority(.required, for: .horizontal)
+    materialView.contentView.addSubview(privacyBadge)
+
     textField.translatesAutoresizingMaskIntoConstraints = false
     textField.delegate = self
     textField.font = AppTypography.body
@@ -214,8 +231,17 @@ final class AddressBarView: UIView {
       securityImageView.widthAnchor.constraint(equalToConstant: 18),
       securityImageView.heightAnchor.constraint(equalToConstant: 18),
 
-      textField.leadingAnchor.constraint(
+      privacyBadge.leadingAnchor.constraint(
         equalTo: securityImageView.trailingAnchor,
+        constant: AppSpacing.xs
+      ),
+      privacyBadge.centerYAnchor.constraint(
+        equalTo: materialView.contentView.centerYAnchor
+      ),
+      privacyBadge.heightAnchor.constraint(equalToConstant: 20),
+
+      textField.leadingAnchor.constraint(
+        equalTo: privacyBadge.trailingAnchor,
         constant: AppSpacing.xs
       ),
       textField.trailingAnchor.constraint(
@@ -305,25 +331,39 @@ final class AddressBarView: UIView {
   }
 
   private func updateSecurityIcon(for url: URL?) {
+    let wasHidden = privacyBadge.isHidden
+    privacyBadge.isHidden = !isPrivateMode
     let symbol: String
     let color: UIColor
-    switch url?.scheme?.lowercased() {
-    case "https":
-      symbol = "lock.fill"
-      color = pageThemeForegroundStyle?.color ?? AppColors.secondaryText
-      securityImageView.accessibilityLabel = "安全连接"
-    case "http":
-      symbol = "exclamationmark.triangle.fill"
-      color = AppColors.warning
-      securityImageView.accessibilityLabel = "连接不安全"
-    default:
-      symbol = "globe"
-      color = pageThemeForegroundStyle?.color ?? AppColors.secondaryText
-      securityImageView.accessibilityLabel = "新标签页"
+    if isPrivateMode {
+      symbol = "person.fill.checkmark"
+      color = AppColors.privateBrowsingAccent
+      securityImageView.accessibilityLabel = "无痕浏览模式"
+    } else {
+      switch url?.scheme?.lowercased() {
+      case "https":
+        symbol = "lock.fill"
+        color = pageThemeForegroundStyle?.color ?? AppColors.secondaryText
+        securityImageView.accessibilityLabel = "安全连接"
+      case "http":
+        symbol = "exclamationmark.triangle.fill"
+        color = AppColors.warning
+        securityImageView.accessibilityLabel = "连接不安全"
+      default:
+        symbol = "globe"
+        color = pageThemeForegroundStyle?.color ?? AppColors.secondaryText
+        securityImageView.accessibilityLabel = "新标签页"
+      }
     }
     securityImageView.image = UIImage(systemName: symbol)
     securityImageView.tintColor = color
     textField.accessibilityHint = securityImageView.accessibilityLabel
+    if wasHidden != privacyBadge.isHidden {
+      // Animate layout change when badge appears or disappears
+      UIView.animate(withDuration: 0.2) {
+        self.layoutIfNeeded()
+      }
+    }
   }
 
   private func updateTrailingButton() {
