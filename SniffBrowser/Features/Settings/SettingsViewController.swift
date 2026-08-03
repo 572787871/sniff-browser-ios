@@ -55,7 +55,7 @@ final class SettingsViewController: BaseViewController {
             rows: [
                 Row(title: "默认搜索引擎", subtitle: "Google", symbol: "magnifyingglass", destination: .searchEngine),
                 Row(title: "新标签页", subtitle: "嗅探浏览器首页", symbol: "plus.square.on.square", destination: .newTabBehavior),
-                Row(title: "外观", subtitle: "跟随系统", symbol: "circle.lefthalf.filled", destination: .appearance)
+                Row(title: "外观", subtitle: "\(AppearancePreference.current.displayName)", symbol: "circle.lefthalf.filled", destination: .appearance)
             ]
         ),
         Section(
@@ -98,6 +98,12 @@ final class SettingsViewController: BaseViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         configureTableView()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        // Refresh appearance subtitle when returning from the detail page
+        tableView.reloadData()
     }
 
     private func configureTableView() {
@@ -193,6 +199,11 @@ extension SettingsViewController: UITableViewDataSource, UITableViewDelegate {
             confirmClearBrowsingData()
             return
         }
+        if destination == .appearance {
+            let vc = AppearanceSettingsViewController()
+            navigationController?.pushViewController(vc, animated: true)
+            return
+        }
         if destination == .downloadPreferences {
             if let onRoute {
                 onRoute(.downloadSettings)
@@ -274,7 +285,7 @@ private final class SettingsDetailViewController: BaseViewController {
         case .newTabBehavior:
             return ("新标签页", "plus.square.on.square", "新标签页当前使用本地原生页面，不加载新闻、广告或推荐内容。")
         case .appearance:
-            return ("外观", "circle.lefthalf.filled", "当前自动跟随系统深色或浅色外观，并响应辅助功能设置。")
+            return ("外观", "circle.lefthalf.filled", "设置应用外观模式：跟随系统、浅色或深色。")
         case .contentBlocking:
             return ("内容拦截", "shield.lefthalf.filled", "内容过滤引擎将在隐私阶段接入；当前不会注入来源不明的规则。")
         case .websitePermissions:

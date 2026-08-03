@@ -9,6 +9,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
       [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
     AppAppearance.configure()
+    // Apply saved appearance preference before any window is shown
+    AppearancePreference.applyGlobal()
     return true
   }
 
