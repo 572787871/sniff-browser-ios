@@ -498,6 +498,43 @@ final class TabOverviewViewController: BaseViewController {
                 for: .selected
             )
         }
+        // Update navigation bar appearance to match mode
+        let navAppearance = UINavigationBarAppearance()
+        if mode.isPrivate {
+            navAppearance.configureWithOpaqueBackground()
+            navAppearance.backgroundColor = AppColors.privateBrowsingBackground
+            navAppearance.shadowColor = .clear
+            navAppearance.titleTextAttributes = [
+                .foregroundColor: UIColor.white.withAlphaComponent(0.88),
+                .font: AppTypography.headline
+            ]
+            navAppearance.largeTitleTextAttributes = [
+                .foregroundColor: UIColor.white.withAlphaComponent(0.88),
+                .font: AppTypography.largeTitle
+            ]
+            navigationController?.navigationBar.tintColor = AppColors.privateBrowsingAccent
+        } else {
+            navAppearance.configureWithDefaultBackground()
+            navAppearance.backgroundEffect = UIAccessibility.isReduceTransparencyEnabled
+                ? nil
+                : UIBlurEffect(style: .systemChromeMaterial)
+            navAppearance.backgroundColor = UIAccessibility.isReduceTransparencyEnabled
+                ? AppColors.chromeFallback
+                : AppColors.elevatedSurface
+            navAppearance.shadowColor = AppColors.separator
+            navAppearance.titleTextAttributes = [
+                .foregroundColor: AppColors.primaryText,
+                .font: AppTypography.headline
+            ]
+            navAppearance.largeTitleTextAttributes = [
+                .foregroundColor: AppColors.primaryText,
+                .font: AppTypography.largeTitle
+            ]
+            navigationController?.navigationBar.tintColor = AppColors.accent
+        }
+        navigationController?.navigationBar.standardAppearance = navAppearance
+        navigationController?.navigationBar.compactAppearance = navAppearance
+        navigationController?.navigationBar.scrollEdgeAppearance = navAppearance
         let changes = {
             self.privacyTintView.alpha = mode.isPrivate ? 1 : 0
             self.contentView.backgroundColor = mode.isPrivate
