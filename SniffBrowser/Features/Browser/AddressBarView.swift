@@ -310,7 +310,7 @@ final class AddressBarView: UIView {
     let symbol: String
     let color: UIColor
     if isPrivateMode {
-      symbol = "person.fill.checkmark"
+      symbol = "eye.slash.fill"
       color = AppColors.privateBrowsingAccent
       securityImageView.accessibilityLabel = "无痕浏览模式"
     } else {
