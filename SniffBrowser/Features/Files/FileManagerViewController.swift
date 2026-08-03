@@ -1,3 +1,4 @@
+import AVFoundation
 import AVKit
 import QuickLook
 import UIKit
@@ -227,7 +228,151 @@ final class FileManagerViewController: BaseViewController {
 
     private func share(_ task: DownloadTaskModel) {
         guard let url = downloadCenter.fileURL(for: task.id) else { return }
+        // For HLS video packages, offer to merge into a single MP4 before sharing
+        if url.pathExtension.lowercased() == "sniffhls" {
+            let alert = UIAlertController(
+                title: "导出视频",
+                message: "可选择将视频片段合并为单个 MP4 文件后再导出，或直接导出原始包。",
+                preferredStyle: .actionSheet
+            )
+            alert.addAction(UIAlertAction(title: "合并为 MP4 并导出", style: .default) { [weak self] _ in
+                self?.mergeAndShareHLSVideo(packageURL: url, fileName: task.fileName)
+            })
+            alert.addAction(UIAlertAction(title: "直接导出原始包", style: .default) { _ in
+                present(UIActivityViewController(activityItems: [url], applicationActivities: nil), animated: true)
+            })
+            alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+            // For iPad: set popover source
+            if let popover = alert.popoverPresentationController,
+               let sourceView = navigationController?.view {
+                popover.sourceView = sourceView
+                popover.sourceRect = CGRect(x: sourceView.bounds.midX, y: sourceView.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+            present(alert, animated: true)
+            return
+        }
         present(UIActivityViewController(activityItems: [url], applicationActivities: nil), animated: true)
+    }
+
+    private func mergeAndShareHLSVideo(packageURL: URL, fileName: String) {
+        let playlistURL = packageURL.appendingPathComponent("index.m3u8")
+        guard FileManager.default.fileExists(atPath: playlistURL.path) else {
+            let alert = UIAlertController(title: "无法合并", message: "视频包数据不完整。", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "好", style: .default))
+            present(alert, animated: true)
+            return
+        }
+        let loadingAlert = UIAlertController(title: "正在合并视频…", message: "请稍候，正在将视频片段合并为 MP4 文件。", preferredStyle: .alert)
+        present(loadingAlert, animated: true)
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let asset = AVAsset(url: playlistURL)
+                guard let exportSession = AVAssetExportSession(
+                    asset: asset,
+                    presetName: AVAssetExportPresetPassthrough
+                ) else {
+                    loadingAlert.dismiss(animated: true) {
+                        self.showMergeError()
+                    }
+                    return
+                }
+                let tempDir = FileManager.default.temporaryDirectory
+                let safeName = (fileName as NSString).deletingPathExtension
+                let outputURL = tempDir.appendingPathComponent("\(safeName).mp4")
+                // Remove any existing file at the output path
+                try? FileManager.default.removeItem(at: outputURL)
+
+                exportSession.outputURL = outputURL
+                exportSession.outputFileType = .mp4
+                exportSession.shouldOptimizeForNetworkUse = true
+
+                await exportSession.export()
+                loadingAlert.dismiss(animated: true)
+
+                guard exportSession.status == .completed else {
+                    // Passthrough may fail for some codecs; fall back to highest quality
+                    if exportSession.status == .failed || exportSession.status == .cancelled {
+                        try? FileManager.default.removeItem(at: outputURL)
+                        self.fallbackMergeAndShare(asset: asset, outputURL: outputURL, fileName: fileName)
+                        return
+                    }
+                    self.showMergeError()
+                    return
+                }
+                let activityVC = UIActivityViewController(
+                    activityItems: [outputURL],
+                    applicationActivities: nil
+                )
+                activityVC.completionWithItemsHandler = { _, _, _, _ in
+                    try? FileManager.default.removeItem(at: outputURL)
+                }
+                if let popover = activityVC.popoverPresentationController,
+                   let sourceView = self.navigationController?.view {
+                    popover.sourceView = sourceView
+                    popover.sourceRect = CGRect(x: sourceView.bounds.midX, y: sourceView.bounds.midY, width: 0, height: 0)
+                    popover.permittedArrowDirections = []
+                }
+                self.present(activityVC, animated: true)
+            } catch {
+                loadingAlert.dismiss(animated: true) {
+                    self.showMergeError()
+                }
+            }
+        }
+    }
+
+    private func fallbackMergeAndShare(asset: AVAsset, outputURL: URL, fileName: String) {
+        guard let exportSession = AVAssetExportSession(
+            asset: asset,
+            presetName: AVAssetExportPresetHighestQuality
+        ) else {
+            showMergeError()
+            return
+        }
+        let loadingAlert = UIAlertController(title: "正在合并视频…", message: "高质量转码中，可能需要较长时间。", preferredStyle: .alert)
+        present(loadingAlert, animated: true)
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            try? FileManager.default.removeItem(at: outputURL)
+            exportSession.outputURL = outputURL
+            exportSession.outputFileType = .mp4
+            exportSession.shouldOptimizeForNetworkUse = true
+            await exportSession.export()
+
+            loadingAlert.dismiss(animated: true)
+            guard exportSession.status == .completed else {
+                self.showMergeError()
+                return
+            }
+            let activityVC = UIActivityViewController(
+                activityItems: [outputURL],
+                applicationActivities: nil
+            )
+            activityVC.completionWithItemsHandler = { _, _, _, _ in
+                try? FileManager.default.removeItem(at: outputURL)
+            }
+            if let popover = activityVC.popoverPresentationController,
+               let sourceView = self.navigationController?.view {
+                popover.sourceView = sourceView
+                popover.sourceRect = CGRect(x: sourceView.bounds.midX, y: sourceView.bounds.midY, width: 0, height: 0)
+                popover.permittedArrowDirections = []
+            }
+            self.present(activityVC, animated: true)
+        }
+    }
+
+    private func showMergeError() {
+        let alert = UIAlertController(
+            title: "合并失败",
+            message: "无法将视频片段合并为 MP4 文件，请尝试直接导出原始包。",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "好", style: .default))
+        present(alert, animated: true)
     }
 
     private func promptRename(_ task: DownloadTaskModel) {
