@@ -215,9 +215,17 @@ extension BackgroundFileDownloadService: URLSessionDownloadDelegate {
         totalBytesExpectedToWrite: Int64
     ) {
         guard let id = taskID(for: downloadTask) else { return }
-        let expected = totalBytesExpectedToWrite > 0
+        var expected: Int64? = totalBytesExpectedToWrite > 0
             ? totalBytesExpectedToWrite
             : nil
+        // Fallback: try to get content length from HTTP response headers
+        if expected == nil,
+           let response = downloadTask.response as? HTTPURLResponse,
+           let contentLength = response.allHeaderFields["Content-Length"] as? String,
+           let length = Int64(contentLength),
+           length > 0 {
+            expected = length
+        }
         Task { @MainActor [weak self] in
             self?.delegate?.fileDownload(
                 taskID: id,
