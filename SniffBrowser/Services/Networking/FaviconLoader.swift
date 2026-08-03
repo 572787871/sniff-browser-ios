@@ -187,8 +187,11 @@ final class FaviconLoader {
     }
 
     private func finish(key: String, image: UIImage?) {
-        let callbacks = lock.withLock {
-            pending.removeValue(forKey: key)?.values ?? []
+        let callbacks = lock.withLock { () -> [(UIImage?) -> Void] in
+            guard let values = pending.removeValue(forKey: key)?.values else {
+                return []
+            }
+            return Array(values)
         }
         DispatchQueue.main.async {
             callbacks.forEach { $0(image) }
