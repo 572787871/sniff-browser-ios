@@ -657,22 +657,6 @@ extension BrowserViewController: NewTabViewDelegate {
   func newTabView(_ view: NewTabView, didSubmit text: String) {
     navigate(to: text)
   }
-
-  func newTabViewDidSelectFavorite(_ view: NewTabView, item: FavoriteItem) {
-    load(item.url)
-  }
-
-  func newTabViewDidSelectViewAll(_ view: NewTabView) {
-    router?.showFavorites()
-  }
-
-  func newTabViewDidSelectAddFavorite(_ view: NewTabView) {
-    presentAddFavoriteDialog()
-  }
-
-  func newTabView(_ view: NewTabView, didLongPressFavorite item: FavoriteItem, at point: CGPoint) {
-    presentFavoriteContextMenu(for: item, at: point)
-  }
 }
 
 extension BrowserViewController: UIGestureRecognizerDelegate {

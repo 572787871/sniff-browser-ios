@@ -4,10 +4,6 @@ import UIKit
 protocol NewTabViewDelegate: AnyObject {
   func newTabViewDidBeginEditing(_ view: NewTabView)
   func newTabView(_ view: NewTabView, didSubmit text: String)
-  func newTabViewDidSelectFavorite(_ view: NewTabView, item: FavoriteItem)
-  func newTabViewDidSelectViewAll(_ view: NewTabView)
-  func newTabViewDidSelectAddFavorite(_ view: NewTabView)
-  func newTabView(_ view: NewTabView, didLongPressFavorite item: FavoriteItem, at point: CGPoint)
 }
 
 final class NewTabView: UIView {
@@ -28,19 +24,6 @@ final class NewTabView: UIView {
   private let textField = UITextField()
   private let submitButton = UIButton(type: .system)
   private var isPrivateMode = false
-
-  // Favorites section
-  private let favoritesSection = UIStackView()
-  private let favoritesHeader = UIStackView()
-  private let favoritesTitle = UILabel()
-  private let favoritesViewAll = UIButton(type: .system)
-  private let favoritesGrid = UIStackView()
-  private let favoritesEmptyState = UIStackView()
-  private let favoritesEmptyLabel = UILabel()
-  private let favoritesAddButton = UIButton(type: .system)
-  private var favoriteItems: [FavoriteItem] = []
-  private var favoriteChangeObserver: NSObjectProtocol?
-  private let maxFavoritesDisplay = 8
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -76,7 +59,6 @@ final class NewTabView: UIView {
       ? "无痕浏览。无痕模式不会让你在网络上匿名。"
       : nil
     updateResolvedColors()
-    updateEmptyStateForPrivateMode()
   }
 
   private func configure() {
@@ -198,8 +180,6 @@ final class NewTabView: UIView {
     contentStack.setCustomSpacing(AppSpacing.xl, after: dateLabel)
     contentStack.addArrangedSubview(searchMaterial)
     contentContainer.addSubview(contentStack)
-    configureFavoritesSection()
-    contentStack.addArrangedSubview(favoritesSection)
 
     searchMaterial.contentView.addSubview(searchImageView)
     searchMaterial.contentView.addSubview(textField)
@@ -300,255 +280,6 @@ final class NewTabView: UIView {
     ]) { (view: NewTabView, _) in
       view.updateResolvedColors()
     }
-  }
-
-  private func configureFavoritesSection() {
-    favoritesSection.axis = .vertical
-    favoritesSection.alignment = .fill
-    favoritesSection.spacing = AppSpacing.md
-    favoritesSection.translatesAutoresizingMaskIntoConstraints = false
-    favoritesSection.isHidden = true
-    contentStack.setCustomSpacing(32, after: searchMaterial)
-
-    // Header
-    favoritesHeader.axis = .horizontal
-    favoritesHeader.alignment = .center
-    favoritesHeader.distribution = .equalSpacing
-    favoritesHeader.translatesAutoresizingMaskIntoConstraints = false
-
-    favoritesTitle.text = "收藏夹"
-    favoritesTitle.font = AppTypography.subheadline
-    favoritesTitle.textColor = AppColors.primaryText
-    favoritesTitle.setContentHuggingPriority(.defaultLow, for: .horizontal)
-
-    var viewAllConfig = UIButton.Configuration.plain()
-    viewAllConfig.title = "查看全部"
-    viewAllConfig.baseForegroundColor = AppColors.accent
-    viewAllConfig.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8)
-    favoritesViewAll.configuration = viewAllConfig
-    favoritesViewAll.addTarget(self, action: #selector(viewAllPressed), for: .touchUpInside)
-    favoritesViewAll.setContentHuggingPriority(.required, for: .horizontal)
-    favoritesViewAll.accessibilityLabel = "查看全部收藏"
-
-    favoritesHeader.addArrangedSubview(favoritesTitle)
-    favoritesHeader.addArrangedSubview(favoritesViewAll)
-
-    // Grid
-    favoritesGrid.axis = .vertical
-    favoritesGrid.alignment = .fill
-    favoritesGrid.spacing = AppSpacing.sm
-    favoritesGrid.translatesAutoresizingMaskIntoConstraints = false
-
-    // Empty state
-    favoritesEmptyState.axis = .vertical
-    favoritesEmptyState.alignment = .center
-    favoritesEmptyState.spacing = AppSpacing.sm
-    favoritesEmptyState.translatesAutoresizingMaskIntoConstraints = false
-
-    favoritesEmptyLabel.text = "还没有收藏的网站"
-    favoritesEmptyLabel.font = AppTypography.body
-    favoritesEmptyLabel.textColor = AppColors.secondaryText
-    favoritesEmptyLabel.textAlignment = .center
-
-    var addBtnConfig = UIButton.Configuration.tinted()
-    addBtnConfig.title = "添加收藏"
-    addBtnConfig.baseForegroundColor = AppColors.accent
-    addBtnConfig.baseBackgroundColor = AppColors.accentFill
-    addBtnConfig.cornerStyle = .capsule
-    favoritesAddButton.configuration = addBtnConfig
-    favoritesAddButton.addTarget(self, action: #selector(addFavoritePressed), for: .touchUpInside)
-
-    favoritesEmptyState.addArrangedSubview(favoritesEmptyLabel)
-    favoritesEmptyState.addArrangedSubview(favoritesAddButton)
-
-    favoritesSection.addArrangedSubview(favoritesHeader)
-    favoritesSection.addArrangedSubview(favoritesGrid)
-    favoritesSection.addArrangedSubview(favoritesEmptyState)
-
-    observeFavorites()
-    reloadFavorites()
-  }
-
-  private func observeFavorites() {
-    favoriteChangeObserver = NotificationCenter.default.addObserver(
-      forName: .favoriteItemsDidChange,
-      object: nil,
-      queue: .main
-    ) { [weak self] _ in
-      self?.reloadFavorites()
-    }
-  }
-
-  private func reloadFavorites() {
-    guard let items = try? FavoriteService.shared.allFavorites() else { return }
-    favoriteItems = items
-    updateFavoritesSection()
-  }
-
-  private func updateFavoritesSection() {
-    let isEmpty = favoriteItems.isEmpty
-    favoritesGrid.isHidden = isEmpty
-    favoritesEmptyState.isHidden = !isEmpty
-    favoritesSection.isHidden = false
-
-    if isEmpty {
-      updateEmptyStateForPrivateMode()
-      return
-    }
-
-    favoritesGrid.arrangedSubviews.forEach {
-      favoritesGrid.removeArrangedSubview($0)
-      $0.removeFromSuperview()
-    }
-
-    let displayItems = Array(favoriteItems.prefix(maxFavoritesDisplay))
-    let isWide = bounds.width > 400
-    let columnCount = isWide ? 4 : 2
-    var currentRow: UIStackView?
-
-    for (index, item) in displayItems.enumerated() {
-      if index % columnCount == 0 {
-        currentRow = UIStackView()
-        currentRow?.axis = .horizontal
-        currentRow?.alignment = .fill
-        currentRow?.distribution = .fillEqually
-        currentRow?.spacing = AppSpacing.sm
-        favoritesGrid.addArrangedSubview(currentRow!)
-      }
-      let itemView = createFavoriteItemView(item)
-      currentRow?.addArrangedSubview(itemView)
-    }
-  }
-
-  private func createFavoriteItemView(_ item: FavoriteItem) -> UIView {
-    let container = UIView()
-    container.translatesAutoresizingMaskIntoConstraints = false
-
-    let iconView = UIImageView()
-    iconView.translatesAutoresizingMaskIntoConstraints = false
-    iconView.contentMode = .scaleAspectFit
-    iconView.backgroundColor = AppColors.tertiarySurface
-    iconView.layer.cornerRadius = 14
-    iconView.layer.cornerCurve = .continuous
-    iconView.clipsToBounds = true
-    iconView.tintColor = AppColors.secondaryText
-
-    // Derive favicon URL from domain if not provided
-    let effectiveFaviconURL = item.faviconURL ?? FaviconLoader.faviconURL(for: item.url)
-
-    // Show fallback immediately (synchronous)
-    let firstLetter = item.title.trimmingCharacters(in: .whitespaces).first.map(String.init)
-    if let letter = firstLetter {
-      let fallbackLabel = UILabel()
-      fallbackLabel.text = letter
-      fallbackLabel.font = UIFont.systemFont(ofSize: 22, weight: .medium)
-      fallbackLabel.textColor = AppColors.primaryText
-      fallbackLabel.textAlignment = .center
-      fallbackLabel.translatesAutoresizingMaskIntoConstraints = false
-      iconView.addSubview(fallbackLabel)
-      NSLayoutConstraint.activate([
-        fallbackLabel.centerXAnchor.constraint(equalTo: iconView.centerXAnchor),
-        fallbackLabel.centerYAnchor.constraint(equalTo: iconView.centerYAnchor)
-      ])
-    } else {
-      iconView.image = UIImage(systemName: "globe")
-      iconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 24, weight: .regular)
-    }
-
-    // Try to load favicon asynchronously (overrides fallback when loaded)
-    if let faviconURL = effectiveFaviconURL {
-      FaviconLoader.shared.load(url: faviconURL) { [weak iconView] image in
-        guard let image, let iconView else { return }
-        // Remove fallback label
-        iconView.subviews.forEach { $0.removeFromSuperview() }
-        iconView.image = nil
-        iconView.contentMode = .scaleAspectFill
-        iconView.backgroundColor = .clear
-        iconView.image = image
-      }
-    }
-
-    let nameLabel = UILabel()
-    nameLabel.translatesAutoresizingMaskIntoConstraints = false
-    nameLabel.text = item.title
-    nameLabel.font = AppTypography.caption
-    nameLabel.textColor = AppColors.primaryText
-    nameLabel.textAlignment = .center
-    nameLabel.numberOfLines = 1
-    nameLabel.lineBreakMode = .byTruncatingTail
-
-    container.addSubview(iconView)
-    container.addSubview(nameLabel)
-
-    NSLayoutConstraint.activate([
-      iconView.topAnchor.constraint(equalTo: container.topAnchor, constant: AppSpacing.xs),
-      iconView.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-      iconView.widthAnchor.constraint(equalToConstant: 52),
-      iconView.heightAnchor.constraint(equalToConstant: 52),
-
-      nameLabel.topAnchor.constraint(equalTo: iconView.bottomAnchor, constant: AppSpacing.xs),
-      nameLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: AppSpacing.xxs),
-      nameLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -AppSpacing.xxs),
-      nameLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-      nameLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 18),
-    ])
-
-    let tapGesture = UITapGestureRecognizer(target: self, action: #selector(favoriteTapped(_:)))
-    container.addGestureRecognizer(tapGesture)
-    container.isUserInteractionEnabled = true
-    container.accessibilityLabel = item.title
-    container.accessibilityHint = "打开收藏"
-
-    let longPress = UILongPressGestureRecognizer(target: self, action: #selector(favoriteLongPressed(_:)))
-    longPress.minimumPressDuration = 0.5
-    container.addGestureRecognizer(longPress)
-
-    return container
-  }
-
-  private func updateEmptyStateForPrivateMode() {
-    let secondary = isPrivateMode
-      ? UIColor.white.withAlphaComponent(0.68)
-      : AppColors.secondaryText
-    favoritesEmptyLabel.textColor = secondary
-  }
-
-  @objc
-  private func viewAllPressed() {
-    delegate?.newTabViewDidSelectViewAll(self)
-  }
-
-  @objc
-  private func addFavoritePressed() {
-    delegate?.newTabViewDidSelectAddFavorite(self)
-  }
-
-  @objc
-  private func favoriteTapped(_ gesture: UITapGestureRecognizer) {
-    guard let container = gesture.view,
-          let index = findFavoriteIndex(for: container) else { return }
-    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-    delegate?.newTabViewDidSelectFavorite(self, item: favoriteItems[index])
-  }
-
-  @objc
-  private func favoriteLongPressed(_ gesture: UILongPressGestureRecognizer) {
-    guard gesture.state == .began,
-          let container = gesture.view,
-          let index = findFavoriteIndex(for: container) else { return }
-    let point = gesture.location(in: self)
-    delegate?.newTabView(self, didLongPressFavorite: favoriteItems[index], at: point)
-  }
-
-  private func findFavoriteIndex(for view: UIView) -> Int? {
-    let visibleItems = Array(favoriteItems.prefix(maxFavoritesDisplay))
-    guard let row = favoritesGrid.arrangedSubviews.firstIndex(where: { $0.subviews.contains(view) }),
-          let column = (favoritesGrid.arrangedSubviews[row] as? UIStackView)?.arrangedSubviews.firstIndex(of: view) else {
-      return nil
-    }
-    let isWide = bounds.width > 400
-    let columnCount = isWide ? 4 : 2
-    return row * columnCount + column
   }
 
   private func updateResolvedColors() {
