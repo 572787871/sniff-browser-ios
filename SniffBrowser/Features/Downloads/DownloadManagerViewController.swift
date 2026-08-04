@@ -541,7 +541,6 @@ extension DownloadManagerViewController: QLPreviewControllerDataSource {
 private final class DownloadTaskCell: UITableViewCell {
     static let reuseIdentifier = "DownloadTaskCell"
 
-    private let cardView = UIView()
     private let iconView = UIImageView(image: UIImage(systemName: "arrow.down.doc"))
     private let nameLabel = UILabel()
     private let statusLabel = UILabel()
@@ -749,14 +748,17 @@ private final class DownloadTaskCell: UITableViewCell {
     }
 
     private func configureView() {
-        backgroundColor = .clear
+        var background = UIBackgroundConfiguration.listGroupedCell()
+        background.backgroundColor = AppColors.surface
+        background.cornerRadius = AppRadius.card
+        background.backgroundInsets = NSDirectionalEdgeInsets(
+            top: 5,
+            leading: 0,
+            bottom: 5,
+            trailing: 0
+        )
+        backgroundConfiguration = background
         selectionStyle = .none
-
-        cardView.backgroundColor = AppColors.surface
-        cardView.layer.cornerRadius = AppRadius.card
-        cardView.layer.cornerCurve = .continuous
-        cardView.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(cardView)
 
         iconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 24)
         iconView.tintColor = AppColors.accent
@@ -800,13 +802,13 @@ private final class DownloadTaskCell: UITableViewCell {
         stack.alignment = .center
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
-        cardView.addSubview(stack)
+        contentView.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 5),
-            cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -5),
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 19),
+            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
+            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
+            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -19),
 
             iconView.widthAnchor.constraint(
                 equalToConstant: AppMetrics.primaryButtonHeight
@@ -814,11 +816,6 @@ private final class DownloadTaskCell: UITableViewCell {
             iconView.heightAnchor.constraint(
                 equalToConstant: AppMetrics.primaryButtonHeight
             ),
-
-            stack.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 14),
-            stack.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
-            stack.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
-            stack.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -14)
         ])
     }
 }

@@ -420,7 +420,9 @@ private final class FavoriteCell: UITableViewCell {
     }
 
     private func configureView() {
-        backgroundColor = AppColors.surface
+        var background = UIBackgroundConfiguration.listGroupedCell()
+        background.backgroundColor = AppColors.surface
+        backgroundConfiguration = background
         selectionStyle = .default
         accessoryType = .disclosureIndicator
 
