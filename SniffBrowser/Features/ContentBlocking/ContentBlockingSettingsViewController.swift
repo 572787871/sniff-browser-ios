@@ -65,26 +65,6 @@ final class ContentBlockingSettingsViewController: BaseViewController {
         }
     }
 
-    private func toggleRuleList(_ sourceKey: String, enabled: Bool) {
-        manager.filterManager.setEnabled(enabled, for: sourceKey)
-        Task {
-            try? await ContentBlockerService.shared.rebuildRules(reloadPages: true)
-        }
-    }
-
-    private func runUpdate() {
-        Task {
-            do {
-                try await ContentBlockerService.shared.updateRules(reloadPages: true)
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
-                presentAlert(title: "规则已更新", message: "最新过滤规则已生效。")
-            } catch {
-                presentAlert(title: "更新失败", message: error.localizedDescription)
-            }
-            tableView.reloadData()
-        }
-    }
-
     private func showImportMenu() {
         let alert = UIAlertController(
             title: "导入规则",
@@ -207,15 +187,13 @@ extension ContentBlockingSettingsViewController: UIDocumentPickerDelegate {
 
 extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableViewDelegate {
     func numberOfSections(in tableView: UITableView) -> Int {
-        5
+        3
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
         case 0: return 1
         case 1: return 1
-        case 2: return manager.filterManager.allLists().count
-        case 3: return 1
         default: return 2
         }
     }
@@ -224,8 +202,6 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
         switch section {
         case 0: return nil
         case 1: return "拦截统计"
-        case 2: return "内置规则"
-        case 3: return "更新"
         default: return "其他"
         }
     }
@@ -233,9 +209,7 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
     func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch section {
         case 1:
-            return "拦截次数为主框架导航被取消的近似计数（WebKit 公开 API 限制）。"
-        case 2:
-            return "开关即时生效；导入的规则与白名单会一并参与编译。"
+            return "仅计数被拦截的主框架导航；子资源与元素隐藏拦截不包含在内（系统限制）。"
         default:
             return nil
         }
@@ -276,38 +250,6 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
                 filterCount: manager.filterManager.enabledSourceKeys().count
             )
             return cell
-        case 2:
-            guard let cell = tableView.dequeueReusableCell(
-                withIdentifier: SettingsToggleCell.reuseIdentifier,
-                for: indexPath
-            ) as? SettingsToggleCell else {
-                return UITableViewCell()
-            }
-            let list = manager.filterManager.allLists()[indexPath.row]
-            cell.configure(
-                title: list.name,
-                subtitle: "\(list.details) · \(list.ruleCount) 条",
-                symbol: "doc.text",
-                isOn: list.isEnabled,
-                accessibilityIdentifier: "filterList.\(list.sourceKey)"
-            ) { [weak self] enabled in
-                self?.toggleRuleList(list.sourceKey, enabled: enabled)
-            }
-            return cell
-        case 3:
-            guard let cell = tableView.dequeueReusableCell(
-                withIdentifier: GlassSummaryCell.reuseIdentifier,
-                for: indexPath
-            ) as? GlassSummaryCell else {
-                return UITableViewCell()
-            }
-            cell.configure(
-                title: "立即更新",
-                subtitle: service.updateDescription,
-                symbol: "arrow.triangle.2.circlepath",
-                tint: AppColors.accent
-            )
-            return cell
         default:
             guard let cell = tableView.dequeueReusableCell(
                 withIdentifier: GlassSummaryCell.reuseIdentifier,
@@ -337,9 +279,7 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         switch indexPath.section {
-        case 3:
-            runUpdate()
-        case 4:
+        case 2:
             if indexPath.row == 0 {
                 showImportMenu()
             } else {
