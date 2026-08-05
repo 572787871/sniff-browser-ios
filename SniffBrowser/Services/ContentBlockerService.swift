@@ -35,13 +35,14 @@ enum ContentBlockerUpdateError: LocalizedError {
 @MainActor
 final class ContentBlockerService {
     static let shared = ContentBlockerService()
-    static let rulesUpdateURLs = [
-        URL(
-            string: "https://filters.adtidy.org/extension/safari/filters/2_optimized.txt"
-        )!,
-        URL(
-            string: "https://filters.adtidy.org/extension/safari/filters/224_optimized.txt"
-        )!,
+    /// AdGuard 优化版规则源（Safari 格式）。
+    static let sourceDefinitions: [(key: String, url: URL)] = [
+        ("2", URL(string: "https://filters.adtidy.org/extension/safari/filters/2_optimized.txt")!),
+        ("3", URL(string: "https://filters.adtidy.org/extension/safari/filters/3_optimized.txt")!),
+        ("4", URL(string: "https://filters.adtidy.org/extension/safari/filters/4_optimized.txt")!),
+        ("11", URL(string: "https://filters.adtidy.org/extension/safari/filters/11_optimized.txt")!),
+        ("14", URL(string: "https://filters.adtidy.org/extension/safari/filters/14_optimized.txt")!),
+        ("224", URL(string: "https://filters.adtidy.org/extension/safari/filters/224_optimized.txt")!),
     ]
     static let primaryIdentifier = "com.sniffbrowser.adblock"
 
@@ -91,13 +92,16 @@ final class ContentBlockerService {
         )
     }
 
+    private var sourcesDirectory: URL {
+        supportDirectory.appendingPathComponent("sources", isDirectory: true)
+    }
+
     private(set) var isReady = false
     private(set) var ruleCount = 0
     private(set) var lastLoadError: String?
     private(set) var updatedAt: Date?
     private(set) var filterVersion: String?
     private(set) var isUpdating = false
-    private static let autoUpdateInterval: TimeInterval = 5 * 24 * 60 * 60
 
     var isEnabled: Bool {
         preferences.contentBlockingEnabled
@@ -140,7 +144,10 @@ final class ContentBlockerService {
 
     func isWhitelisted(_ host: String?) -> Bool {
         guard let host else { return false }
-        return preferences.contentBlockingWhitelist.contains(host.lowercased())
+        if preferences.contentBlockingWhitelist.contains(host.lowercased()) {
+            return true
+        }
+        return ContentBlockManager.shared.whitelistManager.matches(host)
     }
 
     func setWhitelisted(_ whitelisted: Bool, host: String) {
@@ -201,9 +208,8 @@ final class ContentBlockerService {
         return changed
     }
 
-    /// 下载并安装最新过滤规则。成功后立即重新应用；
-    /// `reloadPages` 为 false 时（后台自动更新）不重载当前页面，
-    /// 规则从下一次导航开始生效。
+    /// 下载全部官方规则源并缓存，再按启用的规则子集编译。
+    /// 成功后立即重新应用；`reloadPages` 为 false 时（后台自动更新）不重载当前页面。
     func updateRules(reloadPages: Bool = true) async throws {
         guard !isUpdating else {
             throw ContentBlockerUpdateError.alreadyUpdating
@@ -212,52 +218,79 @@ final class ContentBlockerService {
         defer { isUpdating = false }
 
         do {
-            var filterTexts: [String] = []
             var versions: [String] = []
-            for url in Self.rulesUpdateURLs {
-                let text = try await downloadFilterText(from: url)
-                filterTexts.append(text)
+            for definition in Self.sourceDefinitions {
+                let text = try await downloadFilterText(from: definition.url)
+                cacheSourceText(text, key: definition.key)
                 if let version = ContentBlockerRuleBuilder.filterVersion(from: text) {
-                    versions.append(version)
+                    versions.append("\(definition.key):\(version)")
                 }
             }
-            guard let jsonData = ContentBlockerRuleBuilder.chunkedJSONData(
-                from: filterTexts
-            ),
-            let chunks = parseRuleChunks(from: jsonData),
-            !chunks.isEmpty
-            else {
-                throw ContentBlockerUpdateError.invalidFilter
-            }
-
-            let compiledChunks = await compileChunks(
-                chunks: chunks,
-                primaryIdentifier: Self.primaryIdentifier
-            )
-            guard !compiledChunks.isEmpty else {
-                throw ContentBlockerUpdateError.compileFailed
-            }
-
-            self.chunks = compiledChunks
-            ruleCount = chunks.reduce(0) { $0 + $1.count }
-            updatedAt = Date()
-            filterVersion = versions.joined(separator: " / ")
-            lastLoadError = nil
-            isReady = true
-            persistDownloadedRules(
-                jsonData,
-                metadata: RuleMetadata(
-                    updatedAt: updatedAt ?? Date(),
-                    version: filterVersion ?? "",
-                    ruleCount: ruleCount
-                )
-            )
-            postChange(reloadActivePage: reloadPages)
+            try await rebuildRules(reloadPages: reloadPages, versions: versions)
         } catch let error as ContentBlockerUpdateError {
             throw error
         } catch {
             throw ContentBlockerUpdateError.invalidResponse
         }
+    }
+
+    /// 从缓存的启用规则源、启用的自定义规则与白名单重建规则。
+    func rebuildRules(reloadPages: Bool = true) async throws {
+        var versions: [String] = []
+        for definition in Self.sourceDefinitions {
+            if let text = cachedSourceText(key: definition.key),
+               let version = ContentBlockerRuleBuilder.filterVersion(from: text) {
+                versions.append("\(definition.key):\(version)")
+            }
+        }
+        try await rebuildRules(reloadPages: reloadPages, versions: versions)
+    }
+
+    private func rebuildRules(reloadPages: Bool, versions: [String]) async throws {
+        let enabledKeys = Set(ContentBlockManager.shared.filterManager.enabledSourceKeys())
+        var texts: [String] = []
+        for definition in Self.sourceDefinitions where enabledKeys.contains(definition.key) {
+            if let text = cachedSourceText(key: definition.key) {
+                texts.append(text)
+            }
+        }
+        texts.append(contentsOf: customRuleTexts())
+        texts.append(contentsOf: whitelistExceptionTexts())
+
+        guard !texts.isEmpty,
+              let jsonData = ContentBlockerRuleBuilder.chunkedJSONData(from: texts),
+              let chunks = parseRuleChunks(from: jsonData),
+              !chunks.isEmpty
+        else {
+            throw ContentBlockerUpdateError.invalidFilter
+        }
+        let compiledChunks = await compileChunks(
+            chunks: chunks,
+            primaryIdentifier: Self.primaryIdentifier
+        )
+        guard !compiledChunks.isEmpty else {
+            throw ContentBlockerUpdateError.compileFailed
+        }
+
+        self.chunks = compiledChunks
+        ruleCount = chunks.reduce(0) { $0 + $1.count }
+        updatedAt = Date()
+        filterVersion = versions.joined(separator: " / ")
+        lastLoadError = nil
+        isReady = true
+        persistDownloadedRules(
+            jsonData,
+            metadata: RuleMetadata(
+                updatedAt: updatedAt ?? Date(),
+                version: filterVersion ?? "",
+                ruleCount: ruleCount
+            )
+        )
+        ContentBlockManager.shared.statisticsManager.updateRuleCount(
+            ruleCount,
+            filterCount: enabledKeys.count
+        )
+        postChange(reloadActivePage: reloadPages)
     }
 
     private func loadRules() async {
@@ -304,9 +337,12 @@ final class ContentBlockerService {
     }
 
     private var needsAutoUpdate: Bool {
+        guard let interval = ContentBlockManager.shared.updateSchedule.interval else {
+            return false
+        }
         if let updatedAt {
             return Date().timeIntervalSince(updatedAt)
-                >= Self.autoUpdateInterval
+                >= interval
         }
         guard let url = Bundle.main.url(
             forResource: "content-blocker-rules",
@@ -320,7 +356,7 @@ final class ContentBlockerService {
             return false
         }
         return Date().timeIntervalSince(modificationDate)
-            >= Self.autoUpdateInterval
+            >= interval
     }
 
     private func installRules(data: Data, fallbackError: String) async {
@@ -330,6 +366,10 @@ final class ContentBlockerService {
             return
         }
         ruleCount = chunks.reduce(0) { $0 + $1.count }
+        ContentBlockManager.shared.statisticsManager.updateRuleCount(
+            ruleCount,
+            filterCount: ContentBlockManager.shared.filterManager.enabledSourceKeys().count
+        )
         let compiledChunks = await compileChunks(
             chunks: chunks,
             primaryIdentifier: Self.primaryIdentifier
@@ -467,6 +507,75 @@ final class ContentBlockerService {
         if let metadataData = try? JSONEncoder().encode(metadata) {
             try? metadataData.write(to: metadataURL, options: .atomic)
         }
+    }
+
+    private func cacheSourceText(_ text: String, key: String) {
+        try? fileManager.createDirectory(
+            at: sourcesDirectory,
+            withIntermediateDirectories: true
+        )
+        let url = sourcesDirectory.appendingPathComponent(
+            "\(key).txt",
+            isDirectory: false
+        )
+        try? text.data(using: .utf8)?.write(to: url, options: .atomic)
+    }
+
+    private func cachedSourceText(key: String) -> String? {
+        let url = sourcesDirectory.appendingPathComponent(
+            "\(key).txt",
+            isDirectory: false
+        )
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// 清除已下载的规则源与编译产物，回到内置规则。
+    func clearSourceCache() async {
+        try? fileManager.removeItem(at: sourcesDirectory)
+        try? fileManager.removeItem(at: downloadedRulesURL)
+        try? fileManager.removeItem(at: metadataURL)
+        chunks = []
+        isReady = false
+        await loadRules()
+    }
+
+    /// 启用的自定义规则转成 AdGuard 语法文本（复杂类型无法经 WKContentRuleList 生效）。
+    private func customRuleTexts() -> [String] {
+        ContentBlockManager.shared.customManager.allRules()
+            .filter { $0.isEnabled && $0.type.isSystemBlockable }
+            .map { rule -> String? in
+                let content = rule.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !content.isEmpty else { return nil }
+                switch rule.type {
+                case .whitelist:
+                    let domain = content
+                        .replacingOccurrences(of: "||", with: "")
+                        .replacingOccurrences(of: "^", with: "")
+                    return "@@||\(domain)^"
+                default:
+                    return content
+                }
+            }
+            .compactMap { $0 }
+    }
+
+    /// 白名单的域名/子域名模式转成例外规则；通配符与正则由 applyRules 运行时匹配。
+    private func whitelistExceptionTexts() -> [String] {
+        ContentBlockManager.shared.whitelistManager.allPatterns()
+            .filter { $0.isEnabled }
+            .compactMap { pattern -> String? in
+                switch pattern.matchType {
+                case .domain, .subdomain:
+                    let domain = pattern.pattern
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .lowercased()
+                    guard !domain.isEmpty else { return nil }
+                    return "@@||\(domain)^"
+                case .wildcard, .regex:
+                    return nil
+                }
+            }
     }
 
     private func loadMetadata() -> RuleMetadata? {
