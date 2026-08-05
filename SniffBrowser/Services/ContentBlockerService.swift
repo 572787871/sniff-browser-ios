@@ -119,7 +119,8 @@ final class ContentBlockerService {
         let data = try? Data(contentsOf: url),
         let object = try? JSONSerialization.jsonObject(with: data),
         let rules = object as? [[String: Any]],
-        !rules.isEmpty
+        !rules.isEmpty,
+        let jsonString = String(data: data, encoding: .utf8)
         else {
             lastLoadError = "无法读取内置广告过滤规则。"
             return
@@ -127,27 +128,47 @@ final class ContentBlockerService {
 
         bundledRuleCount = rules.count
         var compiledChunks: [RuleChunk] = []
-        let chunkCount = Int(
-            ceil(Double(rules.count) / Double(chunkSize))
-        )
-        for index in 0..<chunkCount {
-            let slice = Array(
-                rules.dropFirst(index * chunkSize).prefix(chunkSize)
-            )
-            guard let jsonData = try? JSONSerialization.data(withJSONObject: slice),
-                  let jsonString = String(data: jsonData, encoding: .utf8)
-            else {
-                continue
-            }
-            let identifier = "com.sniffbrowser.adblock.\(index)"
-            if let ruleList = await compile(jsonString, identifier: identifier) {
-                compiledChunks.append(
-                    RuleChunk(
-                        identifier: identifier,
-                        ruleList: ruleList,
-                        ruleCount: slice.count
-                    )
+        let primaryIdentifier = "com.sniffbrowser.adblock"
+        if let ruleList = await compile(
+            jsonString,
+            identifier: primaryIdentifier
+        ) {
+            compiledChunks.append(
+                RuleChunk(
+                    identifier: primaryIdentifier,
+                    ruleList: ruleList,
+                    ruleCount: rules.count
                 )
+            )
+        } else {
+            lastLoadError = "整份规则编译失败，正在尝试分块加载。"
+            let chunkCount = Int(
+                ceil(Double(rules.count) / Double(chunkSize))
+            )
+            for index in 0..<chunkCount {
+                let slice = Array(
+                    rules.dropFirst(index * chunkSize).prefix(chunkSize)
+                )
+                guard let jsonData = try? JSONSerialization.data(
+                    withJSONObject: slice
+                ),
+                let sliceString = String(data: jsonData, encoding: .utf8)
+                else {
+                    continue
+                }
+                let identifier = "\(primaryIdentifier).chunk.\(index)"
+                if let ruleList = await compile(
+                    sliceString,
+                    identifier: identifier
+                ) {
+                    compiledChunks.append(
+                        RuleChunk(
+                            identifier: identifier,
+                            ruleList: ruleList,
+                            ruleCount: slice.count
+                        )
+                    )
+                }
             }
         }
         chunks = compiledChunks

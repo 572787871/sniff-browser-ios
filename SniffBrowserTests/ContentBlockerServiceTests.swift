@@ -3,7 +3,7 @@ import XCTest
 @testable import SniffBrowser
 
 final class ContentBlockerServiceTests: XCTestCase {
-    func testBundledRulesAreValidAndCompileInChunks() async throws {
+    func testBundledRulesAreValidAndCompile() async throws {
         let bundle = Bundle(for: ContentBlockerService.self)
         let url = try XCTUnwrap(
             bundle.url(forResource: "content-blocker-rules", withExtension: "json")
@@ -16,22 +16,12 @@ final class ContentBlockerServiceTests: XCTestCase {
         XCTAssertLessThanOrEqual(rules.count, 50_000)
 
         let store = try XCTUnwrap(WKContentRuleListStore.default())
-        let chunkSize = 100
-        let chunkCount = Int(ceil(Double(rules.count) / Double(chunkSize)))
-        var failedChunks: [Int] = []
-        for index in 0..<chunkCount {
-            let slice = Array(rules.dropFirst(index * chunkSize).prefix(chunkSize))
-            let jsonData = try JSONSerialization.data(withJSONObject: slice)
-            let json = try XCTUnwrap(String(data: jsonData, encoding: .utf8))
-            let identifier = "test.adblock.\(UUID().uuidString).\(index)"
-            let ruleList = await compile(json, identifier: identifier, store: store)
-            if ruleList == nil {
-                failedChunks.append(index)
-            }
-        }
-        XCTAssertTrue(
-            failedChunks.isEmpty,
-            "内置规则分块编译失败：\(failedChunks)"
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let identifier = "test.adblock.\(UUID().uuidString)"
+        let ruleList = await compile(json, identifier: identifier, store: store)
+        XCTAssertNotNil(
+            ruleList,
+            "内置规则未能通过 WKContentRuleList 编译"
         )
     }
 

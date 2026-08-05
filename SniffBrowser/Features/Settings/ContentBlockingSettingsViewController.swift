@@ -99,7 +99,7 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
             let count = service.bundledRuleCount
             let rulesText = count > 0 ? "\(count) 条规则" : "规则加载中"
             let errorText = service.lastLoadError.map { "（\($0)）" } ?? ""
-            return "使用内置的 \(rulesText) 广告过滤规则\(errorText)，规则来源：Ka-Block（MIT 协议）。"
+            return "使用内置的 \(rulesText) 广告过滤规则\(errorText)，规则来源：EasyList（CC BY-SA 3.0）。"
         }
         return "白名单网站不会执行广告过滤，刷新后生效。"
     }
