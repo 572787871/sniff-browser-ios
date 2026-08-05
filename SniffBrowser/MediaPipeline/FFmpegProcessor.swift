@@ -177,7 +177,8 @@ struct BundledFFmpegProcessor: FFmpegProcessor {
         }
         var status: Int32 = 0
         waitpid(pid, &status, 0)
-        guard WIFEXITED(status), WEXITSTATUS(status) == 0 else {
+        // 正常退出且退出码为 0 时 waitpid 返回 status == 0。
+        guard status == 0 else {
             throw MediaProcessError.metadataFailed
         }
     }
