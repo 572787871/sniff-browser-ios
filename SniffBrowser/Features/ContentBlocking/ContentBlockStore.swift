@@ -334,12 +334,18 @@ final class StatisticsManager {
     }
 
     func recordBlockedRequest() {
+        recordBlockedElements(1)
+    }
+
+    func recordBlockedElements(_ count: Int) {
+        guard count > 0 else { return }
         if record.dayKey != Self.todayKey() {
             record.dayKey = Self.todayKey()
             record.todayBlocked = 0
+            record.todayPageLoads = 0
         }
-        record.todayBlocked += 1
-        record.totalBlocked += 1
+        record.todayBlocked += count
+        record.totalBlocked += count
         persist()
     }
 

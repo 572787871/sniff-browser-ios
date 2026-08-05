@@ -1,6 +1,31 @@
 import UIKit
 import WebKit
 
+/// 接收页面 JS 上报的元素隐藏计数。
+final class BlockedElementCounterHandler: NSObject, WKScriptMessageHandler {
+    static let messageHandlerName = "sniffblockerCounter"
+
+    private let onCount: (Int) -> Void
+
+    init(onCount: @escaping (Int) -> Void) {
+        self.onCount = onCount
+        super.init()
+    }
+
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
+        guard message.name == Self.messageHandlerName,
+              let count = message.body as? Int,
+              count > 0
+        else {
+            return
+        }
+        onCount(count)
+    }
+}
+
 extension BrowserViewController: WKNavigationDelegate {
   func webView(
     _ webView: WKWebView,
@@ -87,6 +112,9 @@ extension BrowserViewController: WKNavigationDelegate {
     if !tab.isPrivate {
       ContentBlockManager.shared.statisticsManager.recordPageLoad()
     }
+    if !tab.isPrivate {
+      injectElementHideCounter(into: webView, tab: tab)
+    }
     WebPageThemeColorService.requestCurrentTheme(in: webView)
     resourceSniffingService.requestIncrementalScan(tabID: tab.id, reason: "didFinish")
     if webView === activeWebView {
@@ -96,6 +124,75 @@ extension BrowserViewController: WKNavigationDelegate {
       }
     }
   }
+
+  /// 在页面加载完成后统计被 css-display-none 规则隐藏的广告元素数量。
+  private func injectElementHideCounter(
+    into webView: WKWebView,
+    tab: BrowserTab
+  ) {
+    guard ContentBlockerService.shared.isEnabled else { return }
+    guard let host = webView.url?.host else { return }
+    let selectors = ContentBlockerService.shared.cosmeticSelectors(for: host)
+    guard !selectors.isEmpty else { return }
+
+    let identifier = ObjectIdentifier(webView)
+    if elementHideInjected[identifier] != true {
+      let handler = BlockedElementCounterHandler { count in
+        Task { @MainActor in
+          ContentBlockManager.shared.statisticsManager.recordBlockedElements(count)
+        }
+      }
+      blockedElementCounterHandler = handler
+      webView.configuration.userContentController.add(
+        handler,
+        name: BlockedElementCounterHandler.messageHandlerName
+      )
+      elementHideInjected[identifier] = true
+    }
+
+    guard let data = try? JSONSerialization.data(withJSONObject: selectors),
+          let selectorsJSON = String(data: data, encoding: .utf8)
+    else {
+      return
+    }
+    let script = Self.elementHideCounterScript.replacingOccurrences(
+      of: "__SELECTORS__",
+      with: selectorsJSON
+    )
+    webView.evaluateJavaScript(script)
+  }
+
+  private static let elementHideCounterScript = """
+  (function() {
+    var selectors = __SELECTORS__;
+    var prev = 0;
+    function run() {
+      var n = 0;
+      for (var i = 0; i < selectors.length; i++) {
+        try {
+          var els = document.querySelectorAll(selectors[i]);
+          for (var j = 0; j < els.length; j++) {
+            var el = els[j];
+            var style = window.getComputedStyle(el);
+            if (el.getClientRects().length === 0
+                || style.display === 'none'
+                || style.visibility === 'hidden') {
+              n++;
+            }
+          }
+        } catch (e) {}
+      }
+      var delta = n - prev;
+      prev = n;
+      if (delta > 0) {
+        window.webkit.messageHandlers.sniffblockerCounter.postMessage(delta);
+      }
+    }
+    run();
+    setTimeout(run, 2000);
+    setTimeout(run, 5000);
+  })();
+  """
 
   func webView(
     _ webView: WKWebView,

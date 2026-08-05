@@ -25,6 +25,13 @@ enum ContentBlockerRuleBuilder {
             + "0123456789#._->+~[]=\"'^*$ ,"
     )
 
+    /// 站点补充规则：与 scripts/build-content-blocker.py 的 SITE_SUPPLEMENTS 保持一致，
+    /// 保证运行时更新/导入后仍包含这些站点级元素隐藏规则。
+    private static let siteSupplements: [(domain: String, selector: String)] = [
+        ("hl365.com", ".article-ads-btn"),
+        ("hl365.com", "[id^=\"article-top-banner\"]"),
+    ]
+
     static func buildJSONData(from filterTexts: [String]) -> Data? {
         guard let rules = buildRules(from: filterTexts), !rules.isEmpty else {
             return nil
@@ -87,6 +94,14 @@ enum ContentBlockerRuleBuilder {
                 guard isValidSelector(trimmed) else { continue }
                 rules.append(cosmeticRule(domains: domains, selector: trimmed))
             }
+        }
+        for supplement in siteSupplements {
+            rules.append(
+                cosmeticRule(
+                    domains: [supplement.domain],
+                    selector: supplement.selector
+                )
+            )
         }
         for domain in exceptionHosts.sorted() {
             rules.append(hostRule(for: domain, action: "ignore-previous-rules"))

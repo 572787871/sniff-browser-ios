@@ -41,6 +41,8 @@ final class BrowserViewController: UIViewController {
   var lastRequestedURLs: [UUID: URL] = [:]
   weak var tabOverviewController: TabOverviewViewController?
   var pageChromeForegroundStyle: BrowserChromeForegroundStyle?
+  var elementHideInjected: [ObjectIdentifier: Bool] = [:]
+  var blockedElementCounterHandler: BlockedElementCounterHandler?
   private var lifecycleObservers: [NSObjectProtocol] = []
   private var activeResourceObservationToken: UUID?
 

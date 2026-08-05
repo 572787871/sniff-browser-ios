@@ -72,6 +72,7 @@ final class ContentBlockerService {
     private let chunkSize = 2_000
     private let fileManager = FileManager.default
     private var chunks: [RuleChunk] = []
+    private var cosmeticRules: [(domains: [String]?, selector: String)] = []
     private var addedRuleListsByTab: [UUID: Set<String>] = [:]
     private var loadTask: Task<Void, Never>?
 
@@ -110,6 +111,7 @@ final class ContentBlockerService {
     private(set) var updatedAt: Date?
     private(set) var filterVersion: String?
     private(set) var isUpdating = false
+    private static let maxGlobalCountSelectors = 350
 
     var isEnabled: Bool {
         preferences.contentBlockingEnabled
@@ -168,6 +170,28 @@ final class ContentBlockerService {
 
     func forgetTab(_ id: UUID) {
         addedRuleListsByTab.removeValue(forKey: id)
+    }
+
+    /// 当前页面 host 对应的元素隐藏选择器：站点限定选择器全量 + 全局选择器上限内。
+    func cosmeticSelectors(for host: String?) -> [String] {
+        let hostScoped = cosmeticRules.compactMap { rule -> String? in
+            guard let domains = rule.domains else { return nil }
+            return matches(host: host, domains: domains) ? rule.selector : nil
+        }
+        let global = cosmeticRules
+            .filter { $0.domains == nil }
+            .prefix(Self.maxGlobalCountSelectors)
+            .map(\.selector)
+        return Array(Set(hostScoped + global))
+    }
+
+    private func matches(host: String?, domains: [String]) -> Bool {
+        guard let host else { return false }
+        let normalized = host.lowercased()
+        return domains.contains { domain in
+            let domain = domain.lowercased()
+            return normalized == domain || normalized.hasSuffix("." + domain)
+        }
     }
 
     /// 按当前开关与白名单状态，在 WebView 上添加或移除规则。
@@ -366,6 +390,7 @@ final class ContentBlockerService {
         primaryIdentifier: String
     ) async -> [RuleChunk] {
         var compiledChunks: [RuleChunk] = []
+        collectCosmeticRules(from: chunks)
         for (index, rules) in chunks.enumerated() {
             guard let chunkData = try? JSONSerialization.data(
                 withJSONObject: rules
@@ -396,6 +421,23 @@ final class ContentBlockerService {
             }
         }
         return compiledChunks
+    }
+
+    private func collectCosmeticRules(from chunks: [[[String: Any]]]) {
+        var collected: [(domains: [String]?, selector: String)] = []
+        for chunk in chunks {
+            for rule in chunk {
+                guard let action = rule["action"] as? [String: Any],
+                      action["type"] as? String == "css-display-none",
+                      let selector = action["selector"] as? String
+                else {
+                    continue
+                }
+                let domains = (rule["trigger"] as? [String: Any])?["if-domain"] as? [String]
+                collected.append((domains: domains, selector: selector))
+            }
+        }
+        cosmeticRules = collected
     }
 
     private func compileFallbackChunks(

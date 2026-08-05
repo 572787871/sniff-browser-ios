@@ -209,7 +209,7 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
     func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         switch section {
         case 1:
-            return "仅计数被拦截的主框架导航；子资源与元素隐藏拦截不包含在内（系统限制）。"
+            return "统计被隐藏的广告元素与拦截的主框架导航，为近似值。"
         default:
             return nil
         }
