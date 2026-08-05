@@ -95,6 +95,50 @@ struct AVFoundationMediaProcessors: MetadataExtractor, ThumbnailGenerator {
     }
 }
 
+/// HLS 自包含包（.sniffhls）→ MP4 的 AVFoundation 兜底：
+/// 按顺序拼接分片（fMP4 或 TS），再用 passthrough 导出 MP4。
+/// 生产环境优先走 FFmpeg；此兜底保证无 FFmpeg 构建也能产出最终文件。
+struct HLSBundleAVRemuxer {
+    func remuxHLSBundle(directory: URL, output: URL) async throws {
+        let mediaDirectory = directory.appendingPathComponent("media", isDirectory: true)
+        let supportedExtensions = ["mp4", "ts", "m4s", "aac", "m4a"]
+        let files = try FileManager.default
+            .contentsOfDirectory(at: mediaDirectory, includingPropertiesForKeys: nil)
+            .filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        guard !files.isEmpty else {
+            throw MediaProcessError.remuxFailed
+        }
+
+        let sourceExtension = files.first?.pathExtension.lowercased() ?? "mp4"
+        let concatURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).\(sourceExtension)")
+        defer { try? FileManager.default.removeItem(at: concatURL) }
+
+        FileManager.default.createFile(atPath: concatURL.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: concatURL)
+        for file in files {
+            guard let data = try? Data(contentsOf: file) else { continue }
+            try handle.write(contentsOf: data)
+        }
+        try handle.close()
+
+        let asset = AVURLAsset(url: concatURL)
+        guard let session = AVAssetExportSession(
+            asset: asset,
+            presetName: AVAssetExportPresetPassthrough
+        ) else {
+            throw MediaProcessError.remuxFailed
+        }
+        session.outputURL = output
+        session.outputFileType = .mp4
+        try await session.export()
+        guard FileManager.default.fileExists(atPath: output.path) else {
+            throw MediaProcessError.remuxFailed
+        }
+    }
+}
+
 // MARK: - FileStorageManager
 
 /// 最终文件存储：Documents/Videos（“文件”App 中显示为 SniffBrowser/Videos）。

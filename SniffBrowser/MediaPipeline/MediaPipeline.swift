@@ -10,6 +10,7 @@ final class MediaPipeline {
         processor: FFmpegProcessorProvider.current
     )
     private let avFallback = AVFoundationMediaProcessors()
+    private let hlsAVRemuxer = HLSBundleAVRemuxer()
     private let fileStorage = FileStorageManager.shared
     private let cache = CacheManager.shared
 
@@ -26,8 +27,11 @@ final class MediaPipeline {
         guard FileManager.default.fileExists(
             atPath: sourceURL.path,
             isDirectory: &isDirectory
-        ), !isDirectory.boolValue
-        else {
+        ) else {
+            return nil
+        }
+        let sourceIsDirectory = isDirectory.boolValue
+        if sourceIsDirectory, preferredType != .hls {
             return nil
         }
 
@@ -40,7 +44,32 @@ final class MediaPipeline {
             var finalSource = sourceURL
             var finalExtension = type.preferredFileExtension
 
-            switch type {
+            if type == .hls, sourceIsDirectory {
+                // 自包含 HLS 包（.sniffhls）→ 单个 MP4。
+                let remuxed = workDirectory
+                    .appendingPathComponent("\(UUID().uuidString).mp4")
+                let indexURL = sourceURL.appendingPathComponent("index.m3u8")
+                let ffmpegSucceeded = (try? await processors.remuxToMP4(
+                    source: indexURL,
+                    output: remuxed
+                )) != nil
+                let avSucceeded = ffmpegSucceeded
+                    ? false
+                    : (try? await hlsAVRemuxer.remuxHLSBundle(
+                        directory: sourceURL,
+                        output: remuxed
+                    )) != nil
+                guard (ffmpegSucceeded || avSucceeded),
+                      FileManager.default.fileExists(atPath: remuxed.path)
+                else {
+                    cache.removeWorkDirectory(taskID: taskID)
+                    return nil
+                }
+                finalSource = remuxed
+                finalExtension = "mp4"
+                try? FileManager.default.removeItem(at: sourceURL)
+            } else {
+                switch type {
             case .mp4, .m4v, .mov, .ts, .flv, .hls, .dash:
                 // 无损 passthrough 转封装为 MP4；失败则保留原文件。
                 let remuxed = workDirectory
@@ -61,6 +90,7 @@ final class MediaPipeline {
                 finalExtension = type.rawValue
             case .audio, .unknown:
                 finalExtension = type.preferredFileExtension
+                }
             }
 
             let info = try await extractMetadata(from: finalSource)
