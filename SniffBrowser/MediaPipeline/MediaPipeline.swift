@@ -9,6 +9,7 @@ final class MediaPipeline {
     private let processors = FFmpegMediaProcessors(
         processor: FFmpegProcessorProvider.current
     )
+    private let avFallback = AVFoundationMediaProcessors()
     private let fileStorage = FileStorageManager.shared
     private let cache = CacheManager.shared
 
@@ -62,17 +63,11 @@ final class MediaPipeline {
                 finalExtension = type.preferredFileExtension
             }
 
-            let info = try await processors.extract(from: finalSource)
-            let thumbnailURL = workDirectory
-                .appendingPathComponent("\(UUID().uuidString).jpg")
-            let thumbnailData: Data? = if (try? await processors.generate(
+            let info = try await extractMetadata(from: finalSource)
+            let thumbnail = try await generateThumbnail(
                 from: finalSource,
-                output: thumbnailURL
-            )) != nil {
-                try? Data(contentsOf: thumbnailURL)
-            } else {
-                nil
-            }
+                taskID: taskID
+            )
             let stored = try fileStorage.storeFinalFile(
                 from: finalSource,
                 fileName: fileName,
@@ -82,7 +77,8 @@ final class MediaPipeline {
             return FinalMedia(
                 url: stored,
                 fileName: stored.lastPathComponent,
-                thumbnailData: thumbnailData,
+                thumbnailData: thumbnail?.data,
+                thumbnailLocalPath: thumbnail?.relativePath,
                 info: info
             )
         } catch {
@@ -94,5 +90,38 @@ final class MediaPipeline {
     /// 启动时清理遗留工作目录（任务已不存在或已完成的）。
     func sweepLeftoverWorkDirectories(activeTaskIDs: Set<UUID>) {
         cache.sweepLeftovers(activeTaskIDs: activeTaskIDs)
+    }
+
+    /// 元数据：优先 FFmpeg，不可用时 AVFoundation 兜底（MP4/MOV/M4V 均可用）。
+    private func extractMetadata(from url: URL) async throws -> MediaAssetInfo {
+        if let info = try? await processors.extract(from: url) {
+            return info
+        }
+        return try await avFallback.extract(from: url)
+    }
+
+    private func generateThumbnail(
+        from url: URL,
+        taskID: UUID
+    ) async throws -> (data: Data, relativePath: String)? {
+        let directory = thumbnailsDirectory
+        try? FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        let output = directory.appendingPathComponent("\(taskID.uuidString).jpg")
+        if (try? await processors.generate(from: url, output: output)) == nil {
+            try? await avFallback.generate(from: url, output: output)
+        }
+        guard let data = try? Data(contentsOf: output) else { return nil }
+        return (data, "Thumbnails/\(output.lastPathComponent)")
+    }
+
+    private var thumbnailsDirectory: URL {
+        let documents = FileManager.default.urls(
+            for: .documentDirectory,
+            in: .userDomainMask
+        ).first!
+        return documents.appendingPathComponent("Thumbnails", isDirectory: true)
     }
 }

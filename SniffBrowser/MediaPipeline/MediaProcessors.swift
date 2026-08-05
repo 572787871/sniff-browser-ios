@@ -1,4 +1,6 @@
+import AVFoundation
 import Foundation
+import UIKit
 
 // MARK: - 处理器协议
 
@@ -41,6 +43,55 @@ struct FFmpegMediaProcessors: RemuxProcessor, MuxProcessor, MetadataExtractor, T
 
     func generate(from url: URL, output: URL) async throws {
         try await processor.generateThumbnail(from: url, output: output)
+    }
+}
+
+/// AVFoundation 兜底：仅在 FFmpeg 不可用时用于直接可播放格式（MP4/MOV/M4V）
+/// 的元数据与封面，保证这些格式在任意构建下都能产出最终文件。
+struct AVFoundationMediaProcessors: MetadataExtractor, ThumbnailGenerator {
+    func extract(from url: URL) async throws -> MediaAssetInfo {
+        let asset = AVURLAsset(url: url)
+        let duration = try await asset.load(.duration).seconds
+        let tracks = try await asset.loadTracks(withMediaType: .video)
+        let size: Int64 = (try? FileManager.default
+            .attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
+        var width = 0
+        var height = 0
+        var bitrate = 0.0
+        if let track = tracks.first {
+            let naturalSize = try await track.load(.naturalSize)
+            let transform = try await track.load(.preferredTransform)
+            let rotated = transform.a == 0 && transform.b != 0
+            width = Int(rotated ? naturalSize.height : naturalSize.width)
+            height = Int(rotated ? naturalSize.width : naturalSize.height)
+            let dataRate: Float = try await track.load(.estimatedDataRate)
+            bitrate = Double(dataRate)
+        }
+        guard !duration.isNaN, duration > 0 else {
+            throw MediaProcessError.metadataFailed
+        }
+        return MediaAssetInfo(
+            duration: duration,
+            width: width,
+            height: height,
+            estimatedBitrate: bitrate,
+            fileSizeBytes: size
+        )
+    }
+
+    func generate(from url: URL, output: URL) async throws {
+        let asset = AVURLAsset(url: url)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 480, height: 480)
+        let cgImage = try generator.copyCGImage(
+            at: CMTime(seconds: 1, preferredTimescale: 600),
+            actualTime: nil
+        )
+        guard let data = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.8) else {
+            throw MediaProcessError.thumbnailFailed
+        }
+        try data.write(to: output, options: .atomic)
     }
 }
 

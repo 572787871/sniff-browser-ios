@@ -108,7 +108,8 @@ final class DownloadManagerViewController: BaseViewController {
                 let task = nextTasks[indexPath.section]
                 cell.configure(
                     task: task,
-                    fileURL: task.state == .completed ? manager?.fileURL(for: task.id) : nil
+                    fileURL: task.state == .completed ? manager?.fileURL(for: task.id) : nil,
+                    localThumbnailURL: manager?.thumbnailFileURL(for: task.id)
                 )
             }
         }
@@ -414,7 +415,8 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
         let task = displayedTasks[indexPath.section]
         cell.configure(
             task: task,
-            fileURL: task.state == .completed ? manager?.fileURL(for: task.id) : nil
+            fileURL: task.state == .completed ? manager?.fileURL(for: task.id) : nil,
+            localThumbnailURL: manager?.thumbnailFileURL(for: task.id)
         )
         return cell
     }
@@ -595,8 +597,18 @@ private final class DownloadTaskCell: UITableViewCell {
         iconView.image = nil
     }
 
-    func configure(task: DownloadTaskModel, fileURL: URL?) {
-        updateArtworkSourceIfNeeded(for: task, fileURL: fileURL)
+    func configure(task: DownloadTaskModel, fileURL: URL?, localThumbnailURL: URL?) {
+        if let localThumbnailURL,
+           FileManager.default.fileExists(atPath: localThumbnailURL.path),
+           let image = UIImage(contentsOfFile: localThumbnailURL.path) {
+            iconView.image = image
+            iconView.contentMode = .scaleAspectFill
+            iconView.tintColor = nil
+            iconView.backgroundColor = AppColors.tertiarySurface
+            hasArtwork = true
+        } else {
+            updateArtworkSourceIfNeeded(for: task, fileURL: fileURL)
+        }
         nameLabel.text = task.fileName
         var statusParts = [task.state.localizedTitle]
         if task.state == .failed,
@@ -639,6 +651,19 @@ private final class DownloadTaskCell: UITableViewCell {
         } else {
             sizeLabel.text = "\(downloaded) / 大小未知"
         }
+        if task.state == .completed {
+            var detailParts: [String] = []
+            if let width = task.mediaWidth, let height = task.mediaHeight,
+               width > 0, height > 0 {
+                detailParts.append("\(width)×\(height)")
+            }
+            if let duration = task.mediaDuration, duration.isFinite, duration > 0 {
+                detailParts.append(Self.durationText(duration))
+            }
+            if !detailParts.isEmpty {
+                sizeLabel.text = (sizeLabel.text ?? "") + " · " + detailParts.joined(separator: " · ")
+            }
+        }
 
         if let progress = task.progress {
             progressView.isHidden = false
@@ -676,6 +701,17 @@ private final class DownloadTaskCell: UITableViewCell {
             }
         }
         accessibilityLabel = "\(task.fileName)，\(task.state.localizedTitle)，\(sizeLabel.text ?? "")"
+    }
+
+    private static func durationText(_ seconds: TimeInterval) -> String {
+        let total = Int(seconds.rounded())
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let secs = total % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, secs)
+        }
+        return String(format: "%d:%02d", minutes, secs)
     }
 
     private func updateArtworkSourceIfNeeded(

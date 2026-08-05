@@ -58,6 +58,11 @@ struct DownloadTaskModel: Identifiable, Codable, Hashable, Sendable {
     var updatedAt: Date
     var completedAt: Date?
     var destinationRelativePath: String?
+    var thumbnailLocalPath: String?
+    var mediaDuration: Double?
+    var mediaWidth: Int?
+    var mediaHeight: Int?
+    var mediaBitrate: Double?
     var errorCode: String?
     var errorDescription: String?
     var retryCount: Int
@@ -103,6 +108,11 @@ struct DownloadTaskModel: Identifiable, Codable, Hashable, Sendable {
         updatedAt: Date = Date(),
         completedAt: Date? = nil,
         destinationRelativePath: String? = nil,
+        thumbnailLocalPath: String? = nil,
+        mediaDuration: Double? = nil,
+        mediaWidth: Int? = nil,
+        mediaHeight: Int? = nil,
+        mediaBitrate: Double? = nil,
         errorCode: String? = nil,
         errorDescription: String? = nil,
         retryCount: Int = 0,
@@ -131,6 +141,11 @@ struct DownloadTaskModel: Identifiable, Codable, Hashable, Sendable {
         self.updatedAt = updatedAt
         self.completedAt = completedAt
         self.destinationRelativePath = destinationRelativePath
+        self.thumbnailLocalPath = thumbnailLocalPath
+        self.mediaDuration = mediaDuration
+        self.mediaWidth = mediaWidth
+        self.mediaHeight = mediaHeight
+        self.mediaBitrate = mediaBitrate
         self.errorCode = errorCode
         self.errorDescription = errorDescription
         self.retryCount = retryCount

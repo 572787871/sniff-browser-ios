@@ -182,6 +182,7 @@ struct FinalMedia: Sendable {
     let url: URL
     let fileName: String
     let thumbnailData: Data?
+    let thumbnailLocalPath: String?
     let info: MediaAssetInfo
 }
 

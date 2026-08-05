@@ -92,6 +92,7 @@ final class DownloadCenter: DownloadManaging {
             MediaPipeline.shared.sweepLeftoverWorkDirectories(
                 activeTaskIDs: Set(tasks.map(\.id))
             )
+            resumeInterruptedProcessing()
             scheduleWaitingTasks()
         } catch {
             tasks = []
@@ -297,6 +298,10 @@ final class DownloadCenter: DownloadManaging {
 
     func fileURL(for taskID: UUID) -> URL? {
         storage.fileURL(relativePath: task(id: taskID)?.destinationRelativePath)
+    }
+
+    func thumbnailFileURL(for taskID: UUID) -> URL? {
+        storage.fileURL(relativePath: task(id: taskID)?.thumbnailLocalPath)
     }
 
     func renameCompletedTask(id: UUID, to requestedName: String) throws {
@@ -584,32 +589,35 @@ final class DownloadCenter: DownloadManaging {
         lastProgressEmissionDates[id] = nil
         hlsPreparationTasks[id] = nil
         scheduleWaitingTasks()
-        runPipelinePostProcessing(id: id, storedFile: storedFile)
+        runPipelinePostProcessing(
+            id: id,
+            sourceURL: storedFile.fileURL,
+            resourceType: model.resourceType,
+            fileName: model.fileName
+        )
     }
 
     /// 视频类任务完成后，后台统一走 Media Pipeline 生成最终文件并清理缓存。
     private func runPipelinePostProcessing(
         id: UUID,
-        storedFile: StoredDownloadFile
+        sourceURL: URL,
+        resourceType: ResourceType,
+        fileName: String
     ) {
-        guard let model = task(id: id),
-              [.video, .hls, .audio].contains(model.resourceType)
-        else {
+        guard [.video, .hls, .audio].contains(resourceType) else {
             return
         }
-        let source = storedFile.fileURL
         let preferredType: MediaType
-        switch model.resourceType {
+        switch resourceType {
         case .hls: preferredType = .hls
         case .audio: preferredType = .audio
         default: preferredType = .unknown
         }
-        let fileName = model.fileName
         Task { [weak self] in
             guard let self else { return }
             let final = await MediaPipeline.shared.postProcess(
                 taskID: id,
-                sourceURL: source,
+                sourceURL: sourceURL,
                 preferredType: preferredType,
                 fileName: fileName
             )
@@ -618,9 +626,31 @@ final class DownloadCenter: DownloadManaging {
                 task.fileName = final.fileName
                 task.fileExtension = final.url.pathExtension.lowercased()
                 task.destinationRelativePath = "Videos/\(final.url.lastPathComponent)"
+                task.thumbnailLocalPath = final.thumbnailLocalPath
+                task.mediaDuration = final.info.duration
+                task.mediaWidth = final.info.width
+                task.mediaHeight = final.info.height
+                task.mediaBitrate = final.info.estimatedBitrate
             }
             self.persist(immediately: true)
             self.publish()
+        }
+    }
+
+    /// 启动恢复：完成但尚未进入 Videos 的视频任务，自动继续媒体处理。
+    private func resumeInterruptedProcessing() {
+        for model in tasks where model.state == .completed
+            && [.video, .hls, .audio].contains(model.resourceType)
+            && !(model.destinationRelativePath?.hasPrefix("Videos/") ?? false) {
+            guard let url = storage.fileURL(relativePath: model.destinationRelativePath) else {
+                continue
+            }
+            runPipelinePostProcessing(
+                id: model.id,
+                sourceURL: url,
+                resourceType: model.resourceType,
+                fileName: model.fileName
+            )
         }
     }
 
