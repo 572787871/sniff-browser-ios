@@ -257,12 +257,12 @@ enum DownloadCenterError: LocalizedError, Equatable {
         case .unexpectedHTML: return "服务器返回了网页而不是目标文件，资源可能已失效。"
         case .signedURLExpired: return "资源链接可能已过期，请返回网页重新识别。"
         case .fileOperationFailed: return "文件保存失败，请检查可用存储空间。"
-        case .invalidHLSPlaylist: return "HLS 清单无效或已过期，请返回网页重新识别。"
-        case .invalidHLSKey: return "HLS 解密密钥无效或已过期，请返回网页重新识别。"
-        case .hlsDecryptionFailed: return "视频分片解密失败，该资源可能已过期或使用了不支持的保护格式。"
-        case let .hlsSegmentFailed(index): return "第 \(index) 个视频分片下载失败，请重试。"
-        case .hlsMergeFailed: return "视频分片已下载，但生成本地播放清单失败，请检查存储空间。"
-        case .hlsFinalizationFailed: return "视频分片已下载，但保存可播放视频包失败，请重试。"
+        case .invalidHLSPlaylist: return "视频资源无效或已过期，请返回网页重新识别。"
+        case .invalidHLSKey: return "视频解密信息无效或已过期，请返回网页重新识别。"
+        case .hlsDecryptionFailed: return "视频下载失败，该资源可能已过期或使用了不支持的保护格式。"
+        case let .hlsSegmentFailed(index): return "第 \(index) 个视频片段下载失败，请重试。"
+        case .hlsMergeFailed: return "视频已下载，但保存最终文件失败，请检查存储空间。"
+        case .hlsFinalizationFailed: return "视频已下载，但保存最终文件失败，请重试。"
         }
     }
 }

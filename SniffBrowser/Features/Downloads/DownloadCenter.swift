@@ -89,6 +89,9 @@ final class DownloadCenter: DownloadManaging {
             finishReload()
             publish()
             persist(immediately: true)
+            MediaPipeline.shared.sweepLeftoverWorkDirectories(
+                activeTaskIDs: Set(tasks.map(\.id))
+            )
             scheduleWaitingTasks()
         } catch {
             tasks = []
@@ -581,6 +584,44 @@ final class DownloadCenter: DownloadManaging {
         lastProgressEmissionDates[id] = nil
         hlsPreparationTasks[id] = nil
         scheduleWaitingTasks()
+        runPipelinePostProcessing(id: id, storedFile: storedFile)
+    }
+
+    /// 视频类任务完成后，后台统一走 Media Pipeline 生成最终文件并清理缓存。
+    private func runPipelinePostProcessing(
+        id: UUID,
+        storedFile: StoredDownloadFile
+    ) {
+        guard let model = task(id: id),
+              [.video, .hls, .audio].contains(model.resourceType)
+        else {
+            return
+        }
+        let source = storedFile.fileURL
+        let preferredType: MediaType
+        switch model.resourceType {
+        case .hls: preferredType = .hls
+        case .audio: preferredType = .audio
+        default: preferredType = .unknown
+        }
+        let fileName = model.fileName
+        Task { [weak self] in
+            guard let self else { return }
+            let final = await MediaPipeline.shared.postProcess(
+                taskID: id,
+                sourceURL: source,
+                preferredType: preferredType,
+                fileName: fileName
+            )
+            guard let final else { return }
+            self.updateTask(id: id) { task in
+                task.fileName = final.fileName
+                task.fileExtension = final.url.pathExtension.lowercased()
+                task.destinationRelativePath = "Videos/\(final.url.lastPathComponent)"
+            }
+            self.persist(immediately: true)
+            self.publish()
+        }
     }
 
     private func registerPlan(for model: DownloadTaskModel) {
