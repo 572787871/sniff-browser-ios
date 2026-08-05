@@ -2,6 +2,28 @@ import AVKit
 import QuickLook
 import UIKit
 
+/// iOS 不会把 cell 背景配置里的内缩和圆角同步给左滑按钮，
+/// 这里在布局时修正系统私有的 `UISwipeActionPullView`，
+/// 让左滑操作按钮与圆角卡片同高、同圆角。
+private final class CardSwipeTableView: UITableView {
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard let pullViewClass = NSClassFromString("UISwipeActionPullView") else {
+            return
+        }
+        for subview in subviews where subview.isKind(of: pullViewClass) {
+            let inset: CGFloat = 5
+            var frame = subview.frame
+            frame.origin.y += inset
+            frame.size.height = max(0, frame.height - inset * 2)
+            subview.frame = frame
+            subview.layer.cornerRadius = AppRadius.card
+            subview.layer.cornerCurve = .continuous
+            subview.layer.masksToBounds = true
+        }
+    }
+}
+
 final class DownloadManagerViewController: BaseViewController {
     var onError: ((Error) -> Void)?
     var onBrowseForDownloads: (() -> Void)? {
@@ -47,7 +69,7 @@ final class DownloadManagerViewController: BaseViewController {
     private var navigationMenuTasksHash: Int = 0
 
     private let scopeControl = UISegmentedControl(items: Scope.allCases.map(\.title))
-    private let tableView = UITableView(frame: .zero, style: .insetGrouped)
+    private let tableView = CardSwipeTableView(frame: .zero, style: .insetGrouped)
     private let emptyState = EmptyStateView(
         configuration: .init(
             symbolName: "arrow.down.circle",

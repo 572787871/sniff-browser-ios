@@ -21,6 +21,7 @@ final class BrowserViewController: UIViewController {
   let viewModel: BrowserViewModel
   let tabManager: BrowserTabManager
   let favoriteService: FavoriteService
+  let historyService: HistoryService
   let resourceStore: TabResourceStore
   let resourceSniffingService: WebResourceSniffingService
   let downloadCenter: DownloadCenter
@@ -54,12 +55,14 @@ final class BrowserViewController: UIViewController {
     viewModel: BrowserViewModel,
     tabManager: BrowserTabManager,
     favoriteService: FavoriteService,
+    historyService: HistoryService,
     resourceStore: TabResourceStore,
     downloadCenter: DownloadCenter
   ) {
     self.viewModel = viewModel
     self.tabManager = tabManager
     self.favoriteService = favoriteService
+    self.historyService = historyService
     self.resourceStore = resourceStore
     self.downloadCenter = downloadCenter
     resourceSniffingService = WebResourceSniffingService(
@@ -73,6 +76,7 @@ final class BrowserViewController: UIViewController {
       viewModel: BrowserViewModel(),
       tabManager: BrowserTabManager(),
       favoriteService: .shared,
+      historyService: .shared,
       resourceStore: TabResourceStore(),
       downloadCenter: downloadCenter
     )

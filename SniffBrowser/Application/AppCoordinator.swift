@@ -6,10 +6,12 @@ final class AppCoordinator: NSObject, BrowserRouting {
   private let navigationController: UINavigationController
   private let websiteDataManager = WebsiteDataManager()
   private let favoriteService = FavoriteService.shared
+  private let historyService = HistoryService.shared
   private let downloadCenter = DownloadCenter.shared
   private weak var browserViewController: BrowserViewController?
   private weak var userCenterViewController: UserCenterViewController?
   private var favoriteChangeObserver: NSObjectProtocol?
+  private var historyChangeObserver: NSObjectProtocol?
   private var downloadChangeObserver: NSObjectProtocol?
 
   init(window: UIWindow) {
@@ -18,6 +20,11 @@ final class AppCoordinator: NSObject, BrowserRouting {
     super.init()
     navigationController.delegate = self
     favoriteChangeObserver = favoriteService.observeChanges { [weak self] in
+      Task { @MainActor in
+        self?.refreshUserCenterCounts()
+      }
+    }
+    historyChangeObserver = historyService.observeChanges { [weak self] in
       Task { @MainActor in
         self?.refreshUserCenterCounts()
       }
@@ -36,6 +43,9 @@ final class AppCoordinator: NSObject, BrowserRouting {
   deinit {
     if let favoriteChangeObserver {
       favoriteService.removeChangeObserver(favoriteChangeObserver)
+    }
+    if let historyChangeObserver {
+      historyService.removeChangeObserver(historyChangeObserver)
     }
     if let downloadChangeObserver {
       NotificationCenter.default.removeObserver(downloadChangeObserver)
@@ -115,6 +125,15 @@ final class AppCoordinator: NSObject, BrowserRouting {
       }
       self?.returnToBrowser()
     }
+    controller.onOpenHistoryItem = { [weak self] item in
+      guard self?.browserViewController?.openFavoriteURL(
+        item.url,
+        inNewNormalTab: false
+      ) == true else {
+        return
+      }
+      self?.returnToBrowser()
+    }
     push(controller)
   }
 
@@ -175,7 +194,8 @@ final class AppCoordinator: NSObject, BrowserRouting {
         $0.isHiddenFromDownloadHistory != true
       }.count,
       files: downloadCenter.tasks.filter { $0.state == .completed }.count,
-      favorites: (try? favoriteService.count()) ?? 0
+      favorites: (try? favoriteService.count()) ?? 0,
+      history: (try? historyService.count()) ?? 0
     )
   }
 

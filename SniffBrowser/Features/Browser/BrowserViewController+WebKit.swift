@@ -76,6 +76,9 @@ extension BrowserViewController: WKNavigationDelegate {
       title: webView.title,
       url: webView.url
     )
+    if !tab.isPrivate, let url = webView.url {
+      try? historyService.recordVisit(title: webView.title, url: url)
+    }
     WebPageThemeColorService.requestCurrentTheme(in: webView)
     resourceSniffingService.requestIncrementalScan(tabID: tab.id, reason: "didFinish")
     if webView === activeWebView {
