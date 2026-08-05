@@ -63,7 +63,7 @@ enum MediaTypeDetector {
             }
             // EBML 头（MKV/WebM）
             if bytes[0] == 0x1A, bytes[1] == 0x45, bytes[2] == 0xDF, bytes[3] == 0xA3 {
-                let docType = String(
+                let docType: MediaType = String(
                     data: magicBytes,
                     encoding: .ascii
                 )?.contains("webm") == true ? .webm : .mkv

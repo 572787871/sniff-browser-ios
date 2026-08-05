@@ -19,9 +19,10 @@ struct AVFoundationRemuxProcessor: RemuxProcessor {
         ) else {
             throw MediaProcessError.remuxFailed
         }
+        session.outputURL = output
         session.outputFileType = .mp4
         session.shouldOptimizeForNetworkUse = false
-        try await session.export(to: output, as: .mp4)
+        try await session.export()
         guard FileManager.default.fileExists(atPath: output.path) else {
             throw MediaProcessError.remuxFailed
         }
@@ -77,8 +78,9 @@ struct AVFoundationMuxProcessor: MuxProcessor {
         ) else {
             throw MediaProcessError.muxFailed
         }
+        session.outputURL = output
         session.outputFileType = .mp4
-        try await session.export(to: output, as: .mp4)
+        try await session.export()
         guard FileManager.default.fileExists(atPath: output.path) else {
             throw MediaProcessError.muxFailed
         }
@@ -92,8 +94,8 @@ struct MetadataExtractor {
         let asset = AVURLAsset(url: url)
         let duration = try await asset.load(.duration).seconds
         let tracks = try await asset.loadTracks(withMediaType: .video)
-        let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64)
-            ?? 0
+        let size: Int64 = (try? FileManager.default
+            .attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
 
         var width = 0
         var height = 0
