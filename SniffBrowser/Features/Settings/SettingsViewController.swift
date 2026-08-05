@@ -243,6 +243,30 @@ extension SettingsViewController: UITableViewDataSource, UITableViewDelegate {
                 animated: true
             )
             return
+        case .privacyPolicy:
+            pushStaticContent(
+                title: "隐私政策",
+                segments: SettingsLegalContent.privacyPolicy()
+            )
+            return
+        case .terms:
+            pushStaticContent(
+                title: "使用条款",
+                segments: SettingsLegalContent.terms()
+            )
+            return
+        case .openSourceLicenses:
+            pushStaticContent(
+                title: "开源许可证",
+                segments: SettingsLegalContent.openSourceLicenses()
+            )
+            return
+        case .about:
+            pushStaticContent(
+                title: "关于嗅探浏览器",
+                segments: SettingsLegalContent.about()
+            )
+            return
         default:
             break
         }
@@ -256,6 +280,16 @@ extension SettingsViewController: UITableViewDataSource, UITableViewDelegate {
             }
             navigationController?.pushViewController(detail, animated: true)
         }
+    }
+
+    private func pushStaticContent(
+        title: String,
+        segments: [StaticContentSegment]
+    ) {
+        navigationController?.pushViewController(
+            StaticContentViewController(title: title, segments: segments),
+            animated: true
+        )
     }
 
     private func confirmClearBrowsingData() {
@@ -311,7 +345,8 @@ private final class SettingsDetailViewController: BaseViewController {
         for destination: SettingsViewController.Destination
     ) -> (title: String, symbol: String, message: String)? {
         switch destination {
-        case .searchEngine, .newTabBehavior, .websitePermissions, .contentBlocking:
+        case .searchEngine, .newTabBehavior, .websitePermissions, .contentBlocking,
+             .privacyPolicy, .terms, .openSourceLicenses, .about:
             return nil
         case .appearance:
             return ("外观", "circle.lefthalf.filled", "设置应用外观模式：跟随系统、浅色或深色。")
@@ -321,18 +356,6 @@ private final class SettingsDetailViewController: BaseViewController {
             return nil
         case .storage:
             return ("存储空间", "internaldrive", "文件资料库接入后，此处将显示下载、缓存和缩略图占用。")
-        case .privacyPolicy:
-            return ("隐私政策", "lock.shield", "正式发布前将在此提供完整、可访问的隐私政策。")
-        case .terms:
-            return ("使用条款", "doc.text", "正式发布前将在此提供完整的使用条款。")
-        case .openSourceLicenses:
-            return ("开源许可证", "chevron.left.forwardslash.chevron.right", "当前版本未引入第三方运行时依赖。")
-        case .about:
-            return (
-                "关于嗅探浏览器",
-                "info.circle",
-                "原生 Swift + UIKit 浏览器，当前版本 \(SettingsViewController.appVersion)。"
-            )
         }
     }
 }
