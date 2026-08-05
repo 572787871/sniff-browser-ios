@@ -6,6 +6,9 @@ import Foundation
 /// 最多 50,000 条。这里只保留整域拦截、简单元素隐藏与整域例外，
 /// 一条规则对应一个域名/选择器，与 scripts/build-content-blocker.py 一致。
 enum ContentBlockerRuleBuilder {
+    /// 单个 WKContentRuleList 分块上限，与 scripts/build-content-blocker.py 保持一致。
+    static let maxRulesPerChunk = 45_000
+
     private static let resourceTypes = [
         "image",
         "style-sheet",
@@ -23,6 +26,43 @@ enum ContentBlockerRuleBuilder {
     )
 
     static func buildJSONData(from filterTexts: [String]) -> Data? {
+        guard let rules = buildRules(from: filterTexts), !rules.isEmpty else {
+            return nil
+        }
+        return try? JSONSerialization.data(withJSONObject: rules)
+    }
+
+    /// 与内置规则一致的多分块 JSON：`[[rule...], [rule...]]`，
+    /// 每个分块可单独编译为 WKContentRuleList，突破单列表 50k 上限。
+    static func chunkedJSONData(from filterTexts: [String]) -> Data? {
+        guard let rules = buildRules(from: filterTexts), !rules.isEmpty else {
+            return nil
+        }
+        var chunks: [[[String: Any]]] = []
+        var current: [[String: Any]] = []
+        var currentBytes = 0
+        let maxBytesPerChunk = 8 * 1024 * 1024
+        for rule in rules {
+            let ruleBytes = (
+                try? JSONSerialization.data(withJSONObject: rule)
+            )?.count ?? 0
+            if !current.isEmpty,
+               current.count >= maxRulesPerChunk
+                || currentBytes + ruleBytes > maxBytesPerChunk {
+                chunks.append(current)
+                current = []
+                currentBytes = 0
+            }
+            current.append(rule)
+            currentBytes += ruleBytes
+        }
+        if !current.isEmpty {
+            chunks.append(current)
+        }
+        return try? JSONSerialization.data(withJSONObject: chunks)
+    }
+
+    private static func buildRules(from filterTexts: [String]) -> [[String: Any]]? {
         var hostBlocks: Set<String> = []
         var cosmetics: [(domains: [String]?, selector: String)] = []
         var exceptionHosts: Set<String> = []
@@ -51,7 +91,7 @@ enum ContentBlockerRuleBuilder {
         for domain in exceptionHosts.sorted() {
             rules.append(hostRule(for: domain, action: "ignore-previous-rules"))
         }
-        return try? JSONSerialization.data(withJSONObject: rules)
+        return rules
     }
 
     static func filterVersion(from filterText: String) -> String? {

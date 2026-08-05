@@ -8,8 +8,10 @@ Sources (fetched fresh when no local files are given):
   - AdGuard Chinese (EasyList China + AdGuard Chinese, Safari optimized): id=224
 
 WebKit content blockers reject regex disjunctions (``|``), lookarounds and
-backreferences, and cap each rule list at 50,000 rules. This script therefore
-emits one rule per pattern and keeps the combined list under that limit:
+backreferences, and cap each rule list at 50,000 rules / 10MB. This script
+emits one rule per pattern and chunks the result into multiple rule lists
+(stored as one JSON array of arrays, ``[[rule...], [rule...]]``), so the
+combined coverage can exceed a single list's limits:
   - domain blocks (``||domain^``)
   - path blocks (``||domain/path``, safe subset)
   - simple element hiding (``##selector``, domain-scoped or global)
@@ -20,6 +22,7 @@ Plus a small curated site supplement for known ad containers.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import urllib.request
@@ -30,9 +33,12 @@ SOURCES = {
 }
 OUTPUT_PATH = "SniffBrowser/Resources/content-blocker-rules.json"
 
-# v1 不输出路径规则：控制总规则数与 JSON 体积（贴近 WebKit 10MB 上限），
-# 后续如需可打开并配合多列表分块。
-INCLUDE_PATHS = False
+# 输出路径规则；配合多列表分块，不再受单列表 50k/10MB 上限约束。
+INCLUDE_PATHS = True
+
+# 单个 WKContentRuleList 分块上限（留余量给 WebKit 编译开销）。
+MAX_RULES_PER_LIST = 45_000
+MAX_BYTES_PER_LIST = 8 * 1024 * 1024
 
 RESOURCE_TYPES = [
     "image",
@@ -49,6 +55,7 @@ RESOURCE_TYPES = [
 SITE_SUPPLEMENTS = [
     ("hl365.com", ".article-ads-btn"),
     ("hl365.com", '[id^="article-top-banner"]'),
+    ("hl365.com", ".horizontal-banner"),
 ]
 
 SAFE_SELECTOR_RE = re.compile(r"^[a-zA-Z0-9#._\->+~\[\]=\"'^*$ ,]+$")
@@ -233,6 +240,29 @@ def build_rules(
     return rules
 
 
+def chunk_rules(rules: list[dict]) -> list[list[dict]]:
+    """把规则按条数与估算体积切成多个分块，每个分块可单独编译。"""
+    chunks: list[list[dict]] = []
+    current: list[dict] = []
+    current_bytes = 0
+    for rule in rules:
+        # 估算用与最终写入一致的紧凑序列化，避免分块超限误判。
+        encoded = json.dumps(rule, ensure_ascii=False, separators=(",", ":"))
+        rule_bytes = len(encoded.encode("utf-8")) + 1
+        if current and (
+            len(current) + 1 > MAX_RULES_PER_LIST
+            or current_bytes + rule_bytes > MAX_BYTES_PER_LIST
+        ):
+            chunks.append(current)
+            current = []
+            current_bytes = 0
+        current.append(rule)
+        current_bytes += rule_bytes
+    if current:
+        chunks.append(current)
+    return chunks
+
+
 def main() -> int:
     local_files = sys.argv[1:]
     if local_files:
@@ -259,25 +289,37 @@ def main() -> int:
         exceptions,
         SITE_SUPPLEMENTS,
     )
-    if len(rules) > 50_000:
-        print(
-            f"规则数 {len(rules)} 超过单列表 50,000 上限",
-            file=sys.stderr,
-        )
-        return 1
     if not rules:
         print("没有解析到任何规则", file=sys.stderr)
         return 1
 
+    chunks = chunk_rules(rules)
+    for index, chunk in enumerate(chunks):
+        size = len(
+            json.dumps(
+                chunk,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+        if len(chunk) > MAX_RULES_PER_LIST or size > MAX_BYTES_PER_LIST:
+            print(
+                f"分块 {index} 超出上限: {len(chunk)} 条 / {size} 字节",
+                file=sys.stderr,
+            )
+            return 1
+
+    os.makedirs(os.path.dirname(OUTPUT_PATH) or ".", exist_ok=True)
     with open(OUTPUT_PATH, "w", encoding="utf-8") as handle:
-        json.dump(rules, handle, ensure_ascii=False)
+        json.dump(chunks, handle, ensure_ascii=False, separators=(",", ":"))
         handle.write("\n")
 
     print(
         f"host_blocks={len(host_blocks)} path_blocks={sum(len(v) for v in path_blocks.values())} "
         f"cosmetics={len(cosmetics)} exceptions={len(exceptions)} "
         f"total_rules={len(rules)} "
-        f"file_bytes={len(json.dumps(rules, ensure_ascii=False).encode('utf-8'))}"
+        f"chunks={len(chunks)} per_chunk={[len(c) for c in chunks]} "
+        f"file_bytes={os.path.getsize(OUTPUT_PATH)}"
     )
     return 0
 

@@ -10,19 +10,32 @@ final class ContentBlockerServiceTests: XCTestCase {
         )
         let data = try Data(contentsOf: url)
         let object = try JSONSerialization.jsonObject(with: data)
-        let rules = try XCTUnwrap(object as? [[String: Any]])
+        let chunks = try XCTUnwrap(object as? [[[String: Any]]])
 
-        XCTAssertFalse(rules.isEmpty)
-        XCTAssertLessThanOrEqual(rules.count, 50_000)
+        XCTAssertFalse(chunks.isEmpty)
+        let total = chunks.reduce(0) { $0 + $1.count }
+        XCTAssertGreaterThan(total, 0)
+        for chunk in chunks {
+            XCTAssertLessThanOrEqual(chunk.count, 50_000)
+        }
 
         let store = try XCTUnwrap(WKContentRuleListStore.default())
-        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
-        let identifier = "test.adblock.\(UUID().uuidString)"
-        let ruleList = await compile(json, identifier: identifier, store: store)
-        XCTAssertNotNil(
-            ruleList,
-            "内置规则未能通过 WKContentRuleList 编译"
-        )
+        for (index, chunk) in chunks.enumerated() {
+            let chunkData = try XCTUnwrap(
+                JSONSerialization.data(withJSONObject: chunk)
+            )
+            let json = try XCTUnwrap(String(data: chunkData, encoding: .utf8))
+            let identifier = "test.adblock.\(UUID().uuidString).\(index)"
+            let ruleList = await compile(
+                json,
+                identifier: identifier,
+                store: store
+            )
+            XCTAssertNotNil(
+                ruleList,
+                "内置规则分块 \(index) 未能通过 WKContentRuleList 编译"
+            )
+        }
     }
 
     private func compile(

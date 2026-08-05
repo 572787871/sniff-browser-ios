@@ -104,6 +104,22 @@ final class ContentBlockerRuleBuilderTests: XCTestCase {
         )
     }
 
+    func testChunkedJSONDataSplitsIntoMultipleChunks() throws {
+        let lines = (0..<46_000).map { "||ads\($0).example.com^" }
+        let data = try XCTUnwrap(
+            ContentBlockerRuleBuilder.chunkedJSONData(
+                from: [lines.joined(separator: "\n")]
+            )
+        )
+        let chunks = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [[[String: Any]]]
+        )
+
+        XCTAssertEqual(chunks.count, 2)
+        XCTAssertEqual(chunks[0].count, 45_000)
+        XCTAssertEqual(chunks[1].count, 1_000)
+    }
+
     func testFilterVersionParsing() {
         let version = ContentBlockerRuleBuilder.filterVersion(
             from: "! Version: 2.4.81.60\n||example.com^\n"

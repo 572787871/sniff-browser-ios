@@ -203,26 +203,25 @@ final class ContentBlockerService {
                     versions.append(version)
                 }
             }
-            guard let jsonData = ContentBlockerRuleBuilder.buildJSONData(
+            guard let jsonData = ContentBlockerRuleBuilder.chunkedJSONData(
                 from: filterTexts
             ),
-            let object = try? JSONSerialization.jsonObject(with: jsonData),
-            let rules = object as? [[String: Any]],
-            !rules.isEmpty
+            let chunks = parseRuleChunks(from: jsonData),
+            !chunks.isEmpty
             else {
                 throw ContentBlockerUpdateError.invalidFilter
             }
 
-            let compiledChunks = await compileRules(
-                jsonData: jsonData,
+            let compiledChunks = await compileChunks(
+                chunks: chunks,
                 primaryIdentifier: Self.primaryIdentifier
             )
             guard !compiledChunks.isEmpty else {
                 throw ContentBlockerUpdateError.compileFailed
             }
 
-            chunks = compiledChunks
-            ruleCount = rules.count
+            self.chunks = compiledChunks
+            ruleCount = chunks.reduce(0) { $0 + $1.count }
             updatedAt = Date()
             filterVersion = versions.joined(separator: " / ")
             lastLoadError = nil
@@ -273,64 +272,91 @@ final class ContentBlockerService {
     }
 
     private func installRules(data: Data, fallbackError: String) async {
-        guard let object = try? JSONSerialization.jsonObject(with: data),
-              let rules = object as? [[String: Any]],
-              !rules.isEmpty
+        guard let chunks = parseRuleChunks(from: data), !chunks.isEmpty
         else {
             lastLoadError = fallbackError
             return
         }
-        ruleCount = rules.count
-        let compiledChunks = await compileRules(
-            jsonData: data,
+        ruleCount = chunks.reduce(0) { $0 + $1.count }
+        let compiledChunks = await compileChunks(
+            chunks: chunks,
             primaryIdentifier: Self.primaryIdentifier
         )
-        chunks = compiledChunks
-        isReady = !compiledChunks.isEmpty
-        if chunks.isEmpty {
+        self.chunks = compiledChunks
+        isReady = !self.chunks.isEmpty
+        if self.chunks.isEmpty {
             lastLoadError = "广告过滤规则编译失败。"
         }
         postChange()
     }
 
-    private func compileRules(
-        jsonData: Data,
+    private func parseRuleChunks(from data: Data) -> [[[String: Any]]]? {
+        guard let object = try? JSONSerialization.jsonObject(with: data),
+              let chunks = object as? [[[String: Any]]],
+              !chunks.isEmpty
+        else {
+            return nil
+        }
+        return chunks
+    }
+
+    /// 把多个规则分块各自编译为独立的 WKContentRuleList。
+    /// 某个分块仍超限编译失败时，再按 `chunkSize` 子分块兜底。
+    private func compileChunks(
+        chunks: [[[String: Any]]],
         primaryIdentifier: String
     ) async -> [RuleChunk] {
-        guard let object = try? JSONSerialization.jsonObject(with: jsonData),
-              let rules = object as? [[String: Any]],
-              let jsonString = String(data: jsonData, encoding: .utf8)
-        else {
-            return []
-        }
-
         var compiledChunks: [RuleChunk] = []
-        if let ruleList = await compile(
-            jsonString,
-            identifier: primaryIdentifier
-        ) {
-            compiledChunks.append(
-                RuleChunk(
-                    identifier: primaryIdentifier,
-                    ruleList: ruleList,
-                    ruleCount: rules.count
+        for (index, rules) in chunks.enumerated() {
+            guard let chunkData = try? JSONSerialization.data(
+                withJSONObject: rules
+            ),
+            let jsonString = String(data: chunkData, encoding: .utf8)
+            else {
+                continue
+            }
+            let identifier = "\(primaryIdentifier).list.\(index)"
+            if let ruleList = await compile(
+                jsonString,
+                identifier: identifier
+            ) {
+                compiledChunks.append(
+                    RuleChunk(
+                        identifier: identifier,
+                        ruleList: ruleList,
+                        ruleCount: rules.count
+                    )
                 )
-            )
-            return compiledChunks
+            } else {
+                compiledChunks.append(
+                    contentsOf: await compileFallbackChunks(
+                        rules: rules,
+                        baseIdentifier: identifier
+                    )
+                )
+            }
         }
+        return compiledChunks
+    }
 
-        lastLoadError = "整份规则编译失败，正在尝试分块加载。"
+    private func compileFallbackChunks(
+        rules: [[String: Any]],
+        baseIdentifier: String
+    ) async -> [RuleChunk] {
+        var compiledChunks: [RuleChunk] = []
         let chunkCount = Int(ceil(Double(rules.count) / Double(chunkSize)))
         for index in 0..<chunkCount {
             let slice = Array(
                 rules.dropFirst(index * chunkSize).prefix(chunkSize)
             )
-            guard let sliceData = try? JSONSerialization.data(withJSONObject: slice),
+            guard let sliceData = try? JSONSerialization.data(
+                withJSONObject: slice
+            ),
                   let sliceString = String(data: sliceData, encoding: .utf8)
             else {
                 continue
             }
-            let identifier = "\(primaryIdentifier).chunk.\(index)"
+            let identifier = "\(baseIdentifier).chunk.\(index)"
             if let ruleList = await compile(
                 sliceString,
                 identifier: identifier
