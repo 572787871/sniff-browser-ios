@@ -6,6 +6,8 @@ struct BrowserPreferences {
     static let pullToRefresh = "browser.pullToRefresh"
     static let newTabShowsWelcome = "browser.newTab.showsWelcome"
     static let newTabShowsDate = "browser.newTab.showsDate"
+    static let contentBlockingEnabled = "browser.contentBlocking.enabled"
+    static let contentBlockingWhitelist = "browser.contentBlocking.whitelist"
   }
 
   private let defaults: UserDefaults
@@ -58,6 +60,29 @@ struct BrowserPreferences {
     }
     nonmutating set {
       defaults.set(newValue, forKey: Key.newTabShowsDate)
+    }
+  }
+
+  var contentBlockingEnabled: Bool {
+    get {
+      defaults.object(forKey: Key.contentBlockingEnabled) == nil
+        ? true
+        : defaults.bool(forKey: Key.contentBlockingEnabled)
+    }
+    nonmutating set {
+      defaults.set(newValue, forKey: Key.contentBlockingEnabled)
+    }
+  }
+
+  var contentBlockingWhitelist: [String] {
+    get {
+      defaults.stringArray(forKey: Key.contentBlockingWhitelist) ?? []
+    }
+    nonmutating set {
+      defaults.set(
+        Array(Set(newValue.map { $0.lowercased() })).sorted(),
+        forKey: Key.contentBlockingWhitelist
+      )
     }
   }
 }

@@ -237,6 +237,12 @@ extension SettingsViewController: UITableViewDataSource, UITableViewDelegate {
                 animated: true
             )
             return
+        case .contentBlocking:
+            navigationController?.pushViewController(
+                ContentBlockingSettingsViewController(),
+                animated: true
+            )
+            return
         default:
             break
         }
@@ -305,12 +311,10 @@ private final class SettingsDetailViewController: BaseViewController {
         for destination: SettingsViewController.Destination
     ) -> (title: String, symbol: String, message: String)? {
         switch destination {
-        case .searchEngine, .newTabBehavior, .websitePermissions:
+        case .searchEngine, .newTabBehavior, .websitePermissions, .contentBlocking:
             return nil
         case .appearance:
             return ("外观", "circle.lefthalf.filled", "设置应用外观模式：跟随系统、浅色或深色。")
-        case .contentBlocking:
-            return ("内容拦截", "shield.lefthalf.filled", "内容过滤引擎将在隐私阶段接入；当前不会注入来源不明的规则。")
         case .clearBrowsingData:
             return ("清除浏览数据", "trash", "此操作会清除 Cookie、网站存储与网页缓存，并重新载入当前网页。")
         case .downloadPreferences:

@@ -22,6 +22,7 @@ final class BrowserViewController: UIViewController {
   let tabManager: BrowserTabManager
   let favoriteService: FavoriteService
   let historyService: HistoryService
+  let contentBlockerService: ContentBlockerService
   let resourceStore: TabResourceStore
   let resourceSniffingService: WebResourceSniffingService
   let downloadCenter: DownloadCenter
@@ -56,6 +57,7 @@ final class BrowserViewController: UIViewController {
     tabManager: BrowserTabManager,
     favoriteService: FavoriteService,
     historyService: HistoryService,
+    contentBlockerService: ContentBlockerService,
     resourceStore: TabResourceStore,
     downloadCenter: DownloadCenter
   ) {
@@ -63,6 +65,7 @@ final class BrowserViewController: UIViewController {
     self.tabManager = tabManager
     self.favoriteService = favoriteService
     self.historyService = historyService
+    self.contentBlockerService = contentBlockerService
     self.resourceStore = resourceStore
     self.downloadCenter = downloadCenter
     resourceSniffingService = WebResourceSniffingService(
@@ -77,6 +80,7 @@ final class BrowserViewController: UIViewController {
       tabManager: BrowserTabManager(),
       favoriteService: .shared,
       historyService: .shared,
+      contentBlockerService: .shared,
       resourceStore: TabResourceStore(),
       downloadCenter: downloadCenter
     )
@@ -91,6 +95,7 @@ final class BrowserViewController: UIViewController {
     tabManager = BrowserTabManager()
     favoriteService = .shared
     historyService = .shared
+    contentBlockerService = .shared
     let resolvedResourceStore = TabResourceStore()
     resourceStore = resolvedResourceStore
     downloadCenter = .shared
@@ -110,13 +115,43 @@ final class BrowserViewController: UIViewController {
     configureView()
     configureActions()
     configureLifecycleObservers()
+    observeContentBlockerChanges()
     attachSelectedTab()
+    contentBlockerService.loadIfNeeded()
   }
 
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
     // 设置页修改新标签页选项后，回到浏览器时立即生效。
     newTabView.refreshContentPreferences()
+  }
+
+  private func observeContentBlockerChanges() {
+    let observer = NotificationCenter.default.addObserver(
+      forName: .contentBlockerDidChange,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor in
+        self?.reapplyContentRules()
+      }
+    }
+    lifecycleObservers.append(observer)
+  }
+
+  private func reapplyContentRules() {
+    for tab in tabManager.tabs {
+      guard let webView = tab.webView else { continue }
+      let host = webView.url?.host ?? tab.url?.host
+      let changed = contentBlockerService.applyRules(
+        to: webView,
+        tabID: tab.id,
+        host: host
+      )
+      if changed, tab.id == activeTab?.id {
+        webView.reload()
+      }
+    }
   }
 
   override func viewDidLayoutSubviews() {
