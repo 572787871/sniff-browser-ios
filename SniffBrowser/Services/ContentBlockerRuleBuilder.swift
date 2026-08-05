@@ -30,7 +30,7 @@ enum ContentBlockerRuleBuilder {
                 continue
             }
             if line.hasPrefix("@@||") {
-                if let host = plainHost(afterPrefix: String(line.dropFirst(3))) {
+                if let host = plainHost(afterPrefix: String(line.dropFirst(4))) {
                     exceptionDomains.insert(host)
                 }
                 continue
