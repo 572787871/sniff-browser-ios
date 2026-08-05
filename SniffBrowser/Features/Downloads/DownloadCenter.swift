@@ -583,18 +583,18 @@ final class DownloadCenter: DownloadManaging {
         }
         if let model = task(id: id) {
             notificationService.notifyCompleted(fileName: model.fileName, taskID: id)
+            runPipelinePostProcessing(
+                id: id,
+                sourceURL: storedFile.fileURL,
+                resourceType: model.resourceType,
+                fileName: model.fileName
+            )
         }
         requestContexts[id] = nil
         progressAggregators[id] = nil
         lastProgressEmissionDates[id] = nil
         hlsPreparationTasks[id] = nil
         scheduleWaitingTasks()
-        runPipelinePostProcessing(
-            id: id,
-            sourceURL: storedFile.fileURL,
-            resourceType: model.resourceType,
-            fileName: model.fileName
-        )
     }
 
     /// 视频类任务完成后，后台统一走 Media Pipeline 生成最终文件并清理缓存。
