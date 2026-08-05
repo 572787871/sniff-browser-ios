@@ -1,12 +1,31 @@
 # 正式构建 spec：包含 FFmpeg XCFramework 依赖与链接设置。
 include: project.base.yml
 
+settings:
+  base:
+    # libav 动态库依赖的系统框架（libavformat/libavcodec 等按需加载）。
+    # z/bz2/iconv/c++ 已在 project.base.yml 的 OTHER_LDFLAGS 中提供。
+    HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/vendor/FFmpegHeaders"
+
 targets:
   SniffBrowser:
     dependencies:
-      - framework: vendor/FFmpeg.xcframework
-        embed: false
+      - sdk: AudioToolbox.framework
+      - sdk: CoreMedia.framework
+      - sdk: CoreVideo.framework
+      - sdk: VideoToolbox.framework
+      - framework: vendor/libavcodec.xcframework
+        embed: true
+      - framework: vendor/libavformat.xcframework
+        embed: true
+      - framework: vendor/libavutil.xcframework
+        embed: true
+      - framework: vendor/libswresample.xcframework
+        embed: true
+      - framework: vendor/libswscale.xcframework
+        embed: true
+      - framework: vendor/libavfilter.xcframework
+        embed: true
     settings:
       base:
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) FFMPEG_ENABLED"
-        OTHER_LDFLAGS: "$(inherited) -framework FFmpeg"

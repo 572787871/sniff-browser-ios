@@ -15,6 +15,9 @@ output/
 *.dSYM
 *.dSYM.zip
 
+# FFmpeg XCFrameworks（CI 每次由 scripts/fetch-ffmpeg-xcframework.sh 获取并校验）
+vendor/
+
 # Swift Package Manager local state
 .build/
 .swiftpm/

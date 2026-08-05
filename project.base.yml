@@ -21,7 +21,9 @@ settings:
     ENABLE_APPINTENTS_METADATA_EXTRACTION: NO
     CLANG_ENABLE_MODULES: YES
     SWIFT_STRICT_CONCURRENCY: targeted
-    # FFmpeg 静态库依赖的系统库；无 FFmpeg 的本地构建也不受影响。
+    # FFmpeg libav C API 桥接（__has_include 守卫，本地无 FFmpeg 也可编译）。
+    SWIFT_OBJC_BRIDGING_HEADER: SniffBrowser/SupportingFiles/SniffBrowser-Bridging-Header.h
+    # FFmpeg libav 动态库依赖的系统库；无 FFmpeg 的本地构建也不受影响。
     OTHER_LDFLAGS: "$(inherited) -lz -liconv -lbz2 -lc++"
     FRAMEWORK_SEARCH_PATHS: "$(inherited) $(SRCROOT)/vendor"
   configs:

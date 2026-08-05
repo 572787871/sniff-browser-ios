@@ -135,6 +135,47 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             clean build 2>&1 | tee build/logs/iphoneos-release-build.log
 
+      - name: Verify FFmpeg is embedded in the app
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="$(
+            find build/DerivedData-Device/Build/Products/Release-iphoneos \
+              -maxdepth 1 \
+              -type d \
+              -name 'SniffBrowser.app' \
+              -print \
+              -quit
+          )"
+          if [[ -z "${APP_PATH}" || ! -d "${APP_PATH}" ]]; then
+            echo "SniffBrowser.app was not found in Release-iphoneos." \
+              | tee build/logs/ffmpeg-verify.log
+            exit 1
+          fi
+          # 正式 IPA 必须嵌入全部 libav 框架；缺失即构建失败。
+          for lib in libavcodec libavformat libavutil libswresample libswscale libavfilter; do
+            if [[ ! -s "${APP_PATH}/Frameworks/${lib}.framework/${lib}" ]]; then
+              echo "FFmpeg framework ${lib} is missing from the app bundle." \
+                | tee build/logs/ffmpeg-verify.log
+              exit 1
+            fi
+          done
+          # 禁止 FFmpegKit / mobile-ffmpeg wrapper 出现在产物中。
+          if [[ -e "${APP_PATH}/Frameworks/FFmpegKit.framework" ]]; then
+            echo "FFmpegKit framework must not be bundled." \
+              | tee build/logs/ffmpeg-verify.log
+            exit 1
+          fi
+          # 主二进制必须链接到嵌入的 libavcodec。
+          if ! otool -L "${APP_PATH}/SniffBrowser" \
+            | grep -q '@rpath/libavcodec.framework/libavcodec'; then
+            echo "SniffBrowser binary does not link libavcodec." \
+              | tee build/logs/ffmpeg-verify.log
+            exit 1
+          fi
+          echo "FFmpeg verification passed:" | tee build/logs/ffmpeg-verify.log
+          ls -lh "${APP_PATH}/Frameworks" | tee -a build/logs/ffmpeg-verify.log
+
       - name: Package unsigned IPA
         shell: bash
         run: |
