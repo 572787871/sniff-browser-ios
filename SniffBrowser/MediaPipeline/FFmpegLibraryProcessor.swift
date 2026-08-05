@@ -83,6 +83,23 @@ private enum FFmpegCore {
         url.isFileURL ? url.path : url.absoluteString
     }
 
+    /// DEBUG 诊断：输出 libav 错误信息，便于定位媒体处理失败点。
+    static func debugLog(_ message: String, code: Int32? = nil) {
+        #if DEBUG
+        if let code {
+            print("[FFmpegCore] \(message): \(code) (\(errorText(code)))")
+        } else {
+            print("[FFmpegCore] \(message)")
+        }
+        #endif
+    }
+
+    static func errorText(_ code: Int32) -> String {
+        var buffer = [CChar](repeating: 0, count: 256)
+        av_strerror(code, &buffer, buffer.count)
+        return String(cString: buffer)
+    }
+
     // MARK: - 输入上下文
 
     private static func openInput(
@@ -94,13 +111,16 @@ private enum FFmpegCore {
         var context: UnsafeMutablePointer<AVFormatContext>?
         let openResult = avformat_open_input(&context, urlString, nil, nil)
         guard openResult == 0 else {
+            debugLog("openInput 打开失败: \(urlString)", code: openResult)
             throw MediaProcessError.unsupportedFormat
         }
         guard let opened = context else {
+            debugLog("openInput 返回空上下文")
             throw MediaProcessError.unsupportedFormat
         }
         let infoResult = avformat_find_stream_info(opened, nil)
         guard infoResult == 0 else {
+            debugLog("find_stream_info 失败", code: infoResult)
             avformat_close_input(&context)
             throw MediaProcessError.metadataFailed
         }
@@ -130,6 +150,7 @@ private enum FFmpegCore {
             output.path
         )
         guard allocResult == 0, let outputContext else {
+            debugLog("alloc_output_context 失败: container=\(container)", code: allocResult)
             throw MediaProcessError.remuxFailed
         }
         defer { avformat_free_context(outputContext) }
@@ -159,6 +180,7 @@ private enum FFmpegCore {
 
         let headerResult = avformat_write_header(outputContext, &options)
         guard headerResult == 0 else {
+            debugLog("write_header 失败", code: headerResult)
             throw MediaProcessError.remuxFailed
         }
 
@@ -184,6 +206,7 @@ private enum FFmpegCore {
             packet.pos = -1
             let writeResult = av_interleaved_write_frame(outputContext, &packet)
             guard writeResult == 0 else {
+                debugLog("interleaved_write_frame 失败 stream=\(streamIndex)", code: writeResult)
                 throw MediaProcessError.remuxFailed
             }
         }
@@ -235,6 +258,7 @@ private enum FFmpegCore {
             output.path
         )
         guard allocResult == 0, let outputContext else {
+            debugLog("mux alloc_output_context 失败", code: allocResult)
             throw MediaProcessError.muxFailed
         }
         defer { avformat_free_context(outputContext) }
@@ -267,6 +291,7 @@ private enum FFmpegCore {
 
         let headerResult = avformat_write_header(outputContext, &options)
         guard headerResult == 0 else {
+            debugLog("mux write_header 失败", code: headerResult)
             throw MediaProcessError.muxFailed
         }
 
@@ -323,6 +348,7 @@ private enum FFmpegCore {
             packet.pos = -1
             let writeResult = av_interleaved_write_frame(outputContext, &packet)
             guard writeResult == 0 else {
+                debugLog("mux interleaved_write_frame 失败 slot=\(chosenSlot)", code: writeResult)
                 throw MediaProcessError.muxFailed
             }
         }
@@ -384,6 +410,7 @@ private enum FFmpegCore {
         outputURL: String
     ) throws {
         guard let oformat = outputContext.pointee.oformat else {
+            debugLog("输出上下文缺少 oformat")
             throw MediaProcessError.unsupportedFormat
         }
         if oformat.pointee.flags & AVFMT_NOFILE == 0 {
@@ -393,6 +420,7 @@ private enum FFmpegCore {
                 AVIO_FLAG_WRITE
             )
             guard openResult == 0 else {
+                debugLog("avio_open 失败: \(outputURL)", code: openResult)
                 throw MediaProcessError.unsupportedFormat
             }
         }
@@ -434,6 +462,7 @@ private enum FFmpegCore {
         let size: Int64 = (try? FileManager.default
             .attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
         guard duration > 0 || width > 0 else {
+            debugLog("元数据缺失 duration=\(duration) width=\(width)")
             throw MediaProcessError.metadataFailed
         }
         return MediaAssetInfo(
@@ -469,6 +498,7 @@ private enum FFmpegCore {
         }
 
         guard let decoder = avcodec_find_decoder(codecpar.pointee.codec_id) else {
+            debugLog("未找到解码器 codec_id=\(codecpar.pointee.codec_id.rawValue)")
             throw MediaProcessError.thumbnailFailed
         }
         var decoderContext: UnsafeMutablePointer<AVCodecContext>? =
@@ -478,10 +508,12 @@ private enum FFmpegCore {
         }
         defer { avcodec_free_context(&decoderContext) }
         guard avcodec_parameters_to_context(decoderContext!, codecpar) >= 0 else {
+            debugLog("parameters_to_context 失败")
             throw MediaProcessError.thumbnailFailed
         }
         decoderContext!.pointee.pkt_timebase = stream.pointee.time_base
         guard avcodec_open2(decoderContext!, decoder, nil) >= 0 else {
+            debugLog("解码器打开失败")
             throw MediaProcessError.thumbnailFailed
         }
 
@@ -518,6 +550,7 @@ private enum FFmpegCore {
             if succeeded { break }
         }
         guard succeeded else {
+            debugLog("未成功解码视频帧")
             throw MediaProcessError.thumbnailFailed
         }
     }
@@ -542,6 +575,7 @@ private enum FFmpegCore {
             nil,
             nil
         ) else {
+            debugLog("sws_getCachedContext 失败 format=\(frame.pointee.format)")
             return false
         }
         defer { sws_freeContext(scaler) }
@@ -553,9 +587,13 @@ private enum FFmpegCore {
         scaled!.pointee.height = Int32(targetHeight)
         scaled!.pointee.format = Int32(AV_PIX_FMT_YUV420P.rawValue)
         guard av_frame_get_buffer(scaled!, 32) >= 0 else { return false }
-        guard sws_scale_frame(scaler, scaled!, frame) >= 0 else { return false }
+        guard sws_scale_frame(scaler, scaled!, frame) >= 0 else {
+            debugLog("sws_scale_frame 失败")
+            return false
+        }
 
         guard let encoder = avcodec_find_encoder(AV_CODEC_ID_MJPEG) else {
+            debugLog("未找到 MJPEG 编码器")
             return false
         }
         var encoderContext: UnsafeMutablePointer<AVCodecContext>? =
@@ -569,10 +607,12 @@ private enum FFmpegCore {
         encoderContext!.pointee.pix_fmt = AV_PIX_FMT_YUV420P
         encoderContext!.pointee.time_base = AVRational(num: 1, den: 25)
         guard avcodec_open2(encoderContext!, encoder, nil) >= 0 else {
+            debugLog("MJPEG 编码器打开失败")
             return false
         }
 
         guard avcodec_send_frame(encoderContext!, scaled!) >= 0 else {
+            debugLog("send_frame 失败")
             return false
         }
 
@@ -591,6 +631,9 @@ private enum FFmpegCore {
                 handle.write(Data(bytes: data, count: Int(encoded.size)))
                 wroteAny = true
             }
+        }
+        if !wroteAny {
+            debugLog("MJPEG 未产出数据包")
         }
         return wroteAny
     }

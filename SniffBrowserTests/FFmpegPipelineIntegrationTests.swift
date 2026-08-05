@@ -29,11 +29,15 @@ final class FFmpegPipelineIntegrationTests: XCTestCase {
         try super.tearDownWithError()
     }
 
-    private func fixture(_ name: String, _ ext: String) -> URL {
+    private func fixture(
+        _ name: String,
+        _ ext: String,
+        subdirectory: String? = nil
+    ) -> URL {
         guard let url = Bundle(for: Self.self).url(
             forResource: name,
             withExtension: ext,
-            subdirectory: "Fixtures"
+            subdirectory: subdirectory ?? "Fixtures"
         ) else {
             XCTFail("缺少测试样本：\(name).\(ext)")
             return URL(fileURLWithPath: "/nonexistent")
@@ -88,7 +92,31 @@ final class FFmpegPipelineIntegrationTests: XCTestCase {
     }
 
     func testRemuxWebM() async {
-        await assertRemuxSucceeds(source: fixture("fixture", "webm"), outputName: "out-webm.mp4")
+        await assertRemuxSucceeds(
+            source: fixture("fixture-webm-opus", "webm"),
+            outputName: "out-webm.mp4"
+        )
+    }
+
+    func testRemuxWebMVorbisIsGraceful() async {
+        // vorbis 音轨无法无损封装进 MP4：允许优雅失败（管线保留原 WebM），
+        // 不允许崩溃或挂起。
+        let output = output("out-webm-vorbis.mp4")
+        do {
+            try await processor.remux(
+                source: fixture("fixture-webm-vorbis", "webm"),
+                output: output,
+                container: "mp4"
+            )
+            if FileManager.default.fileExists(atPath: output.path) {
+                XCTAssertGreaterThan(
+                    (try? FileManager.default.attributesOfItem(atPath: output.path)[.size] as? Int64) ?? 0,
+                    1_000
+                )
+            }
+        } catch {
+            // 优雅失败是预期行为。
+        }
     }
 
     func testRemuxFLV() async {
@@ -96,12 +124,12 @@ final class FFmpegPipelineIntegrationTests: XCTestCase {
     }
 
     func testRemuxHLS() async {
-        let playlist = fixture("index", "m3u8")
+        let playlist = fixture("index", "m3u8", subdirectory: "Fixtures/hls")
         await assertRemuxSucceeds(source: playlist, outputName: "out-hls.mp4")
     }
 
     func testRemuxDASH() async {
-        let mpd = fixture("stream", "mpd")
+        let mpd = fixture("stream", "mpd", subdirectory: "Fixtures/dash")
         await assertRemuxSucceeds(source: mpd, outputName: "out-dash.mp4")
     }
 
