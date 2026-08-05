@@ -6,10 +6,9 @@ import Foundation
 final class MediaPipeline {
     static let shared = MediaPipeline()
 
-    private let remuxer = AVFoundationRemuxProcessor()
-    private let muxer = AVFoundationMuxProcessor()
-    private let metadataExtractor = MetadataExtractor()
-    private let thumbnailGenerator = ThumbnailGenerator()
+    private let processors = FFmpegMediaProcessors(
+        processor: FFmpegProcessorProvider.current
+    )
     private let fileStorage = FileStorageManager.shared
     private let cache = CacheManager.shared
 
@@ -45,7 +44,7 @@ final class MediaPipeline {
                 // 无损 passthrough 转封装为 MP4；失败则保留原文件。
                 let remuxed = workDirectory
                     .appendingPathComponent("\(UUID().uuidString).mp4")
-                let remuxSucceeded = (try? await remuxer.remuxToMP4(
+                let remuxSucceeded = (try? await processors.remuxToMP4(
                     source: sourceURL,
                     output: remuxed
                 )) != nil
@@ -63,8 +62,17 @@ final class MediaPipeline {
                 finalExtension = type.preferredFileExtension
             }
 
-            let info = try await metadataExtractor.extract(from: finalSource)
-            let thumbnail = try? await thumbnailGenerator.generate(from: finalSource)
+            let info = try await processors.extract(from: finalSource)
+            let thumbnailURL = workDirectory
+                .appendingPathComponent("\(UUID().uuidString).jpg")
+            let thumbnailData: Data? = if (try? await processors.generate(
+                from: finalSource,
+                output: thumbnailURL
+            )) != nil {
+                try? Data(contentsOf: thumbnailURL)
+            } else {
+                nil
+            }
             let stored = try fileStorage.storeFinalFile(
                 from: finalSource,
                 fileName: fileName,
@@ -74,7 +82,7 @@ final class MediaPipeline {
             return FinalMedia(
                 url: stored,
                 fileName: stored.lastPathComponent,
-                thumbnailData: thumbnail,
+                thumbnailData: thumbnailData,
                 info: info
             )
         } catch {

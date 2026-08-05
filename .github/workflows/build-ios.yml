@@ -36,6 +36,11 @@ jobs:
           brew install xcodegen 2>&1 | tee build/logs/xcodegen-install.log
           xcodegen version 2>&1 | tee build/logs/xcodegen-version.log
 
+      - name: Bundle FFmpeg for iOS
+        run: |
+          set -o pipefail
+          bash scripts/fetch-ffmpeg.sh 2>&1 | tee build/logs/ffmpeg-bundle.log
+
       - name: Generate Xcode project
         run: |
           set -o pipefail

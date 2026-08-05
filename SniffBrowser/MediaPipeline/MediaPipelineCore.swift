@@ -193,6 +193,7 @@ enum MediaProcessError: LocalizedError {
     case metadataFailed
     case thumbnailFailed
     case storageFailed
+    case ffmpegUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -203,6 +204,7 @@ enum MediaProcessError: LocalizedError {
         case .metadataFailed: return "无法读取媒体信息。"
         case .thumbnailFailed: return "无法生成封面。"
         case .storageFailed: return "无法保存文件。"
+        case .ffmpegUnavailable: return "当前构建未集成媒体处理组件。"
         }
     }
 }

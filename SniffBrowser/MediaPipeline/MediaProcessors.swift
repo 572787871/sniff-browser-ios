@@ -1,141 +1,46 @@
-import AVFoundation
 import Foundation
-import UIKit
 
-// MARK: - RemuxProcessor
+// MARK: - 处理器协议
 
-/// 无损转封装协议。默认实现使用 AVFoundation passthrough；
-/// 未来可替换为 FFmpeg 后端而不影响调用方。
+/// 无损转封装。统一委托给 FFmpegProcessor，下载模块不直接接触 FFmpeg。
 protocol RemuxProcessor {
     func remuxToMP4(source: URL, output: URL) async throws
 }
 
-struct AVFoundationRemuxProcessor: RemuxProcessor {
-    func remuxToMP4(source: URL, output: URL) async throws {
-        let asset = AVURLAsset(url: source)
-        guard let session = AVAssetExportSession(
-            asset: asset,
-            presetName: AVAssetExportPresetPassthrough
-        ) else {
-            throw MediaProcessError.remuxFailed
-        }
-        session.outputURL = output
-        session.outputFileType = .mp4
-        session.shouldOptimizeForNetworkUse = false
-        try await session.export()
-        guard FileManager.default.fileExists(atPath: output.path) else {
-            throw MediaProcessError.remuxFailed
-        }
-    }
-}
-
-// MARK: - MuxProcessor
-
-/// 合并独立的视频轨与音频轨（DASH / HLS 分离流）后无损导出 MP4。
+/// 合并独立的视频轨与音频轨（DASH / HLS 分离流）。
 protocol MuxProcessor {
     func muxToMP4(video: URL, audio: URL?, output: URL) async throws
 }
 
-struct AVFoundationMuxProcessor: MuxProcessor {
+/// 元数据提取（时长/分辨率/码率/大小）。
+protocol MetadataExtractor {
+    func extract(from url: URL) async throws -> MediaAssetInfo
+}
+
+/// 封面生成。
+protocol ThumbnailGenerator {
+    func generate(from url: URL, output: URL) async throws
+}
+
+/// 唯一实现：四个处理器都通过 FFmpegProcessor 完成。
+/// 生产构建只需替换 FFmpegProcessorProvider 的返回值，无需改这里。
+struct FFmpegMediaProcessors: RemuxProcessor, MuxProcessor, MetadataExtractor, ThumbnailGenerator {
+    let processor: FFmpegProcessor
+
+    func remuxToMP4(source: URL, output: URL) async throws {
+        try await processor.remuxToMP4(source: source, output: output)
+    }
+
     func muxToMP4(video: URL, audio: URL?, output: URL) async throws {
-        let composition = AVMutableComposition()
-        let videoAsset = AVURLAsset(url: video)
-        guard let videoTrack = try await videoAsset.loadTracks(withMediaType: .video).first,
-              let compositionVideoTrack = composition.addMutableTrack(
-                withMediaType: .video,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-              )
-        else {
-            throw MediaProcessError.muxFailed
-        }
-        let videoDuration = try await videoAsset.load(.duration)
-        try compositionVideoTrack.insertTimeRange(
-            CMTimeRange(start: .zero, duration: videoDuration),
-            of: videoTrack,
-            at: .zero
-        )
-
-        if let audio,
-           FileManager.default.fileExists(atPath: audio.path) {
-            let audioAsset = AVURLAsset(url: audio)
-            if let audioTrack = try await audioAsset.loadTracks(withMediaType: .audio).first,
-               let compositionAudioTrack = composition.addMutableTrack(
-                withMediaType: .audio,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-               ) {
-                let audioDuration = try await audioAsset.load(.duration)
-                try compositionAudioTrack.insertTimeRange(
-                    CMTimeRange(start: .zero, duration: audioDuration),
-                    of: audioTrack,
-                    at: .zero
-                )
-            }
-        }
-
-        guard let session = AVAssetExportSession(
-            asset: composition,
-            presetName: AVAssetExportPresetPassthrough
-        ) else {
-            throw MediaProcessError.muxFailed
-        }
-        session.outputURL = output
-        session.outputFileType = .mp4
-        try await session.export()
-        guard FileManager.default.fileExists(atPath: output.path) else {
-            throw MediaProcessError.muxFailed
-        }
+        try await processor.muxToMP4(video: video, audio: audio, output: output)
     }
-}
 
-// MARK: - MetadataExtractor
-
-struct MetadataExtractor {
     func extract(from url: URL) async throws -> MediaAssetInfo {
-        let asset = AVURLAsset(url: url)
-        let duration = try await asset.load(.duration).seconds
-        let tracks = try await asset.loadTracks(withMediaType: .video)
-        let size: Int64 = (try? FileManager.default
-            .attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
-
-        var width = 0
-        var height = 0
-        var bitrate = 0.0
-        if let track = tracks.first {
-            let naturalSize = try await track.load(.naturalSize)
-            let transform = try await track.load(.preferredTransform)
-            let rotated = transform.a == 0 && transform.b != 0
-            width = Int(rotated ? naturalSize.height : naturalSize.width)
-            height = Int(rotated ? naturalSize.width : naturalSize.height)
-            let dataRate: Float = try await track.load(.estimatedDataRate)
-            bitrate = Double(dataRate)
-        }
-        guard !duration.isNaN, duration > 0 else {
-            throw MediaProcessError.metadataFailed
-        }
-        return MediaAssetInfo(
-            duration: duration,
-            width: width,
-            height: height,
-            estimatedBitrate: bitrate,
-            fileSizeBytes: size
-        )
+        try await processor.extractMetadata(from: url)
     }
-}
 
-// MARK: - ThumbnailGenerator
-
-struct ThumbnailGenerator {
-    func generate(from url: URL, at time: CMTime = CMTime(seconds: 1, preferredTimescale: 600))
-        async throws -> Data {
-        let asset = AVURLAsset(url: url)
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 480, height: 480)
-        let cgImage = try generator.copyCGImage(at: time, actualTime: nil)
-        guard let data = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.8) else {
-            throw MediaProcessError.thumbnailFailed
-        }
-        return data
+    func generate(from url: URL, output: URL) async throws {
+        try await processor.generateThumbnail(from: url, output: output)
     }
 }
 
@@ -238,7 +143,7 @@ final class CacheManager {
         try? fileManager.removeItem(at: directory)
     }
 
-    /// 启动时清扫遗留工作目录（异常退出后由恢复逻辑接管，这里只清空不再需要的）。
+    /// 启动时清扫遗留工作目录（任务已不存在的）。
     func sweepLeftovers(activeTaskIDs: Set<UUID>) {
         guard let entries = try? fileManager.contentsOfDirectory(
             at: pipelineRoot,
