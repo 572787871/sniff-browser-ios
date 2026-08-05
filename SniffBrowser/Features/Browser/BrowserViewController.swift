@@ -90,6 +90,7 @@ final class BrowserViewController: UIViewController {
     viewModel = BrowserViewModel()
     tabManager = BrowserTabManager()
     favoriteService = .shared
+    historyService = .shared
     let resolvedResourceStore = TabResourceStore()
     resourceStore = resolvedResourceStore
     downloadCenter = .shared
