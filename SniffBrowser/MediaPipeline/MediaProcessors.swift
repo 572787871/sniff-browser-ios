@@ -106,7 +106,8 @@ struct MetadataExtractor {
             let rotated = transform.a == 0 && transform.b != 0
             width = Int(rotated ? naturalSize.height : naturalSize.width)
             height = Int(rotated ? naturalSize.width : naturalSize.height)
-            bitrate = try await track.load(.estimatedDataRate)
+            let dataRate: Float = try await track.load(.estimatedDataRate)
+            bitrate = Double(dataRate)
         }
         guard !duration.isNaN, duration > 0 else {
             throw MediaProcessError.metadataFailed
