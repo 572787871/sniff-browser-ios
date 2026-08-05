@@ -30,9 +30,14 @@ enum ContentBlockerUpdateError: LocalizedError {
 @MainActor
 final class ContentBlockerService {
     static let shared = ContentBlockerService()
-    static let rulesUpdateURL = URL(
-        string: "https://filters.adtidy.org/extension/safari/filters/2_optimized.txt"
-    )!
+    static let rulesUpdateURLs = [
+        URL(
+            string: "https://filters.adtidy.org/extension/safari/filters/2_optimized.txt"
+        )!,
+        URL(
+            string: "https://filters.adtidy.org/extension/safari/filters/224_optimized.txt"
+        )!,
+    ]
     static let primaryIdentifier = "com.sniffbrowser.adblock"
 
     private struct RuleChunk {
@@ -189,9 +194,17 @@ final class ContentBlockerService {
         defer { isUpdating = false }
 
         do {
-            let filterText = try await downloadFilterText()
+            var filterTexts: [String] = []
+            var versions: [String] = []
+            for url in Self.rulesUpdateURLs {
+                let text = try await downloadFilterText(from: url)
+                filterTexts.append(text)
+                if let version = ContentBlockerRuleBuilder.filterVersion(from: text) {
+                    versions.append(version)
+                }
+            }
             guard let jsonData = ContentBlockerRuleBuilder.buildJSONData(
-                from: filterText
+                from: filterTexts
             ),
             let object = try? JSONSerialization.jsonObject(with: jsonData),
             let rules = object as? [[String: Any]],
@@ -211,9 +224,7 @@ final class ContentBlockerService {
             chunks = compiledChunks
             ruleCount = rules.count
             updatedAt = Date()
-            filterVersion = ContentBlockerRuleBuilder.filterVersion(
-                from: filterText
-            )
+            filterVersion = versions.joined(separator: " / ")
             lastLoadError = nil
             isReady = true
             persistDownloadedRules(
@@ -336,9 +347,9 @@ final class ContentBlockerService {
         return compiledChunks
     }
 
-    private func downloadFilterText() async throws -> String {
+    private func downloadFilterText(from url: URL) async throws -> String {
         let (data, response) = try await URLSession.shared.data(
-            from: Self.rulesUpdateURL
+            from: url
         )
         guard let http = response as? HTTPURLResponse,
               http.statusCode == 200

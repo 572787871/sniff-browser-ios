@@ -140,9 +140,9 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
             let count = service.ruleCount
             let rulesText = count > 0 ? "\(count) 条规则" : "规则加载中"
             let errorText = service.lastLoadError.map { "（\($0)）" } ?? ""
-            return "使用 \(rulesText) 广告过滤规则\(errorText)，规则来源：AdGuard Base Filter（GPL-3.0）。"
+            return "使用 \(rulesText) 广告过滤规则\(errorText)，规则来源：AdGuard Base + 中文过滤规则（GPL-3.0）。"
         case 1:
-            return "从 AdGuard 官方源下载最新过滤规则，下载成功后自动应用。"
+            return "从 AdGuard 官方源下载最新英文与中文过滤规则，下载成功后自动应用。"
         default:
             return "白名单网站不会执行广告过滤，刷新后生效。"
         }

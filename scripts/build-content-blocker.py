@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
-"""Generate the bundled Safari content blocker rules from the current AdGuard Base filter.
+"""Generate the bundled Safari content blocker rules for SniffBrowser.
 
 Output: SniffBrowser/Resources/content-blocker-rules.json
 
-Usage:
-    python3 scripts/build-content-blocker.py                 # fetch latest AdGuard Base
-    python3 scripts/build-content-blocker.py path/to/list.txt  # use a local file
+Sources (fetched fresh when no local files are given):
+  - AdGuard Base (EasyList + AdGuard English, Safari optimized): id=2
+  - AdGuard Chinese (EasyList China + AdGuard Chinese, Safari optimized): id=224
 
-WebKit content blockers reject regex disjunctions (``|``), so each domain
-becomes its own rule. Only domain-wide block rules (``||domain^``) and their
-exceptions are kept, which keeps the file within WebKit rule list limits.
+WebKit content blockers reject regex disjunctions (``|``), lookarounds and
+backreferences, and cap each rule list at 50,000 rules. This script therefore
+emits one rule per pattern and keeps the combined list under that limit:
+  - domain blocks (``||domain^``)
+  - path blocks (``||domain/path``, safe subset)
+  - simple element hiding (``##selector``, domain-scoped or global)
+  - plain exceptions (``@@||domain^`` / ``@@||domain/path``)
+Plus a small curated site supplement for known ad containers.
 """
 
 from __future__ import annotations
@@ -19,10 +24,15 @@ import re
 import sys
 import urllib.request
 
-ADGUARD_BASE_URL = (
-    "https://filters.adtidy.org/extension/safari/filters/2_optimized.txt"
-)
+SOURCES = {
+    "base": "https://filters.adtidy.org/extension/safari/filters/2_optimized.txt",
+    "chinese": "https://filters.adtidy.org/extension/safari/filters/224_optimized.txt",
+}
 OUTPUT_PATH = "SniffBrowser/Resources/content-blocker-rules.json"
+
+# v1 不输出路径规则：控制总规则数与 JSON 体积（贴近 WebKit 10MB 上限），
+# 后续如需可打开并配合多列表分块。
+INCLUDE_PATHS = False
 
 RESOURCE_TYPES = [
     "image",
@@ -35,95 +45,239 @@ RESOURCE_TYPES = [
     "ping",
 ]
 
+# 站点补充规则：覆盖中文站常见的站内广告容器（随机域名网络 + 站内 banner）。
+SITE_SUPPLEMENTS = [
+    ("hl365.com", ".article-ads-btn"),
+    ("hl365.com", '[id^="article-top-banner"]'),
+]
 
-def fetch_rules(source: str) -> str:
-    if source:
-        with open(source, encoding="utf-8", errors="ignore") as handle:
-            return handle.read()
-    with urllib.request.urlopen(ADGUARD_BASE_URL, timeout=60) as response:
+SAFE_SELECTOR_RE = re.compile(r"^[a-zA-Z0-9#._\->+~\[\]=\"'^*$ ,]+$")
+SAFE_PATH_RE = re.compile(r"^[a-zA-Z0-9._~%/,-]+$")
+PLAIN_HOST_RE = re.compile(r"^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$")
+
+
+def fetch(url: str) -> str:
+    with urllib.request.urlopen(url, timeout=90) as response:
         return response.read().decode("utf-8", errors="ignore")
 
 
 def is_plain_domain(host: str) -> bool:
-    if not re.fullmatch(r"[a-z0-9]([a-z0-9.-]*[a-z0-9])?", host):
+    if not PLAIN_HOST_RE.fullmatch(host):
         return False
-    if "." not in host:
-        return False
-    if ".." in host or host.startswith(".") or host.endswith("."):
+    if "." not in host or ".." in host or host.startswith(".") or host.endswith("."):
         return False
     return True
 
 
-def parse_rules(text: str) -> tuple[set[str], set[str]]:
-    block_domains: set[str] = set()
-    exception_domains: set[str] = set()
+def escape_regex(value: str) -> str:
+    return (
+        value.replace(".", r"\.")
+        .replace("-", r"\-")
+        .replace("/", r"\/")
+        .replace("?", r"\?")
+        .replace("+", r"\+")
+    )
+
+
+def valid_selector(selector: str) -> bool:
+    selector = selector.strip()
+    if not selector:
+        return False
+    if ":" in selector or "(" in selector or ")" in selector:
+        return False
+    return bool(SAFE_SELECTOR_RE.fullmatch(selector))
+
+
+def parse_filter(text: str):
+    """Returns (host_blocks, path_blocks, cosmetics, exceptions).
+
+    host_blocks: set[str]
+    path_blocks: dict[str, set[str]]
+    cosmetics: list[tuple[list[str] | None, str]]  (None = global)
+    exceptions: list[tuple[str, str | None]]  (host, path-or-None)
+    """
+    host_blocks: set[str] = set()
+    path_blocks: dict[str, set[str]] = {}
+    cosmetics: list[tuple[list[str] | None, str]] = []
+    exceptions: list[tuple[str, str | None]] = []
+
     for raw_line in text.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("!") or line.startswith("["):
             continue
-        exception_match = re.fullmatch(r"@@\|\|([a-z0-9._-]+)\^", line)
-        if exception_match:
-            host = exception_match.group(1).lower()
-            if is_plain_domain(host):
-                exception_domains.add(host)
+        if "$" in line or "~" in line or "*" in line:
+            # 跳过带选项、排除域或通配符的规则（v1 不做条件匹配）
             continue
-        block_match = re.fullmatch(r"\|\|([a-z0-9._-]+)\^", line)
-        if block_match:
-            host = block_match.group(1).lower()
-            if is_plain_domain(host):
-                block_domains.add(host)
-    return block_domains, exception_domains
+        if line.startswith("#@#") or line.startswith("#?#"):
+            continue
+        if line.startswith("@@"):
+            body = line[2:]
+            host_match = re.fullmatch(r"\|\|([a-z0-9._-]+)\^", body)
+            if host_match and is_plain_domain(host_match.group(1)):
+                exceptions.append((host_match.group(1), None))
+                continue
+            if not INCLUDE_PATHS:
+                continue
+            path_match = re.fullmatch(
+                r"\|\|([a-z0-9._-]+)/([a-zA-Z0-9._~%/,-]+)\^?", body
+            )
+            if path_match and is_plain_domain(path_match.group(1)):
+                exceptions.append((path_match.group(1), path_match.group(2)))
+            continue
+        if line.startswith("||"):
+            body = line[2:]
+            host_match = re.fullmatch(r"([a-z0-9._-]+)\^", body)
+            if host_match and is_plain_domain(host_match.group(1)):
+                host_blocks.add(host_match.group(1))
+                continue
+            if not INCLUDE_PATHS:
+                continue
+            path_match = re.fullmatch(
+                r"([a-z0-9._-]+)/([a-zA-Z0-9._~%/,-]+)\^?", body
+            )
+            if path_match:
+                domain = path_match.group(1)
+                path = path_match.group(2)
+                if is_plain_domain(domain) and SAFE_PATH_RE.fullmatch(path):
+                    path_blocks.setdefault(domain, set()).add(path)
+            continue
+        if "##" in line:
+            head, _, selector = line.partition("##")
+            if not head:
+                if valid_selector(selector):
+                    cosmetics.append((None, selector.strip()))
+                continue
+            if head.endswith(".") or head.startswith(".") or "#" in head:
+                continue
+            domains = [d.strip().lower() for d in head.split(",")]
+            if all(is_plain_domain(d) for d in domains) and valid_selector(selector):
+                cosmetics.append((domains, selector.strip()))
+    return host_blocks, path_blocks, cosmetics, exceptions
 
 
-def escape_regex(value: str) -> str:
-    return value.replace(".", r"\.")
-
-
-def build_rule(domain: str, action_type: str) -> dict:
-    url_filter = (
-        r"^https?://([^/:]+\.)?"
-        + escape_regex(domain)
-        + r"[:/]"
-    )
+def block_trigger(url_filter: str) -> dict:
     return {
-        "trigger": {
-            "url-filter": url_filter,
-            "load-type": ["third-party", "first-party"],
-            "resource-type": RESOURCE_TYPES,
-        },
-        "action": {"type": action_type},
+        "url-filter": url_filter,
+        "load-type": ["third-party", "first-party"],
+        "resource-type": RESOURCE_TYPES,
     }
 
 
-def build_rules(block_domains: set[str], exception_domains: set[str]) -> list[dict]:
-    sorted_blocks = sorted(block_domains - exception_domains)
+def host_rule(domain: str, action: str) -> dict:
+    return {
+        "trigger": block_trigger(
+            r"^https?://([^/:]+\.)?" + escape_regex(domain) + r"[:/]"
+        ),
+        "action": {"type": action},
+    }
+
+
+def path_rule(domain: str, path: str, action: str) -> dict:
+    return {
+        "trigger": block_trigger(
+            r"^https?://([^/:]+\.)?"
+            + escape_regex(domain)
+            + r"/"
+            + escape_regex(path)
+        ),
+        "action": {"type": action},
+    }
+
+
+def cosmetic_rule(domains: list[str] | None, selector: str) -> dict:
+    trigger: dict = {"url-filter": ".*"}
+    if domains:
+        trigger["if-domain"] = domains
+    return {
+        "trigger": trigger,
+        "action": {"type": "css-display-none", "selector": selector},
+    }
+
+
+def build_rules(
+    host_blocks: set[str],
+    path_blocks: dict[str, set[str]],
+    cosmetics: list[tuple[list[str] | None, str]],
+    exceptions: list[tuple[str, str | None]],
+    supplements: list[tuple[str, str]],
+) -> list[dict]:
     rules: list[dict] = []
-    for domain in sorted_blocks:
-        rules.append(build_rule(domain, "block"))
-    for host in sorted(exception_domains):
-        rules.append(build_rule(host, "ignore-previous-rules"))
+
+    exception_hosts = {host for host, _ in exceptions if host}
+    for domain in sorted(host_blocks - exception_hosts):
+        rules.append(host_rule(domain, "block"))
+
+    exception_paths = {
+        (host, path) for host, path in exceptions if path is not None
+    }
+    for domain in sorted(path_blocks):
+        for path in sorted(path_blocks[domain]):
+            if (domain, path) in exception_paths:
+                continue
+            rules.append(path_rule(domain, path, "block"))
+
+    for domains, selector in cosmetics:
+        for part in selector.split(","):
+            part = part.strip()
+            if valid_selector(part):
+                rules.append(cosmetic_rule(domains, part))
+
+    for domain, selector in supplements:
+        rules.append(cosmetic_rule([domain], selector))
+
+    for host, path in exceptions:
+        if path is None:
+            rules.append(host_rule(host, "ignore-previous-rules"))
+        else:
+            rules.append(path_rule(host, path, "ignore-previous-rules"))
     return rules
 
 
 def main() -> int:
-    source = sys.argv[1] if len(sys.argv) > 1 else ""
-    text = fetch_rules(source)
-    block_domains, exception_domains = parse_rules(text)
-    if not block_domains:
-        print("No block rules parsed; aborting.", file=sys.stderr)
+    local_files = sys.argv[1:]
+    if local_files:
+        texts = [open(path, encoding="utf-8", errors="ignore").read() for path in local_files]
+    else:
+        texts = [fetch(url) for url in SOURCES.values()]
+
+    host_blocks: set[str] = set()
+    path_blocks: dict[str, set[str]] = {}
+    cosmetics: list[tuple[list[str] | None, str]] = []
+    exceptions: list[tuple[str, str | None]] = []
+    for text in texts:
+        hb, pb, cs, ex = parse_filter(text)
+        host_blocks |= hb
+        for domain, paths in pb.items():
+            path_blocks.setdefault(domain, set()).update(paths)
+        cosmetics.extend(cs)
+        exceptions.extend(ex)
+
+    rules = build_rules(
+        host_blocks,
+        path_blocks,
+        cosmetics,
+        exceptions,
+        SITE_SUPPLEMENTS,
+    )
+    if len(rules) > 50_000:
+        print(
+            f"规则数 {len(rules)} 超过单列表 50,000 上限",
+            file=sys.stderr,
+        )
         return 1
-    rules = build_rules(block_domains, exception_domains)
+    if not rules:
+        print("没有解析到任何规则", file=sys.stderr)
+        return 1
+
     with open(OUTPUT_PATH, "w", encoding="utf-8") as handle:
         json.dump(rules, handle, ensure_ascii=False)
         handle.write("\n")
-    payload_size = len(
-        json.dumps(rules, ensure_ascii=False).encode("utf-8")
-    )
+
     print(
-        f"block domains: {len(block_domains)}, "
-        f"exceptions: {len(exception_domains)}, "
-        f"generated rules: {len(rules)}, "
-        f"file size: {payload_size} bytes"
+        f"host_blocks={len(host_blocks)} path_blocks={sum(len(v) for v in path_blocks.values())} "
+        f"cosmetics={len(cosmetics)} exceptions={len(exceptions)} "
+        f"total_rules={len(rules)} "
+        f"file_bytes={len(json.dumps(rules, ensure_ascii=False).encode('utf-8'))}"
     )
     return 0
 
