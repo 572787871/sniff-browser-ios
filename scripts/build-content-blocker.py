@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Generate the bundled Safari content blocker rules from the current EasyList.
+"""Generate the bundled Safari content blocker rules from the current AdGuard Base filter.
 
 Output: SniffBrowser/Resources/content-blocker-rules.json
 
 Usage:
-    python3 scripts/build-content-blocker.py                 # fetch latest EasyList
+    python3 scripts/build-content-blocker.py                 # fetch latest AdGuard Base
     python3 scripts/build-content-blocker.py path/to/list.txt  # use a local file
 
-The generated JSON only contains domain-wide block rules (``||domain^``) and
-their exceptions, grouped into compact regular expressions so the file stays
-well below WebKit content rule list limits.
+WebKit content blockers reject regex disjunctions (``|``), so each domain
+becomes its own rule. Only domain-wide block rules (``||domain^``) and their
+exceptions are kept, which keeps the file within WebKit rule list limits.
 """
 
 from __future__ import annotations
@@ -19,9 +19,10 @@ import re
 import sys
 import urllib.request
 
-EASYLIST_URL = "https://easylist.to/easylist/easylist.txt"
+ADGUARD_BASE_URL = (
+    "https://filters.adtidy.org/extension/safari/filters/2_optimized.txt"
+)
 OUTPUT_PATH = "SniffBrowser/Resources/content-blocker-rules.json"
-DOMAINS_PER_GROUP = 110
 
 RESOURCE_TYPES = [
     "image",
@@ -39,7 +40,7 @@ def fetch_rules(source: str) -> str:
     if source:
         with open(source, encoding="utf-8", errors="ignore") as handle:
             return handle.read()
-    with urllib.request.urlopen(EASYLIST_URL, timeout=60) as response:
+    with urllib.request.urlopen(ADGUARD_BASE_URL, timeout=60) as response:
         return response.read().decode("utf-8", errors="ignore")
 
 
@@ -78,12 +79,11 @@ def escape_regex(value: str) -> str:
     return value.replace(".", r"\.")
 
 
-def build_rule(domains: list[str], action_type: str) -> dict:
-    escaped = [escape_regex(domain) for domain in domains]
+def build_rule(domain: str, action_type: str) -> dict:
     url_filter = (
-        r"^https?://([^/:]+\.)?("
-        + "|".join(escaped)
-        + r")([/:]|$)"
+        r"^https?://([^/:]+\.)?"
+        + escape_regex(domain)
+        + r"[:/]"
     )
     return {
         "trigger": {
@@ -98,11 +98,10 @@ def build_rule(domains: list[str], action_type: str) -> dict:
 def build_rules(block_domains: set[str], exception_domains: set[str]) -> list[dict]:
     sorted_blocks = sorted(block_domains - exception_domains)
     rules: list[dict] = []
-    for index in range(0, len(sorted_blocks), DOMAINS_PER_GROUP):
-        group = sorted_blocks[index : index + DOMAINS_PER_GROUP]
-        rules.append(build_rule(group, "block"))
+    for domain in sorted_blocks:
+        rules.append(build_rule(domain, "block"))
     for host in sorted(exception_domains):
-        rules.append(build_rule([host], "ignore-previous-rules"))
+        rules.append(build_rule(host, "ignore-previous-rules"))
     return rules
 
 

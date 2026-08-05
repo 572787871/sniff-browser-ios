@@ -19,7 +19,7 @@ final class ContentBlockerService {
 
     private let preferences = BrowserPreferences()
     private let ruleListStore = WKContentRuleListStore.default()
-    private let chunkSize = 100
+    private let chunkSize = 2_000
     private var chunks: [RuleChunk] = []
     private var addedRuleListsByTab: [UUID: Set<String>] = [:]
     private var loadTask: Task<Void, Never>?
