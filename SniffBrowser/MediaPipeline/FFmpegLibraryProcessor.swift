@@ -102,20 +102,6 @@ fileprivate enum FFmpegCore {
         return String(cString: buffer)
     }
 
-    /// 常见打包异常值的防御性归一化：dts/pts/duration 为 AV_NOPTS 时补值，
-    /// 避免 muxer 直接拒绝（如 movenc 对 NOPTS dts/duration 返回 EINVAL）。
-    static func normalizePacket(_ packet: inout AVPacket) {
-        if packet.dts == avNopts {
-            packet.dts = packet.pts != avNopts ? packet.pts : 0
-        }
-        if packet.pts == avNopts {
-            packet.pts = packet.dts != avNopts ? packet.dts : 0
-        }
-        if packet.duration == avNopts || packet.duration < 0 {
-            packet.duration = 0
-        }
-    }
-
     // MARK: - 输入上下文
 
     private static func openInput(
@@ -226,7 +212,6 @@ fileprivate enum FFmpegCore {
                 inputStream.pointee.time_base,
                 outputStream.pointee.time_base
             )
-            normalizePacket(&packet)
             packet.pos = -1
             let writeResult = av_interleaved_write_frame(outputContext, &packet)
             guard writeResult == 0 else {
@@ -381,7 +366,8 @@ fileprivate enum FFmpegCore {
                 inputStream.pointee.time_base,
                 outputStream.pointee.time_base
             )
-            normalizePacket(&packet)
+            // 关键：必须把包映射到输出流索引（输入流索引与输出流索引可能不同）。
+            packet.stream_index = Int32(mapping.outputIndex)
             packet.pos = -1
 
             let writeResult = av_write_frame(outputContext, &packet)
