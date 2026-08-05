@@ -22,7 +22,7 @@ final class ContentBlockerRuleBuilderTests: XCTestCase {
             JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         )
 
-        XCTAssertEqual(rules.count, 4)
+        XCTAssertEqual(rules.count, 6)
         XCTAssertEqual(
             (rules[0]["action"] as? [String: Any])?["type"] as? String,
             "block"
@@ -37,6 +37,14 @@ final class ContentBlockerRuleBuilderTests: XCTestCase {
         )
         XCTAssertEqual(
             (rules[3]["action"] as? [String: Any])?["type"] as? String,
+            "css-display-none"
+        )
+        XCTAssertEqual(
+            (rules[4]["action"] as? [String: Any])?["type"] as? String,
+            "css-display-none"
+        )
+        XCTAssertEqual(
+            (rules[5]["action"] as? [String: Any])?["type"] as? String,
             "ignore-previous-rules"
         )
         XCTAssertEqual(
@@ -63,7 +71,7 @@ final class ContentBlockerRuleBuilderTests: XCTestCase {
             ($0["action"] as? [String: Any])?["type"] as? String
                 == "css-display-none"
         }
-        XCTAssertEqual(cosmetics.count, 2)
+        XCTAssertEqual(cosmetics.count, 4)
         XCTAssertEqual(
             (cosmetics[0]["trigger"] as? [String: Any])?["url-filter"] as? String,
             ".*"
@@ -93,13 +101,17 @@ final class ContentBlockerRuleBuilderTests: XCTestCase {
             JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         )
 
-        XCTAssertEqual(rules.count, 2)
+        XCTAssertEqual(rules.count, 4)
         XCTAssertEqual(
             (rules[0]["action"] as? [String: Any])?["type"] as? String,
             "block"
         )
         XCTAssertEqual(
             (rules[1]["action"] as? [String: Any])?["type"] as? String,
+            "css-display-none"
+        )
+        XCTAssertEqual(
+            (rules[3]["action"] as? [String: Any])?["type"] as? String,
             "ignore-previous-rules"
         )
     }
@@ -116,7 +128,7 @@ final class ContentBlockerRuleBuilderTests: XCTestCase {
         )
 
         XCTAssertGreaterThan(chunks.count, 1)
-        XCTAssertEqual(chunks.reduce(0) { $0 + $1.count }, 46_000)
+        XCTAssertEqual(chunks.reduce(0) { $0 + $1.count }, 46_002)
         for chunk in chunks {
             XCTAssertLessThanOrEqual(
                 chunk.count,
