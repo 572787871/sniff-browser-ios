@@ -9,8 +9,6 @@ final class MediaPipeline {
     private let processors = FFmpegMediaProcessors(
         processor: FFmpegProcessorProvider.current
     )
-    private let avFallback = AVFoundationMediaProcessors()
-    private let hlsAVRemuxer = HLSBundleAVRemuxer()
     private let fileStorage = FileStorageManager.shared
     private let cache = CacheManager.shared
 
@@ -53,13 +51,7 @@ final class MediaPipeline {
                     source: indexURL,
                     output: remuxed
                 )) != nil
-                let avSucceeded = ffmpegSucceeded
-                    ? false
-                    : (try? await hlsAVRemuxer.remuxHLSBundle(
-                        directory: sourceURL,
-                        output: remuxed
-                    )) != nil
-                guard (ffmpegSucceeded || avSucceeded),
+                guard ffmpegSucceeded,
                       FileManager.default.fileExists(atPath: remuxed.path)
                 else {
                     cache.removeWorkDirectory(taskID: taskID)
@@ -93,8 +85,8 @@ final class MediaPipeline {
                 }
             }
 
-            let info = try await extractMetadata(from: finalSource)
-            let thumbnail = try await generateThumbnail(
+            let info = await extractMetadata(from: finalSource)
+            let thumbnail = await generateThumbnail(
                 from: finalSource,
                 taskID: taskID
             )
@@ -122,27 +114,30 @@ final class MediaPipeline {
         cache.sweepLeftovers(activeTaskIDs: activeTaskIDs)
     }
 
-    /// 元数据：优先 FFmpeg，不可用时 AVFoundation 兜底（MP4/MOV/M4V 均可用）。
-    private func extractMetadata(from url: URL) async throws -> MediaAssetInfo {
-        if let info = try? await processors.extract(from: url) {
-            return info
-        }
-        return try await avFallback.extract(from: url)
+    /// 元数据统一走 FFmpegProcessor；失败时不阻塞最终文件产出。
+    private func extractMetadata(from url: URL) async -> MediaAssetInfo {
+        let size: Int64 = (try? FileManager.default
+            .attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
+        return (try? await processors.extract(from: url)) ?? MediaAssetInfo(
+            duration: 0,
+            width: 0,
+            height: 0,
+            estimatedBitrate: 0,
+            fileSizeBytes: size
+        )
     }
 
     private func generateThumbnail(
         from url: URL,
         taskID: UUID
-    ) async throws -> (data: Data, relativePath: String)? {
+    ) async -> (data: Data, relativePath: String)? {
         let directory = thumbnailsDirectory
         try? FileManager.default.createDirectory(
             at: directory,
             withIntermediateDirectories: true
         )
         let output = directory.appendingPathComponent("\(taskID.uuidString).jpg")
-        if (try? await processors.generate(from: url, output: output)) == nil {
-            try? await avFallback.generate(from: url, output: output)
-        }
+        _ = try? await processors.generate(from: url, output: output)
         guard let data = try? Data(contentsOf: output) else { return nil }
         return (data, "Thumbnails/\(output.lastPathComponent)")
     }

@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# 下载静态 iOS arm64 ffmpeg 可执行文件并放入资源目录，随 IPA 捆绑。
+# 正式版 FFmpeg 集成（GitHub Actions）：
+# 应下载/构建 iOS 版 FFmpeg XCFramework，链接进工程，并让
+# FFmpegProcessorProvider 返回基于 XCFramework 的实现（无需改下载模块与管线）。
 #
-# 生产构建（GitHub Actions）应把下面的候选源替换为固定的、可验证的
-# iOS arm64 ffmpeg 产物地址，并去掉失败时“降级”的分支，保证必带 FFmpeg。
-# 当前开发环境没有该产物时，构建仍可进行，运行时会使用 StubFFmpegProcessor。
+# 下面的可执行文件方式仅用于开发期验证；当前环境没有产物时构建仍可进行，
+# 运行时会使用 StubFFmpegProcessor 保证项目可编译。
 set -euo pipefail
 
 TARGET_DIR="SniffBrowser/Resources"
@@ -17,7 +18,7 @@ fi
 
 mkdir -p "${TARGET_DIR}"
 
-# 候选源（按顺序尝试）。生产环境请替换为固定版本地址。
+# 候选源（按顺序尝试）。生产环境请替换为固定的 iOS arm64 ffmpeg 产物地址。
 CANDIDATES=(
   "https://example.invalid/ffmpeg-ios-arm64"
 )
