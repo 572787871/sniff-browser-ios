@@ -20,16 +20,21 @@ TARGET_DIR="vendor"
 HEADERS_DIR="${TARGET_DIR}/FFmpegHeaders"
 VERSION_FILE="${TARGET_DIR}/FFmpeg.version"
 
-# 与仓库 Package.swift @ ${RELEASE_TAG} 一致的 SHA-256（固定版本、可复现）。
-declare -A SHA256=(
-  [libavcodec]="03426fcda41ec61b925afbb6cf0c5e8796c569443ef53f32bbb74191f0b4386c"
-  [libavformat]="e5e4e7ef94a275529c0852f2865e0dc6f3965c1ee991e281ecaa525529ab8e2c"
-  [libavutil]="b87310b863224f7bf7095c1aae8835d173335bd945714776d9e9d6e2fa6eded7"
-  [libswresample]="46bbe79946676a0293ae8f60ef27980a2bee93abf1b8fa3b43466ddc985e5df4"
-  [libswscale]="1497cee3d8fd96fef8dc1480b20aacaa5717c875fb9c80ec698a34552372e5d1"
-  [libavfilter]="c4fa55e438cc1638357f48c07716e2712b0f78b7e83f7824ff3b07fc4d4ed9c7"
-)
 LIBS=(libavcodec libavformat libavutil libswresample libswscale libavfilter)
+
+# 与仓库 Package.swift @ ${RELEASE_TAG} 一致的 SHA-256（固定版本、可复现）。
+# 注意：macOS 自带 bash 3.2 不支持关联数组，这里用 case 保证可移植。
+sha256_for() {
+  case "$1" in
+    libavcodec)     echo "03426fcda41ec61b925afbb6cf0c5e8796c569443ef53f32bbb74191f0b4386c" ;;
+    libavformat)    echo "e5e4e7ef94a275529c0852f2865e0dc6f3965c1ee991e281ecaa525529ab8e2c" ;;
+    libavutil)      echo "b87310b863224f7bf7095c1aae8835d173335bd945714776d9e9d6e2fa6eded7" ;;
+    libswresample)  echo "46bbe79946676a0293ae8f60ef27980a2bee93abf1b8fa3b43466ddc985e5df4" ;;
+    libswscale)     echo "1497cee3d8fd96fef8dc1480b20aacaa5717c875fb9c80ec698a34552372e5d1" ;;
+    libavfilter)    echo "c4fa55e438cc1638357f48c07716e2712b0f78b7e83f7824ff3b07fc4d4ed9c7" ;;
+    *)              echo "" ;;
+  esac
+}
 
 log() { echo "[fetch-ffmpeg] $*"; }
 fail() {
@@ -82,7 +87,10 @@ for lib in "${LIBS[@]}"; do
   log "下载 ${lib}..."
   curl -fsSL --max-time 900 -o "${archive}" "${BASE_URL}/${lib}.xcframework.zip"
 
-  expected="${SHA256[$lib]}"
+  expected="$(sha256_for "${lib}")"
+  if [[ -z "${expected}" ]]; then
+    fail "未知库：${lib}"
+  fi
   actual="$(shasum -a 256 "${archive}" | awk '{print $1}')"
   if [[ "${actual}" != "${expected}" ]]; then
     fail "${lib}.xcframework.zip SHA-256 校验失败：期望 ${expected}，实际 ${actual}"
@@ -111,7 +119,7 @@ Release: ${RELEASE_TAG}
 Source: ${BASE_URL}
 Built: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 SHA-256:
-$(for lib in "${LIBS[@]}"; do printf '  %s %s\n' "${lib}" "${SHA256[$lib]}"; done)
+$(for lib in "${LIBS[@]}"; do printf '  %s %s\n' "${lib}" "$(sha256_for "${lib}")"; done)
 EOF
 
 log "FFmpeg XCFrameworks 就绪：${TARGET_DIR}（${RELEASE_TAG}）"
