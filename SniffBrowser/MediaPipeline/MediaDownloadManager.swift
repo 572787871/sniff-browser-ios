@@ -55,4 +55,8 @@ final class MediaDownloadManager: DownloadManaging {
     func fileURL(for taskID: UUID) -> URL? {
         center.fileURL(for: taskID)
     }
+
+    func thumbnailFileURL(for taskID: UUID) -> URL? {
+        center.thumbnailFileURL(for: taskID)
+    }
 }

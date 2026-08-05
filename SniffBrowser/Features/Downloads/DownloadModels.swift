@@ -295,4 +295,5 @@ protocol DownloadManaging: AnyObject {
     func retryTask(id: UUID) async throws
     func deleteTask(id: UUID, deleteFile: Bool) async throws
     func fileURL(for taskID: UUID) -> URL?
+    func thumbnailFileURL(for taskID: UUID) -> URL?
 }
