@@ -198,6 +198,36 @@ bash scripts/generate-project.sh   # 自动选择 project.nofmpeg.yml，使用 S
 - [x] XcodeGen 正式 spec：链接 + 嵌入 6 个 libav 动态框架；
 - [x] Swift 桥接头（`__has_include` 守卫，双环境可编译）；
 - [x] CI 产物硬验证（缺失 FFmpeg 即失败，禁止 FFmpegKit 出现）；
-- [ ] 实现 `FFmpegLibraryProcessor`（`#if FFMPEG_ENABLED` 分支），替换 provider；
-- [ ] 推一个提交触发 CI，确认构建日志出现 FFmpeg 链接、IPA 内含 FFmpeg；
+- [x] 实现 `FFmpegLibraryProcessor`（`#if FFMPEG_ENABLED` 分支），替换 provider；
+- [x] 推一个提交触发 CI，确认构建日志出现 FFmpeg 链接、IPA 内含 FFmpeg；
+- [x] 模拟器集成测试验证 MP4/MOV/HLS/TS/DASH/MKV/WebM/FLV：
+      转封装 → MP4、DASH 分离流合并、元数据、封面全部通过；
 - [ ] 真机验证各格式下载后均产出单一 MP4，且无任何中间文件残留。
+
+## 7. 实现说明
+
+### FFmpegLibraryProcessor（libav* C API）
+
+- `remux`：`avformat_open_input` → 复制 stream codecpar → `mp4` muxer
+  （`movflags=faststart`）→ `av_interleaved_write_frame`（HLS/TS/FLV/MKV/WebM/MOV/MP4）。
+- `mux`：双输入（DASH 视频轨 + 音频轨）按全局时间轴 dts 排序，
+  `av_write_frame` 写入；**必须把包 `stream_index` 映射为输出流索引**，
+  否则音频包会被写到视频流导致非单调 dts 被 muxer 拒绝。
+- `processRemote`：与 remux 同一入口（libavformat 原生支持网络协议）。
+- `extractMetadata`：`av_find_best_stream` + format duration/bit_rate。
+- `generateThumbnail`：解码首帧 → `swscale` 缩放 480 宽 → MJPEG 编码
+  （像素格式取编码器 `AVCodec.pix_fmts` 首个支持值）。
+- 所有阻塞 C 调用在独立后台串行队列执行，不阻塞 UI。
+
+### DASH（MPD）
+
+当前预编译包未内置 dash demuxer，`FFmpegProcessor` 内部自解析 MPD：
+XML 提取 Representation / SegmentTemplate（init、media、timescale、startNumber）
+与 SegmentTimeline 段数量 → 下载 init + media 分段 → 拼接为 fMP4 →
+`mux()` 合并音视频 → 清理中间文件。对 App 与下载模块无感。
+
+### 时间戳处理
+
+不要对 NOPTS 的 dts/pts 做手工替换：libavformat 的
+`compute_muxer_pkt_fields` 会基于 pts + delay 推导单调 dts（MKV B 帧场景），
+手工替换会破坏单调性（本地 FFmpeg 7.1.3 C 复现验证）。
