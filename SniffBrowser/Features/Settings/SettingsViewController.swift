@@ -239,7 +239,7 @@ extension SettingsViewController: UITableViewDataSource, UITableViewDelegate {
             return
         case .contentBlocking:
             navigationController?.pushViewController(
-                ContentBlockingCenterViewController(),
+                ContentBlockingSettingsViewController(),
                 animated: true
             )
             return

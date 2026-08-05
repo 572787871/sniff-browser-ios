@@ -102,6 +102,7 @@ final class ContentBlockerService {
     private(set) var updatedAt: Date?
     private(set) var filterVersion: String?
     private(set) var isUpdating = false
+    private static let autoUpdateInterval: TimeInterval = 5 * 24 * 60 * 60
 
     var isEnabled: Bool {
         preferences.contentBlockingEnabled
@@ -220,11 +221,16 @@ final class ContentBlockerService {
         do {
             var versions: [String] = []
             for definition in Self.sourceDefinitions {
-                let text = try await downloadFilterText(from: definition.url)
-                cacheSourceText(text, key: definition.key)
-                if let version = ContentBlockerRuleBuilder.filterVersion(from: text) {
-                    versions.append("\(definition.key):\(version)")
+                // 单个规则源失败不中断整体更新，成功编译启用子集即可。
+                if let text = try? await downloadFilterText(from: definition.url) {
+                    cacheSourceText(text, key: definition.key)
+                    if let version = ContentBlockerRuleBuilder.filterVersion(from: text) {
+                        versions.append("\(definition.key):\(version)")
+                    }
                 }
+            }
+            guard !versions.isEmpty else {
+                throw ContentBlockerUpdateError.invalidResponse
             }
             try await rebuildRules(reloadPages: reloadPages, versions: versions)
         } catch let error as ContentBlockerUpdateError {
@@ -286,10 +292,6 @@ final class ContentBlockerService {
                 ruleCount: ruleCount
             )
         )
-        ContentBlockManager.shared.statisticsManager.updateRuleCount(
-            ruleCount,
-            filterCount: enabledKeys.count
-        )
         postChange(reloadActivePage: reloadPages)
     }
 
@@ -337,12 +339,9 @@ final class ContentBlockerService {
     }
 
     private var needsAutoUpdate: Bool {
-        guard let interval = ContentBlockManager.shared.updateSchedule.interval else {
-            return false
-        }
         if let updatedAt {
             return Date().timeIntervalSince(updatedAt)
-                >= interval
+                >= Self.autoUpdateInterval
         }
         guard let url = Bundle.main.url(
             forResource: "content-blocker-rules",
@@ -356,7 +355,7 @@ final class ContentBlockerService {
             return false
         }
         return Date().timeIntervalSince(modificationDate)
-            >= interval
+            >= Self.autoUpdateInterval
     }
 
     private func installRules(data: Data, fallbackError: String) async {
@@ -366,10 +365,6 @@ final class ContentBlockerService {
             return
         }
         ruleCount = chunks.reduce(0) { $0 + $1.count }
-        ContentBlockManager.shared.statisticsManager.updateRuleCount(
-            ruleCount,
-            filterCount: ContentBlockManager.shared.filterManager.enabledSourceKeys().count
-        )
         let compiledChunks = await compileChunks(
             chunks: chunks,
             primaryIdentifier: Self.primaryIdentifier
@@ -540,24 +535,15 @@ final class ContentBlockerService {
         await loadRules()
     }
 
-    /// 启用的自定义规则转成 AdGuard 语法文本（复杂类型无法经 WKContentRuleList 生效）。
+    /// 启用的自定义规则直接作为 AdGuard 语法文本参与编译。
     private func customRuleTexts() -> [String] {
         ContentBlockManager.shared.customManager.allRules()
-            .filter { $0.isEnabled && $0.type.isSystemBlockable }
-            .map { rule -> String? in
+            .filter { $0.isEnabled }
+            .compactMap { rule -> String? in
                 let content = rule.content.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !content.isEmpty else { return nil }
-                switch rule.type {
-                case .whitelist:
-                    let domain = content
-                        .replacingOccurrences(of: "||", with: "")
-                        .replacingOccurrences(of: "^", with: "")
-                    return "@@||\(domain)^"
-                default:
-                    return content
-                }
+                return content
             }
-            .compactMap { $0 }
     }
 
     /// 白名单的域名/子域名模式转成例外规则；通配符与正则由 applyRules 运行时匹配。

@@ -48,16 +48,6 @@ extension BrowserViewController: WKNavigationDelegate {
         pageURL: lastRequestedURLs[tab.id] ?? webView.url ?? tab.url,
         isPrivate: tab.isPrivate
       )
-      if !tab.isPrivate, let url = lastRequestedURLs[tab.id] ?? webView.url ?? tab.url {
-        ContentBlockManager.shared.logManager.addEntry(
-          .init(
-            url: url.absoluteString,
-            host: url.host ?? "",
-            resourceType: "Document",
-            status: "加载中"
-          )
-        )
-      }
     }
     guard webView === activeWebView else { return }
     errorView.isHidden = true
@@ -93,14 +83,6 @@ extension BrowserViewController: WKNavigationDelegate {
     )
     if !tab.isPrivate, let url = webView.url {
       _ = try? historyService.recordVisit(title: webView.title, url: url)
-      ContentBlockManager.shared.logManager.addEntry(
-        .init(
-          url: url.absoluteString,
-          host: url.host ?? "",
-          resourceType: "Document",
-          status: "完成"
-        )
-      )
     }
     WebPageThemeColorService.requestCurrentTheme(in: webView)
     resourceSniffingService.requestIncrementalScan(tabID: tab.id, reason: "didFinish")
@@ -133,19 +115,6 @@ extension BrowserViewController: WKNavigationDelegate {
     withError error: Error
   ) {
     handleNavigationFailure(error, in: webView)
-    if let tab = tabManager.tabs.first(where: { $0.webView === webView }),
-       !tab.isPrivate,
-       let url = webView.url {
-      ContentBlockManager.shared.logManager.addEntry(
-        .init(
-          url: url.absoluteString,
-          host: url.host ?? "",
-          resourceType: "Document",
-          status: "失败",
-          isBlocked: (error as NSError).code == NSURLErrorCancelled
-        )
-      )
-    }
   }
 
   func webView(
