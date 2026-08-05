@@ -85,6 +85,8 @@ final class MediaPipeline {
                 finalExtension = type.rawValue
             case .audio:
                 finalExtension = type.preferredFileExtension
+            case .unknown:
+                break
                 }
             }
 
