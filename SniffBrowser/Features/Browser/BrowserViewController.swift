@@ -113,6 +113,12 @@ final class BrowserViewController: UIViewController {
     attachSelectedTab()
   }
 
+  override func viewWillAppear(_ animated: Bool) {
+    super.viewWillAppear(animated)
+    // 设置页修改新标签页选项后，回到浏览器时立即生效。
+    newTabView.refreshContentPreferences()
+  }
+
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     updateActiveWebViewInsets()

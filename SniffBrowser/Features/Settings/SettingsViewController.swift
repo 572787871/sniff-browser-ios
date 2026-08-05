@@ -164,10 +164,13 @@ extension SettingsViewController: UITableViewDataSource, UITableViewDelegate {
         let row = sections[indexPath.section].rows[indexPath.row]
         let isClearAction = row.destination == .clearBrowsingData
         let isEnabled = !isClearAction || onClearBrowsingData != nil
+        let subtitle = row.destination == .searchEngine
+            ? BrowserPreferences().searchEngine.displayName
+            : row.subtitle
         let tint = tintColor(for: row.destination)
         cell.configure(
             title: row.title,
-            subtitle: row.subtitle,
+            subtitle: subtitle,
             symbol: row.symbol,
             tint: tint,
             titleColor: isClearAction ? AppColors.danger : AppColors.primaryText,
@@ -214,6 +217,28 @@ extension SettingsViewController: UITableViewDataSource, UITableViewDelegate {
                 )
             }
             return
+        }
+        switch destination {
+        case .searchEngine:
+            navigationController?.pushViewController(
+                SearchEngineSettingsViewController(),
+                animated: true
+            )
+            return
+        case .newTabBehavior:
+            navigationController?.pushViewController(
+                NewTabSettingsViewController(),
+                animated: true
+            )
+            return
+        case .websitePermissions:
+            navigationController?.pushViewController(
+                WebsitePermissionsViewController(),
+                animated: true
+            )
+            return
+        default:
+            break
         }
         if let onSelectDestination {
             onSelectDestination(destination)
@@ -280,16 +305,12 @@ private final class SettingsDetailViewController: BaseViewController {
         for destination: SettingsViewController.Destination
     ) -> (title: String, symbol: String, message: String)? {
         switch destination {
-        case .searchEngine:
-            return ("默认搜索引擎", "magnifyingglass", "当前默认使用 Google；后续版本将在此提供搜索引擎选择。")
-        case .newTabBehavior:
-            return ("新标签页", "plus.square.on.square", "新标签页当前使用本地原生页面，不加载新闻、广告或推荐内容。")
+        case .searchEngine, .newTabBehavior, .websitePermissions:
+            return nil
         case .appearance:
             return ("外观", "circle.lefthalf.filled", "设置应用外观模式：跟随系统、浅色或深色。")
         case .contentBlocking:
             return ("内容拦截", "shield.lefthalf.filled", "内容过滤引擎将在隐私阶段接入；当前不会注入来源不明的规则。")
-        case .websitePermissions:
-            return ("网站权限", "hand.raised", "敏感权限将始终由系统询问，不会静默授权。")
         case .clearBrowsingData:
             return ("清除浏览数据", "trash", "此操作会清除 Cookie、网站存储与网页缓存，并重新载入当前网页。")
         case .downloadPreferences:

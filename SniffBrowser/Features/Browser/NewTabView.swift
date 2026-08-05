@@ -55,10 +55,18 @@ final class NewTabView: UIView {
     welcomeLabel.text = isPrivate
       ? "无痕标签不会保存到浏览历史，下载和主动收藏的内容仍会保留。"
       : "从一次安静、专注的浏览开始"
+    refreshContentPreferences()
     accessibilityLabel = isPrivate
       ? "无痕浏览。无痕模式不会让你在网络上匿名。"
       : nil
     updateResolvedColors()
+  }
+
+  /// 根据设置决定是否显示问候语与日期，设置页变更后回到新标签页时刷新。
+  func refreshContentPreferences() {
+    let preferences = BrowserPreferences()
+    welcomeLabel.isHidden = !preferences.newTabShowsWelcome
+    dateLabel.isHidden = !preferences.newTabShowsDate
   }
 
   private func configure() {

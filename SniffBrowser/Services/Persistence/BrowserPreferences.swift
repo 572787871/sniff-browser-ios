@@ -4,6 +4,8 @@ struct BrowserPreferences {
   private enum Key {
     static let searchEngine = "browser.searchEngine"
     static let pullToRefresh = "browser.pullToRefresh"
+    static let newTabShowsWelcome = "browser.newTab.showsWelcome"
+    static let newTabShowsDate = "browser.newTab.showsDate"
   }
 
   private let defaults: UserDefaults
@@ -34,6 +36,28 @@ struct BrowserPreferences {
     }
     nonmutating set {
       defaults.set(newValue, forKey: Key.pullToRefresh)
+    }
+  }
+
+  var newTabShowsWelcome: Bool {
+    get {
+      defaults.object(forKey: Key.newTabShowsWelcome) == nil
+        ? true
+        : defaults.bool(forKey: Key.newTabShowsWelcome)
+    }
+    nonmutating set {
+      defaults.set(newValue, forKey: Key.newTabShowsWelcome)
+    }
+  }
+
+  var newTabShowsDate: Bool {
+    get {
+      defaults.object(forKey: Key.newTabShowsDate) == nil
+        ? true
+        : defaults.bool(forKey: Key.newTabShowsDate)
+    }
+    nonmutating set {
+      defaults.set(newValue, forKey: Key.newTabShowsDate)
     }
   }
 }

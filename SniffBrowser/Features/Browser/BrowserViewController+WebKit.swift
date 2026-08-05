@@ -265,6 +265,35 @@ extension BrowserViewController: WKUIDelegate {
 
   func webView(
     _ webView: WKWebView,
+    requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+    initiatedByFrame frame: WKFrameInfo,
+    type: WKMediaCaptureType,
+    decisionHandler: @escaping (WKPermissionDecision) -> Void
+  ) {
+    let host = origin.host
+    switch type {
+    case .camera:
+      resolveWebsitePermission(.camera, for: host, decisionHandler: decisionHandler)
+    case .microphone:
+      resolveWebsitePermission(.microphone, for: host, decisionHandler: decisionHandler)
+    case .cameraAndMicrophone:
+      resolveCameraAndMicrophonePermission(for: host, decisionHandler: decisionHandler)
+    @unknown default:
+      decisionHandler(.deny)
+    }
+  }
+
+  func webView(
+    _ webView: WKWebView,
+    requestGeolocationPermissionFor origin: WKSecurityOrigin,
+    initiatedByFrame frame: WKFrameInfo,
+    decisionHandler: @escaping (WKPermissionDecision) -> Void
+  ) {
+    resolveWebsitePermission(.location, for: origin.host, decisionHandler: decisionHandler)
+  }
+
+  func webView(
+    _ webView: WKWebView,
     runJavaScriptTextInputPanelWithPrompt prompt: String,
     defaultText: String?,
     initiatedByFrame frame: WKFrameInfo,
@@ -292,6 +321,106 @@ extension BrowserViewController: WKUIDelegate {
       [weak alert] _ in
       completionHandler(alert?.textFields?.first?.text)
     })
+    present(alert, animated: true)
+  }
+
+  private func resolveWebsitePermission(
+    _ permission: WebsitePermission,
+    for host: String,
+    decisionHandler: @escaping (WKPermissionDecision) -> Void
+  ) {
+    guard !host.isEmpty else {
+      decisionHandler(.deny)
+      return
+    }
+    let store = WebsitePermissionStore.shared
+    if let decision = store.decision(for: host, permission: permission) {
+      decisionHandler(decision == .allow ? .grant : .deny)
+      return
+    }
+    guard canPresentPermissionAlert() else {
+      decisionHandler(.deny)
+      return
+    }
+    presentPermissionAlert(
+      title: "“\(host)”请求使用\(permission.displayName)",
+      message: "允许该网站使用\(permission.displayName)吗？你可以稍后在浏览器设置中修改。",
+      remember: { allowed in
+        store.setDecision(
+          allowed ? .allow : .deny,
+          for: host,
+          permission: permission
+        )
+      },
+      decisionHandler: decisionHandler
+    )
+  }
+
+  private func resolveCameraAndMicrophonePermission(
+    for host: String,
+    decisionHandler: @escaping (WKPermissionDecision) -> Void
+  ) {
+    guard !host.isEmpty else {
+      decisionHandler(.deny)
+      return
+    }
+    let store = WebsitePermissionStore.shared
+    let cameraDecision = store.decision(for: host, permission: .camera)
+    let microphoneDecision = store.decision(for: host, permission: .microphone)
+    if let cameraDecision, let microphoneDecision {
+      decisionHandler(
+        cameraDecision == .allow && microphoneDecision == .allow ? .grant : .deny
+      )
+      return
+    }
+    guard canPresentPermissionAlert() else {
+      decisionHandler(.deny)
+      return
+    }
+    presentPermissionAlert(
+      title: "“\(host)”请求使用摄像头和麦克风",
+      message: "允许该网站使用摄像头和麦克风吗？你可以稍后在浏览器设置中修改。",
+      remember: { allowed in
+        let decision: WebsitePermissionDecision = allowed ? .allow : .deny
+        store.setDecision(decision, for: host, permission: .camera)
+        store.setDecision(decision, for: host, permission: .microphone)
+      },
+      decisionHandler: decisionHandler
+    )
+  }
+
+  private func canPresentPermissionAlert() -> Bool {
+    view.window != nil && presentedViewController == nil
+  }
+
+  private func presentPermissionAlert(
+    title: String,
+    message: String,
+    remember: @escaping (Bool) -> Void,
+    decisionHandler: @escaping (WKPermissionDecision) -> Void
+  ) {
+    let alert = UIAlertController(
+      title: title,
+      message: message,
+      preferredStyle: .alert
+    )
+    alert.addAction(
+      UIAlertAction(title: "允许", style: .default) { _ in
+        remember(true)
+        decisionHandler(.grant)
+      }
+    )
+    alert.addAction(
+      UIAlertAction(title: "拒绝", style: .destructive) { _ in
+        remember(false)
+        decisionHandler(.deny)
+      }
+    )
+    alert.addAction(
+      UIAlertAction(title: "仅本次拒绝", style: .cancel) { _ in
+        decisionHandler(.deny)
+      }
+    )
     present(alert, animated: true)
   }
 }
