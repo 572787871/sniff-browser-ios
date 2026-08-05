@@ -29,3 +29,14 @@ targets:
     settings:
       base:
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) FFMPEG_ENABLED"
+  SniffBrowserTests:
+    sources:REPLACE:
+      - path: SniffBrowserTests
+        excludes:
+          - Fixtures
+      - path: SniffBrowserTests/Fixtures
+        type: folder
+        buildPhase: resources
+    settings:
+      base:
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) FFMPEG_ENABLED"
