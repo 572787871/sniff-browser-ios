@@ -106,6 +106,7 @@ final class MediaPipelineTests: XCTestCase {
             fileName: "电影.mp4",
             preferredExtension: "mp4"
         )
+        try Data().write(to: first)
         let second = storage.uniqueDestination(
             fileName: "电影.mp4",
             preferredExtension: "mp4"

@@ -49,8 +49,26 @@ enum MediaTypeDetector {
         contentType: String?,
         magicBytes: Data? = nil
     ) -> MediaType {
-        if let magicBytes, magicBytes.count >= 12 {
+        if let magicBytes {
             let bytes = [UInt8](magicBytes.prefix(12))
+            // EBML 头（MKV/WebM）
+            if bytes.count >= 4,
+               bytes[0] == 0x1A, bytes[1] == 0x45, bytes[2] == 0xDF, bytes[3] == 0xA3 {
+                let docType: MediaType = String(
+                    data: magicBytes,
+                    encoding: .ascii
+                )?.contains("webm") == true ? .webm : .mkv
+                return docType
+            }
+            // FLV
+            if bytes.count >= 3,
+               bytes[0] == 0x46, bytes[1] == 0x4C, bytes[2] == 0x56 {
+                return .flv
+            }
+            // MPEG-TS：0x47 同步字节
+            if bytes.count >= 1, bytes[0] == 0x47 {
+                return .ts
+            }
             // ftyp box（MP4/MOV/M4V 容器由 box 类型区分）
             if bytes.count >= 12,
                bytes[4] == 0x66, bytes[5] == 0x74, bytes[6] == 0x79, bytes[7] == 0x70 {
@@ -60,22 +78,6 @@ enum MediaTypeDetector {
                 case "M4V ", "M4VH", "M4VP": return .m4v
                 default: return .mp4
                 }
-            }
-            // EBML 头（MKV/WebM）
-            if bytes[0] == 0x1A, bytes[1] == 0x45, bytes[2] == 0xDF, bytes[3] == 0xA3 {
-                let docType: MediaType = String(
-                    data: magicBytes,
-                    encoding: .ascii
-                )?.contains("webm") == true ? .webm : .mkv
-                return docType
-            }
-            // FLV
-            if bytes[0] == 0x46, bytes[1] == 0x4C, bytes[2] == 0x56 {
-                return .flv
-            }
-            // MPEG-TS：0x47 同步字节
-            if bytes[0] == 0x47 {
-                return .ts
             }
         }
 
