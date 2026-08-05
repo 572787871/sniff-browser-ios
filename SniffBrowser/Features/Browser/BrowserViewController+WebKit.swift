@@ -115,6 +115,10 @@ extension BrowserViewController: WKNavigationDelegate {
     withError error: Error
   ) {
     handleNavigationFailure(error, in: webView)
+    // 主框架导航被规则取消时计入拦截统计（近似值，WebKit 公开 API 限制）。
+    if (error as NSError).code == NSURLErrorCancelled {
+      ContentBlockManager.shared.statisticsManager.recordBlockedRequest()
+    }
   }
 
   func webView(

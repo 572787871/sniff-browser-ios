@@ -44,6 +44,15 @@ final class ContentBlockerService {
         ("14", URL(string: "https://filters.adtidy.org/extension/safari/filters/14_optimized.txt")!),
         ("224", URL(string: "https://filters.adtidy.org/extension/safari/filters/224_optimized.txt")!),
     ]
+    /// Safari 端点不可用时的备用源（AdGuard iOS 原始列表）。
+    static let iosFilterURLs: [String: URL] = [
+        "2": URL(string: "https://filters.adtidy.org/ios/filters/2.txt")!,
+        "3": URL(string: "https://filters.adtidy.org/ios/filters/3.txt")!,
+        "4": URL(string: "https://filters.adtidy.org/ios/filters/4.txt")!,
+        "11": URL(string: "https://filters.adtidy.org/ios/filters/11.txt")!,
+        "14": URL(string: "https://filters.adtidy.org/ios/filters/14.txt")!,
+        "224": URL(string: "https://filters.adtidy.org/ios/filters/224.txt")!,
+    ]
     static let primaryIdentifier = "com.sniffbrowser.adblock"
 
     private struct RuleChunk {
@@ -222,7 +231,7 @@ final class ContentBlockerService {
             var versions: [String] = []
             for definition in Self.sourceDefinitions {
                 // 单个规则源失败不中断整体更新，成功编译启用子集即可。
-                if let text = try? await downloadFilterText(from: definition.url) {
+                if let text = try? await downloadSourceText(for: definition) {
                     cacheSourceText(text, key: definition.key)
                     if let version = ContentBlockerRuleBuilder.filterVersion(from: text) {
                         versions.append("\(definition.key):\(version)")
@@ -280,6 +289,10 @@ final class ContentBlockerService {
 
         self.chunks = compiledChunks
         ruleCount = chunks.reduce(0) { $0 + $1.count }
+        ContentBlockManager.shared.statisticsManager.updateRuleCount(
+            ruleCount,
+            filterCount: enabledKeys.count
+        )
         updatedAt = Date()
         filterVersion = versions.joined(separator: " / ")
         lastLoadError = nil
@@ -365,6 +378,10 @@ final class ContentBlockerService {
             return
         }
         ruleCount = chunks.reduce(0) { $0 + $1.count }
+        ContentBlockManager.shared.statisticsManager.updateRuleCount(
+            ruleCount,
+            filterCount: ContentBlockManager.shared.filterManager.enabledSourceKeys().count
+        )
         let compiledChunks = await compileChunks(
             chunks: chunks,
             primaryIdentifier: Self.primaryIdentifier
@@ -461,9 +478,9 @@ final class ContentBlockerService {
     }
 
     private func downloadFilterText(from url: URL) async throws -> String {
-        let (data, response) = try await URLSession.shared.data(
-            from: url
-        )
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 60
+        let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse,
               http.statusCode == 200
         else {
@@ -473,6 +490,19 @@ final class ContentBlockerService {
             throw ContentBlockerUpdateError.invalidFilter
         }
         return text
+    }
+
+    private func downloadSourceText(
+        for definition: (key: String, url: URL)
+    ) async throws -> String {
+        do {
+            return try await downloadFilterText(from: definition.url)
+        } catch {
+            if let fallback = Self.iosFilterURLs[definition.key] {
+                return try await downloadFilterText(from: fallback)
+            }
+            throw error
+        }
     }
 
     private func compile(

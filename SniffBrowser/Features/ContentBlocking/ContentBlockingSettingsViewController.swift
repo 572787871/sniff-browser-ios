@@ -127,14 +127,15 @@ extension ContentBlockingSettingsViewController: UIDocumentPickerDelegate {
 
 extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableViewDelegate {
     func numberOfSections(in tableView: UITableView) -> Int {
-        4
+        5
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
         case 0: return 1
-        case 1: return manager.filterManager.allLists().count
-        case 2: return 2
+        case 1: return 4
+        case 2: return manager.filterManager.allLists().count
+        case 3: return 2
         default: return 2
         }
     }
@@ -142,16 +143,22 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch section {
         case 0: return nil
-        case 1: return "内置规则"
-        case 2: return "更新"
+        case 1: return "拦截统计"
+        case 2: return "内置规则"
+        case 3: return "更新"
         default: return "其他"
         }
     }
 
     func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        section == 1
-            ? "开关即时生效；导入的规则与白名单会一并参与编译。"
-            : nil
+        switch section {
+        case 1:
+            return "拦截次数为主框架导航被取消的近似计数（WebKit 公开 API 限制）。"
+        case 2:
+            return "开关即时生效；导入的规则与白名单会一并参与编译。"
+        default:
+            return nil
+        }
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -177,6 +184,29 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
             return cell
         case 1:
             guard let cell = tableView.dequeueReusableCell(
+                withIdentifier: GlassSummaryCell.reuseIdentifier,
+                for: indexPath
+            ) as? GlassSummaryCell else {
+                return UITableViewCell()
+            }
+            let stats = manager.statisticsManager.current()
+            let values: [(String, String, String)] = [
+                ("今日拦截", "\(stats.todayBlocked) 次", "number"),
+                ("累计拦截", "\(stats.totalBlocked) 次", "number"),
+                ("当前规则", "\(service.ruleCount) 条", "list.bullet"),
+                ("已启用过滤器", "\(manager.filterManager.enabledSourceKeys().count) 个", "checkmark.circle"),
+            ]
+            let value = values[indexPath.row]
+            cell.configure(
+                title: value.0,
+                subtitle: value.1,
+                symbol: value.2,
+                tint: .systemGray,
+                isEnabled: false
+            )
+            return cell
+        case 2:
+            guard let cell = tableView.dequeueReusableCell(
                 withIdentifier: SettingsToggleCell.reuseIdentifier,
                 for: indexPath
             ) as? SettingsToggleCell else {
@@ -193,7 +223,7 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
                 self?.toggleRuleList(list.sourceKey, enabled: enabled)
             }
             return cell
-        case 2:
+        case 3:
             if indexPath.row == 0 {
                 guard let cell = tableView.dequeueReusableCell(
                     withIdentifier: GlassSummaryCell.reuseIdentifier,
@@ -254,11 +284,11 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         switch indexPath.section {
-        case 2:
+        case 3:
             if indexPath.row == 0 {
                 runUpdate()
             }
-        case 3:
+        case 4:
             if indexPath.row == 0 {
                 importRules()
             } else {

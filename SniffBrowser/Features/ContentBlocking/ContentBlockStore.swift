@@ -62,7 +62,7 @@ final class FilterRuleManager {
             name: "EasyPrivacy",
             details: "阻止追踪器与统计脚本",
             ruleCount: 8_421,
-            isEnabled: true,
+            isEnabled: false,
             sortOrder: 1
         ),
         FilterListMeta(
@@ -70,7 +70,7 @@ final class FilterRuleManager {
             name: "社交媒体过滤",
             details: "隐藏分享与社交组件",
             ruleCount: 5_203,
-            isEnabled: true,
+            isEnabled: false,
             sortOrder: 2
         ),
         FilterListMeta(
@@ -78,7 +78,7 @@ final class FilterRuleManager {
             name: "AdGuard Mobile",
             details: "移动端网站广告规则",
             ruleCount: 6_205,
-            isEnabled: true,
+            isEnabled: false,
             sortOrder: 3
         ),
         FilterListMeta(
@@ -86,7 +86,7 @@ final class FilterRuleManager {
             name: "AdBlock Warning Removal",
             details: "隐藏反广告拦截提示",
             ruleCount: 512,
-            isEnabled: true,
+            isEnabled: false,
             sortOrder: 4
         ),
         FilterListMeta(
@@ -285,6 +285,82 @@ final class WhitelistManager {
     }
 }
 
+/// 拦截统计：可观察数据为真实值（规则数、启用过滤器数、更新时间）；
+/// 拦截次数来自主框架导航被规则取消的近似计数，受 WebKit 公开 API 限制。
+@MainActor
+final class StatisticsManager {
+    struct Record: Codable, Equatable, Sendable {
+        var todayBlocked: Int
+        var totalBlocked: Int
+        var ruleCount: Int
+        var filterCount: Int
+        var dayKey: String
+
+        static let empty = Record(
+            todayBlocked: 0,
+            totalBlocked: 0,
+            ruleCount: 0,
+            filterCount: 0,
+            dayKey: ""
+        )
+    }
+
+    private let store: ContentBlockStore
+    private var record: Record
+
+    init(store: ContentBlockStore) {
+        self.store = store
+        record = store.load(Record.self, fileName: "stats.json") ?? .empty
+    }
+
+    func current() -> Record {
+        if record.dayKey != Self.todayKey() {
+            record.dayKey = Self.todayKey()
+            record.todayBlocked = 0
+            persist()
+        }
+        return record
+    }
+
+    func updateRuleCount(_ count: Int, filterCount: Int) {
+        record.ruleCount = count
+        record.filterCount = filterCount
+        persist()
+    }
+
+    func recordBlockedRequest() {
+        if record.dayKey != Self.todayKey() {
+            record.dayKey = Self.todayKey()
+            record.todayBlocked = 0
+        }
+        record.todayBlocked += 1
+        record.totalBlocked += 1
+        persist()
+    }
+
+    func reset() {
+        record = Record(
+            todayBlocked: 0,
+            totalBlocked: 0,
+            ruleCount: record.ruleCount,
+            filterCount: record.filterCount,
+            dayKey: Self.todayKey()
+        )
+        persist()
+    }
+
+    private func persist() {
+        store.save(record, fileName: "stats.json")
+    }
+
+    private static func todayKey() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
+    }
+}
+
 /// 内容拦截门面。
 @MainActor
 final class ContentBlockManager {
@@ -293,11 +369,13 @@ final class ContentBlockManager {
     let filterManager: FilterRuleManager
     let customManager: CustomRuleManager
     let whitelistManager: WhitelistManager
+    let statisticsManager: StatisticsManager
 
     private init() {
         let store = ContentBlockStore()
         filterManager = FilterRuleManager(store: store)
         customManager = CustomRuleManager(store: store)
         whitelistManager = WhitelistManager(store: store)
+        statisticsManager = StatisticsManager(store: store)
     }
 }
