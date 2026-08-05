@@ -285,16 +285,18 @@ struct StubFFmpegProcessor: FFmpegProcessor {
     }
 }
 
-/// 选择当前可用的 FFmpeg 实现：App 内捆绑了 ffmpeg/ffprobe 就用真实实现，
-/// 否则用 Stub。正式构建（GitHub Actions 集成 XCFramework）自动走真实实现。
+/// 选择当前可用的 FFmpeg 实现：
+/// - 正式构建（FFMPEG_ENABLED，GitHub Actions 集成 libav XCFramework）
+///   走 FFmpegLibraryProcessor（libav* C API）；
+/// - 本地无 FFmpeg 时用 StubFFmpegProcessor 保证可编译。
 enum FFmpegProcessorProvider {
     static var current: FFmpegProcessor {
-        if let ffmpegURL = Bundle.main.url(forResource: "ffmpeg", withExtension: nil) {
-            return BundledFFmpegProcessor(
-                ffmpegURL: ffmpegURL,
-                ffprobeURL: Bundle.main.url(forResource: "ffprobe", withExtension: nil)
-            )
-        }
+        #if FFMPEG_ENABLED
+        // 正式构建：直接调用捆绑的 libav* API（唯一媒体处理引擎）。
+        return FFmpegLibraryProcessor()
+        #else
+        // 本地开发（无 FFmpeg）：Stub 保证可编译，运行时返回“未集成”错误。
         return StubFFmpegProcessor()
+        #endif
     }
 }
