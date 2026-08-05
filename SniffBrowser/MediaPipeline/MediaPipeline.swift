@@ -38,6 +38,9 @@ final class MediaPipeline {
             let type = preferredType != .unknown
                 ? preferredType
                 : MediaTypeDetector.detect(url: sourceURL, contentType: nil)
+            if type == .unknown, !sourceIsDirectory {
+                return nil
+            }
 
             var finalSource = sourceURL
             var finalExtension = type.preferredFileExtension
@@ -80,7 +83,7 @@ final class MediaPipeline {
             case .mkv, .webm:
                 // AVFoundation 无法读取时保留原文件，App 内不可预览如实降级。
                 finalExtension = type.rawValue
-            case .audio, .unknown:
+            case .audio:
                 finalExtension = type.preferredFileExtension
                 }
             }
