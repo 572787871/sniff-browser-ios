@@ -79,33 +79,78 @@ final class ContentBlockingSettingsViewController: BaseViewController {
         )
         present(alert, animated: true)
     }
+
+    private func updateRules() {
+        guard !service.isUpdating else { return }
+        tableView.reloadData()
+        Task {
+            do {
+                try await service.updateRules()
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                showUpdateResult(
+                    title: "规则已更新",
+                    message: "最新广告过滤规则已生效。"
+                )
+            } catch {
+                showUpdateResult(
+                    title: "更新失败",
+                    message: error.localizedDescription
+                )
+            }
+            tableView.reloadData()
+        }
+    }
+
+    private func showUpdateResult(title: String, message: String) {
+        guard view.window != nil else { return }
+        let alert = UIAlertController(
+            title: title,
+            message: message,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "好", style: .default))
+        present(alert, animated: true)
+    }
 }
 
 extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableViewDelegate {
     func numberOfSections(in tableView: UITableView) -> Int {
-        2
+        3
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        section == 0 ? 1 : service.whitelistedHosts.count + 1
+        switch section {
+        case 0: return 1
+        case 1: return 1
+        default: return service.whitelistedHosts.count + 1
+        }
     }
 
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        section == 0 ? "广告过滤" : "网站白名单"
+        switch section {
+        case 0: return "广告过滤"
+        case 1: return "规则更新"
+        default: return "网站白名单"
+        }
     }
 
     func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
-        if section == 0 {
-            let count = service.bundledRuleCount
+        switch section {
+        case 0:
+            let count = service.ruleCount
             let rulesText = count > 0 ? "\(count) 条规则" : "规则加载中"
             let errorText = service.lastLoadError.map { "（\($0)）" } ?? ""
-            return "使用内置的 \(rulesText) 广告过滤规则\(errorText)，规则来源：AdGuard Base Filter（GPL-3.0）。"
+            return "使用 \(rulesText) 广告过滤规则\(errorText)，规则来源：AdGuard Base Filter（GPL-3.0）。"
+        case 1:
+            return "从 AdGuard 官方源下载最新过滤规则，下载成功后自动应用。"
+        default:
+            return "白名单网站不会执行广告过滤，刷新后生效。"
         }
-        return "白名单网站不会执行广告过滤，刷新后生效。"
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        if indexPath.section == 0 {
+        switch indexPath.section {
+        case 0:
             guard let cell = tableView.dequeueReusableCell(
                 withIdentifier: SettingsToggleCell.reuseIdentifier,
                 for: indexPath
@@ -122,6 +167,23 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
                 self?.service.setEnabled(enabled)
             }
             return cell
+        case 1:
+            guard let cell = tableView.dequeueReusableCell(
+                withIdentifier: GlassSummaryCell.reuseIdentifier,
+                for: indexPath
+            ) as? GlassSummaryCell else {
+                return UITableViewCell()
+            }
+            cell.configure(
+                title: "更新过滤规则",
+                subtitle: service.updateDescription,
+                symbol: "arrow.triangle.2.circlepath",
+                tint: AppColors.accent,
+                isEnabled: !service.isUpdating
+            )
+            return cell
+        default:
+            break
         }
 
         guard let cell = tableView.dequeueReusableCell(
@@ -151,17 +213,21 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        guard indexPath.section == 1, indexPath.row == service.whitelistedHosts.count else {
-            return
+        switch indexPath.section {
+        case 1:
+            updateRules()
+        case 2 where indexPath.row == service.whitelistedHosts.count:
+            presentAddWhitelistAlert()
+        default:
+            break
         }
-        presentAddWhitelistAlert()
     }
 
     func tableView(
         _ tableView: UITableView,
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
-        guard indexPath.section == 1,
+        guard indexPath.section == 2,
               indexPath.row < service.whitelistedHosts.count
         else {
             return nil
