@@ -162,6 +162,7 @@ final class ContentBlockerService {
         _ json: String,
         identifier: String
     ) async -> WKContentRuleList? {
+        guard let ruleListStore else { return nil }
         await withCheckedContinuation { continuation in
             ruleListStore.compileContentRuleList(
                 forIdentifier: identifier,

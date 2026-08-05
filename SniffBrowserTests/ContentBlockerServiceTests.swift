@@ -15,7 +15,7 @@ final class ContentBlockerServiceTests: XCTestCase {
         XCTAssertFalse(rules.isEmpty)
         XCTAssertLessThanOrEqual(rules.count, 50_000)
 
-        let store = WKContentRuleListStore.default()
+        let store = try XCTUnwrap(WKContentRuleListStore.default())
         let chunkSize = 100
         let chunkCount = Int(ceil(Double(rules.count) / Double(chunkSize)))
         var failedChunks: [Int] = []
