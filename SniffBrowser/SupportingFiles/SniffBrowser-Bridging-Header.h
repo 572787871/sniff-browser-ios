@@ -17,6 +17,7 @@
 #include <libavutil/pixfmt.h>
 #include <libavutil/rational.h>
 #include <libavutil/samplefmt.h>
+#include <libavutil/mathematics.h>
 #endif
 
 #if __has_include(<libavcodec/avcodec.h>)

@@ -53,7 +53,7 @@ struct FFmpegLibraryProcessor: FFmpegProcessor {
 /// - 不透明结构体（AVDictionary / AVCodec / SwsContext）以 `OpaquePointer` 导入；
 /// - 释放类 API 接收 `Type **`，因此上下文一律用可选指针变量持有，
 ///   使用时以 `!` 取出。
-private enum FFmpegCore {
+fileprivate enum FFmpegCore {
 
     static let queue = DispatchQueue(
         label: "com.sniffbrowser.ffmpeg",
@@ -66,6 +66,8 @@ private enum FFmpegCore {
     static let avNopts: Int64 = Int64.min
     /// AV_TIME_BASE。
     static let avTimeBase: Double = 1_000_000
+    /// AV_TIME_BASE_Q。
+    static let avTimeBaseQ = AVRational(num: 1, den: 1_000_000)
 
     static func run<T>(_ body: @escaping () throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { continuation in
@@ -100,6 +102,20 @@ private enum FFmpegCore {
         return String(cString: buffer)
     }
 
+    /// 常见打包异常值的防御性归一化：dts/pts/duration 为 AV_NOPTS 时补值，
+    /// 避免 muxer 直接拒绝（如 movenc 对 NOPTS dts/duration 返回 EINVAL）。
+    static func normalizePacket(_ packet: inout AVPacket) {
+        if packet.dts == avNopts {
+            packet.dts = packet.pts != avNopts ? packet.pts : 0
+        }
+        if packet.pts == avNopts {
+            packet.pts = packet.dts != avNopts ? packet.dts : 0
+        }
+        if packet.duration == avNopts || packet.duration < 0 {
+            packet.duration = 0
+        }
+    }
+
     // MARK: - 输入上下文
 
     private static func openInput(
@@ -127,13 +143,20 @@ private enum FFmpegCore {
         return opened
     }
 
-    // MARK: - 无损转封装（HLS/TS/FLV/MKV/WebM/MOV → 目标容器）
+    // MARK: - 无损转封装（HLS/TS/FLV/MKV/WebM/MOV/MP4 → 目标容器）
 
     static func remux(
         source: URL,
         output: URL,
         container: String
     ) throws {
+        // DASH（MPD）不走 libavformat 的 dash demuxer（部分预编译包未内置），
+        // 统一走自解析 MPD + 分段装配 + mux 的流程。
+        if source.pathExtension.lowercased() == "mpd" {
+            try processDASH(source: source, output: output)
+            return
+        }
+
         var input: UnsafeMutablePointer<AVFormatContext>? =
             try openInput(urlString: inputURLString(for: source))
         defer { avformat_close_input(&input) }
@@ -203,14 +226,20 @@ private enum FFmpegCore {
                 inputStream.pointee.time_base,
                 outputStream.pointee.time_base
             )
+            normalizePacket(&packet)
             packet.pos = -1
             let writeResult = av_interleaved_write_frame(outputContext, &packet)
             guard writeResult == 0 else {
-                debugLog("interleaved_write_frame 失败 stream=\(streamIndex)", code: writeResult)
+                debugLog(
+                    "interleaved_write_frame 失败 stream=\(streamIndex) "
+                        + "pts=\(packet.pts) dts=\(packet.dts) duration=\(packet.duration)",
+                    code: writeResult
+                )
                 throw MediaProcessError.remuxFailed
             }
         }
         guard lastReadResult == averrorEOF else {
+            debugLog("remux 读取异常", code: lastReadResult)
             throw MediaProcessError.remuxFailed
         }
 
@@ -222,11 +251,17 @@ private enum FFmpegCore {
         }
     }
 
-    // MARK: - DASH 音视频流合并
+    // MARK: - 音视频合并（DASH 分离流 → 单一 MP4）
 
     private enum StreamKind {
         case video
         case audio
+    }
+
+    private struct StreamMapping {
+        let input: UnsafeMutablePointer<AVFormatContext>
+        let inputIndex: Int
+        let outputIndex: Int
     }
 
     static func mux(
@@ -263,9 +298,7 @@ private enum FFmpegCore {
         }
         defer { avformat_free_context(outputContext) }
 
-        var mappings: [
-            (input: UnsafeMutablePointer<AVFormatContext>, inputIndex: Int, outputIndex: Int)
-        ] = []
+        var mappings: [StreamMapping] = []
         try appendStreams(
             from: videoInput!,
             kind: .video,
@@ -281,6 +314,7 @@ private enum FFmpegCore {
             )
         }
         guard !mappings.isEmpty else {
+            debugLog("mux 没有可合并的流")
             throw MediaProcessError.muxFailed
         }
 
@@ -295,60 +329,68 @@ private enum FFmpegCore {
             throw MediaProcessError.muxFailed
         }
 
+        let inputs: [UnsafeMutablePointer<AVFormatContext>?] = [
+            videoInput,
+            audioInput,
+        ]
         var eof = [false, false]
-        var packets: [AVPacket?] = [nil, nil]
-        while !(eof[0] && eof[1] && packets[0] == nil && packets[1] == nil) {
+        var pending: [AVPacket?] = [nil, nil]
+
+        while !(eof[0] && eof[1] && pending[0] == nil && pending[1] == nil) {
+            // 每个输入各读一个候选包。
             for slot in 0..<2 {
-                guard !eof[slot] else { continue }
-                let slotContext: UnsafeMutablePointer<AVFormatContext>? =
-                    slot == 0 ? videoInput : audioInput
-                guard let slotContext, packets[slot] == nil else { continue }
+                guard !eof[slot], pending[slot] == nil else { continue }
+                guard let context = inputs[slot] else {
+                    eof[slot] = true
+                    continue
+                }
                 var candidate = AVPacket()
-                let readResult = av_read_frame(slotContext, &candidate)
+                let readResult = av_read_frame(context, &candidate)
                 if readResult < 0 {
                     eof[slot] = true
                     av_packet_unref(&candidate)
                     continue
                 }
-                packets[slot] = candidate
+                pending[slot] = candidate
             }
 
-            let chosenSlot: Int
-            if let first = packets[0], let second = packets[1] {
-                chosenSlot = chooseEarlierPacket(first, second) ? 0 : 1
-            } else if packets[0] != nil {
-                chosenSlot = 0
-            } else if packets[1] != nil {
-                chosenSlot = 1
-            } else {
+            guard let chosenSlot = chooseSlot(
+                pending: pending,
+                inputs: inputs,
+                mappings: mappings
+            ) else {
                 continue
             }
 
-            guard var packet = packets[chosenSlot] else { continue }
-            packets[chosenSlot] = nil
+            guard var packet = pending[chosenSlot] else { continue }
+            pending[chosenSlot] = nil
             defer { av_packet_unref(&packet) }
 
-            let context: UnsafeMutablePointer<AVFormatContext> =
-                chosenSlot == 0 ? videoInput! : audioInput!
-            guard let mapping = mappings.first(where: {
-                $0.input == context && $0.inputIndex == Int(packet.stream_index)
-            }) else {
-                continue
-            }
-            guard let inputStream = context.pointee.streams?[mapping.inputIndex],
+            guard let context = inputs[chosenSlot],
+                  let mapping = mappings.first(where: {
+                      $0.input == context && $0.inputIndex == Int(packet.stream_index)
+                  }),
+                  let inputStream = context.pointee.streams?[mapping.inputIndex],
                   let outputStream = outputContext.pointee.streams?[mapping.outputIndex]
             else {
                 continue
             }
+
             av_packet_rescale_ts(
                 &packet,
                 inputStream.pointee.time_base,
                 outputStream.pointee.time_base
             )
+            normalizePacket(&packet)
             packet.pos = -1
-            let writeResult = av_interleaved_write_frame(outputContext, &packet)
+
+            let writeResult = av_write_frame(outputContext, &packet)
             guard writeResult == 0 else {
-                debugLog("mux interleaved_write_frame 失败 slot=\(chosenSlot)", code: writeResult)
+                debugLog(
+                    "mux av_write_frame 失败 stream=\(mapping.outputIndex) "
+                        + "pts=\(packet.pts) dts=\(packet.dts) duration=\(packet.duration)",
+                    code: writeResult
+                )
                 throw MediaProcessError.muxFailed
             }
         }
@@ -361,20 +403,44 @@ private enum FFmpegCore {
         }
     }
 
-    private static func chooseEarlierPacket(_ first: AVPacket, _ second: AVPacket) -> Bool {
-        if first.pts == avNopts && second.pts == avNopts { return true }
-        if first.pts == avNopts { return false }
-        if second.pts == avNopts { return true }
-        return first.pts <= second.pts
+    /// 按全局时间轴（AV_TIME_BASE）选择 dts 更早的候选包；dts 缺失时回退 pts。
+    private static func chooseSlot(
+        pending: [AVPacket?],
+        inputs: [UnsafeMutablePointer<AVFormatContext>?],
+        mappings: [StreamMapping]
+    ) -> Int? {
+        var candidates: [(slot: Int, time: Int64)] = []
+        for slot in 0..<2 {
+            guard let packet = pending[slot],
+                  let context = inputs[slot],
+                  let mapping = mappings.first(where: {
+                      $0.input == context && $0.inputIndex == Int(packet.stream_index)
+                  }),
+                  let inputStream = context.pointee.streams?[mapping.inputIndex]
+            else {
+                continue
+            }
+            let timeBase = inputStream.pointee.time_base
+            let timestamp = packet.dts != avNopts ? packet.dts : packet.pts
+            let commonTime = timestamp != avNopts
+                ? av_rescale_q(timestamp, timeBase, avTimeBaseQ)
+                : 0
+            candidates.append((slot, commonTime))
+        }
+        guard let first = candidates.min(by: {
+            if $0.time != $1.time { return $0.time < $1.time }
+            return $0.slot < $1.slot
+        }) else {
+            return nil
+        }
+        return first.slot
     }
 
     private static func appendStreams(
         from input: UnsafeMutablePointer<AVFormatContext>,
         kind: StreamKind,
         output: UnsafeMutablePointer<AVFormatContext>,
-        mappings: inout [
-            (input: UnsafeMutablePointer<AVFormatContext>, inputIndex: Int, outputIndex: Int)
-        ]
+        mappings: inout [StreamMapping]
     ) throws {
         guard let inputStreams = input.pointee.streams else { return }
         for index in 0..<Int(input.pointee.nb_streams) {
@@ -397,10 +463,10 @@ private enum FFmpegCore {
             }
             outputStream.pointee.time_base = inputStream.pointee.time_base
             outputStream.pointee.avg_frame_rate = inputStream.pointee.avg_frame_rate
-            mappings.append((
-                input,
-                index,
-                Int(output.pointee.nb_streams) - 1
+            mappings.append(StreamMapping(
+                input: input,
+                inputIndex: index,
+                outputIndex: Int(output.pointee.nb_streams) - 1
             ))
         }
     }
@@ -423,6 +489,123 @@ private enum FFmpegCore {
                 debugLog("avio_open 失败: \(outputURL)", code: openResult)
                 throw MediaProcessError.unsupportedFormat
             }
+        }
+    }
+
+    // MARK: - DASH（MPD 自解析 + 分段装配 + mux）
+    //
+    // 部分 FFmpeg 预编译包未内置 dash demuxer。这里在 FFmpegProcessor 内部完成
+    // MPD 解析、分段下载与装配（init + media 拼接为 fMP4），再交给 mux() 合并，
+    // 对外仍然只暴露“FFmpegProcessor 处理 DASH”。
+
+    fileprivate struct DASHRepresentation {
+        let id: String
+        let isVideo: Bool
+        let initializationTemplate: String
+        let mediaTemplate: String
+        let timescale: Int64
+        let startNumber: Int64
+        let segmentCount: Int64
+    }
+
+    private static func processDASH(source: URL, output: URL) throws {
+        let mpdData: Data
+        do {
+            mpdData = try Data(contentsOf: source)
+        } catch {
+            debugLog("读取 MPD 失败: \(source.absoluteString)")
+            throw MediaProcessError.unsupportedFormat
+        }
+        guard let parser = DASHManifestParser(data: mpdData),
+              let representations = parser.parse()
+        else {
+            debugLog("MPD 解析失败")
+            throw MediaProcessError.unsupportedFormat
+        }
+
+        let baseURL = source.deletingLastPathComponent()
+        let workDirectory = output.deletingLastPathComponent()
+        var videoFile: URL?
+        var audioFile: URL?
+
+        for representation in representations {
+            let assembledURL = workDirectory
+                .appendingPathComponent("dash-\(representation.id).mp4")
+            try assemble(
+                representation: representation,
+                baseURL: baseURL,
+                output: assembledURL
+            )
+            if representation.isVideo {
+                videoFile = assembledURL
+            } else {
+                audioFile = assembledURL
+            }
+        }
+
+        if let videoFile {
+            try mux(
+                video: videoFile,
+                audio: audioFile,
+                output: output,
+                container: "mp4"
+            )
+        } else if let audioFile {
+            try remux(source: audioFile, output: output, container: "mp4")
+        } else {
+            throw MediaProcessError.unsupportedFormat
+        }
+
+        // 装配产生的中间 fMP4 立即清理，只保留最终文件。
+        if let videoFile { try? FileManager.default.removeItem(at: videoFile) }
+        if let audioFile { try? FileManager.default.removeItem(at: audioFile) }
+    }
+
+    private static func assemble(
+        representation: DASHRepresentation,
+        baseURL: URL,
+        output: URL
+    ) throws {
+        guard FileManager.default.createFile(atPath: output.path, contents: nil),
+              let handle = FileHandle(forWritingAtPath: output.path)
+        else {
+            throw MediaProcessError.remuxFailed
+        }
+        defer { try? handle.close() }
+
+        func resolve(_ template: String, number: Int64? = nil) -> URL {
+            var value = template
+                .replacingOccurrences(of: "$RepresentationID$", with: representation.id)
+            if let number {
+                value = value.replacingOccurrences(of: "$Number$", with: "\(number)")
+            }
+            if let url = URL(string: value, relativeTo: baseURL) {
+                return url.absoluteURL
+            }
+            return baseURL.appendingPathComponent(value)
+        }
+
+        // init 段。
+        let initData = try fetchData(from: resolve(representation.initializationTemplate))
+        handle.write(initData)
+
+        // media 段（按 $Number$ 递增）。
+        let end = representation.startNumber + representation.segmentCount
+        for number in representation.startNumber..<end {
+            let segmentData = try fetchData(from: resolve(
+                representation.mediaTemplate,
+                number: number
+            ))
+            handle.write(segmentData)
+        }
+    }
+
+    private static func fetchData(from url: URL) throws -> Data {
+        do {
+            return try Data(contentsOf: url)
+        } catch {
+            debugLog("DASH 分段下载失败: \(url.absoluteString)")
+            throw MediaProcessError.remuxFailed
         }
     }
 
@@ -586,7 +769,10 @@ private enum FFmpegCore {
         scaled!.pointee.width = Int32(targetWidth)
         scaled!.pointee.height = Int32(targetHeight)
         scaled!.pointee.format = Int32(AV_PIX_FMT_YUV420P.rawValue)
-        guard av_frame_get_buffer(scaled!, 32) >= 0 else { return false }
+        guard av_frame_get_buffer(scaled!, 32) >= 0 else {
+            debugLog("av_frame_get_buffer 失败")
+            return false
+        }
         guard sws_scale_frame(scaler, scaled!, frame) >= 0 else {
             debugLog("sws_scale_frame 失败")
             return false
@@ -604,10 +790,17 @@ private enum FFmpegCore {
         defer { avcodec_free_context(&encoderContext) }
         encoderContext!.pointee.width = Int32(targetWidth)
         encoderContext!.pointee.height = Int32(targetHeight)
-        encoderContext!.pointee.pix_fmt = AV_PIX_FMT_YUV420P
         encoderContext!.pointee.time_base = AVRational(num: 1, den: 25)
-        guard avcodec_open2(encoderContext!, encoder, nil) >= 0 else {
-            debugLog("MJPEG 编码器打开失败")
+        // 使用编码器支持的首个像素格式（MJPEG 通常为 yuv420p/yuvj420p）。
+        if let supported = encoder.pointee.pix_fmts,
+           supported.pointee != AV_PIX_FMT_NONE {
+            encoderContext!.pointee.pix_fmt = supported.pointee
+        } else {
+            encoderContext!.pointee.pix_fmt = AV_PIX_FMT_YUV420P
+        }
+        let openResult = avcodec_open2(encoderContext!, encoder, nil)
+        guard openResult >= 0 else {
+            debugLog("MJPEG 编码器打开失败", code: openResult)
             return false
         }
 
@@ -636,6 +829,128 @@ private enum FFmpegCore {
             debugLog("MJPEG 未产出数据包")
         }
         return wroteAny
+    }
+}
+
+// MARK: - DASH MPD 解析器（Foundation XMLParser）
+
+/// 解析静态 DASH MPD 的常用结构：
+/// MPD → Period → AdaptationSet → Representation + SegmentTemplate(+SegmentTimeline)。
+/// 支持 `$RepresentationID$` / `$Number$` 模板与 SegmentTimeline 的段数量计算。
+private final class DASHManifestParser: NSObject, XMLParserDelegate {
+
+    private struct RepresentationAttributes {
+        var id = ""
+        var isVideo = false
+        var initialization = ""
+        var media = ""
+        var timescale: Int64 = 1
+        var startNumber: Int64 = 1
+        var segmentDurationTotal: Int64 = 0
+        var segmentCount: Int64 = 0
+    }
+
+    private let parser: XMLParser
+    private var representations: [RepresentationAttributes] = []
+    private var currentRepresentation: RepresentationAttributes?
+    private var currentAdaptationContentType = ""
+    private var currentAdaptationMimeType = ""
+    private var inSegmentTemplate = false
+    private var inSegmentTimeline = false
+    private var timelineEntryDuration: Int64 = 0
+    private var timelineEntryCount: Int64 = 0
+
+    init?(data: Data) {
+        parser = XMLParser(data: data)
+        super.init()
+        parser.delegate = self
+    }
+
+    func parse() -> [FFmpegCore.DASHRepresentation]? {
+        guard parser.parse() else { return nil }
+        var result: [FFmpegCore.DASHRepresentation] = []
+        for attributes in representations {
+            guard attributes.segmentCount > 0 else { continue }
+            result.append(FFmpegCore.DASHRepresentation(
+                id: attributes.id,
+                isVideo: attributes.isVideo,
+                initializationTemplate: attributes.initialization,
+                mediaTemplate: attributes.media,
+                timescale: attributes.timescale,
+                startNumber: attributes.startNumber,
+                segmentCount: attributes.segmentCount
+            ))
+        }
+        return result.isEmpty ? nil : result
+    }
+
+    // MARK: XMLParserDelegate
+
+    func parser(
+        _ parser: XMLParser,
+        didStartElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?,
+        attributes attributeDict: [String: String] = [:]
+    ) {
+        switch elementName {
+        case "AdaptationSet":
+            currentAdaptationContentType = attributeDict["contentType"] ?? ""
+            currentAdaptationMimeType = attributeDict["mimeType"] ?? ""
+        case "Representation":
+            var attributes = RepresentationAttributes()
+            attributes.id = attributeDict["id"] ?? ""
+            attributes.isVideo =
+                (attributeDict["mimeType"] ?? "").contains("video")
+                || currentAdaptationContentType == "video"
+                || currentAdaptationMimeType.contains("video")
+            currentRepresentation = attributes
+        case "SegmentTemplate":
+            inSegmentTemplate = true
+            if var representation = currentRepresentation {
+                representation.initialization = attributeDict["initialization"] ?? ""
+                representation.media = attributeDict["media"] ?? ""
+                representation.timescale = Int64(attributeDict["timescale"] ?? "") ?? 1
+                representation.startNumber = Int64(attributeDict["startNumber"] ?? "") ?? 1
+                currentRepresentation = representation
+            }
+        case "SegmentTimeline":
+            inSegmentTimeline = true
+        case "S":
+            if inSegmentTimeline {
+                let duration = Int64(attributeDict["d"] ?? "") ?? 0
+                let repeatCount = Int64(attributeDict["r"] ?? "") ?? 0
+                timelineEntryDuration = max(0, duration)
+                timelineEntryCount = max(0, repeatCount) + 1
+            }
+        default:
+            break
+        }
+    }
+
+    func parser(
+        _ parser: XMLParser,
+        didEndElement elementName: String,
+        namespaceURI: String?,
+        qualifiedName qName: String?
+    ) {
+        switch elementName {
+        case "Representation":
+            if var representation = currentRepresentation {
+                representation.segmentDurationTotal += timelineEntryDuration * timelineEntryCount
+                representation.segmentCount += timelineEntryCount
+                timelineEntryDuration = 0
+                timelineEntryCount = 0
+                representations.append(representation)
+            }
+            currentRepresentation = nil
+        case "SegmentTemplate":
+            inSegmentTemplate = false
+        case "SegmentTimeline":
+            inSegmentTimeline = false
+        default:
+            break
+        }
     }
 }
 
