@@ -1,0 +1,101 @@
+name: SniffBrowser
+
+options:
+  minimumXcodeGenVersion: 2.42.0
+  developmentLanguage: zh-Hans
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    SUPPORTS_MACCATALYST: NO
+    SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    ENABLE_APP_INTENTS_METADATA_EXTRACTION: NO
+    ENABLE_APPINTENTS_METADATA_EXTRACTION: NO
+    CLANG_ENABLE_MODULES: YES
+    SWIFT_STRICT_CONCURRENCY: targeted
+    # FFmpeg 静态库依赖的系统库；无 FFmpeg 的本地构建也不受影响。
+    OTHER_LDFLAGS: "$(inherited) -lz -liconv -lbz2 -lc++"
+    FRAMEWORK_SEARCH_PATHS: "$(inherited) $(SRCROOT)/vendor"
+  configs:
+    Debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+    Release:
+      SWIFT_COMPILATION_MODE: wholemodule
+      VALIDATE_PRODUCT: YES
+
+targets:
+  SniffBrowser:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: SniffBrowser
+        excludes:
+          - Resources
+          - SupportingFiles
+      - path: SniffBrowser/Resources
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.SniffBrowser
+        PRODUCT_NAME: SniffBrowser
+        INFOPLIST_FILE: SniffBrowser/SupportingFiles/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CURRENT_PROJECT_VERSION: "13"
+        MARKETING_VERSION: "0.6.7"
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+        "ARCHS[sdk=iphoneos*]": arm64
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        UIKITFORMAC_SUPPORT: NO
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+
+  SniffBrowserTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: SniffBrowserTests
+    dependencies:
+      - target: SniffBrowser
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.SniffBrowserTests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+        TARGETED_DEVICE_FAMILY: "1"
+
+schemes:
+  SniffBrowser:
+    build:
+      targets:
+        SniffBrowser: all
+        SniffBrowserTests:
+          - test
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - name: SniffBrowserTests
+          parallelizable: false
+          randomExecutionOrder: false
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

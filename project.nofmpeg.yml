@@ -1,0 +1,2 @@
+# 本地开发 spec：无 FFmpeg，使用 StubFFmpegProcessor 保证可编译。
+include: project.base.yml
