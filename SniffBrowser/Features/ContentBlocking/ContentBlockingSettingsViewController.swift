@@ -39,6 +39,10 @@ final class ContentBlockingSettingsViewController: BaseViewController {
             GlassSummaryCell.self,
             forCellReuseIdentifier: GlassSummaryCell.reuseIdentifier
         )
+        tableView.register(
+            ContentBlockStatsCardCell.self,
+            forCellReuseIdentifier: ContentBlockStatsCardCell.reuseIdentifier
+        )
         tableView.dataSource = self
         tableView.delegate = self
         tableView.translatesAutoresizingMaskIntoConstraints = false
@@ -81,13 +85,89 @@ final class ContentBlockingSettingsViewController: BaseViewController {
         }
     }
 
-    private func importRules() {
+    private func showImportMenu() {
+        let alert = UIAlertController(
+            title: "导入规则",
+            message: nil,
+            preferredStyle: .actionSheet
+        )
+        alert.addAction(
+            UIAlertAction(title: "从文件导入", style: .default) { [weak self] _ in
+                self?.importFromFile()
+            }
+        )
+        alert.addAction(
+            UIAlertAction(title: "从链接导入", style: .default) { [weak self] _ in
+                self?.presentURLImport()
+            }
+        )
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+
+    private func importFromFile() {
         let picker = UIDocumentPickerViewController(
             forOpeningContentTypes: [.json, .plainText],
             asCopy: true
         )
         picker.delegate = self
         present(picker, animated: true)
+    }
+
+    private func presentURLImport() {
+        let alert = UIAlertController(
+            title: "从链接导入",
+            message: "输入过滤规则的下载地址（txt 或 JSON）。",
+            preferredStyle: .alert
+        )
+        alert.addTextField { textField in
+            textField.placeholder = "https://example.com/filter.txt"
+            textField.keyboardType = .URL
+            textField.autocapitalizationType = .none
+            textField.autocorrectionType = .no
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(
+            UIAlertAction(title: "导入", style: .default) { [weak self, weak alert] _ in
+                guard let text = alert?.textFields?.first?.text,
+                      let url = URL(string: text.trimmingCharacters(in: .whitespaces))
+                else { return }
+                self?.importFromURL(url)
+            }
+        )
+        present(alert, animated: true)
+    }
+
+    private func importFromURL(_ url: URL) {
+        Task {
+            do {
+                var request = URLRequest(url: url)
+                request.timeoutInterval = 60
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse,
+                      http.statusCode == 200
+                else {
+                    throw URLError(.badServerResponse)
+                }
+                let imported: Int
+                if url.pathExtension.lowercased() == "json" {
+                    imported = self.manager.customManager.importJSON(data)
+                } else {
+                    let text = String(data: data, encoding: .utf8) ?? ""
+                    imported = self.manager.customManager.importLines(
+                        text.components(separatedBy: .newlines)
+                    )
+                }
+                if imported > 0 {
+                    try? await ContentBlockerService.shared.rebuildRules(reloadPages: true)
+                    self.presentAlert(title: "导入成功", message: "已导入 \(imported) 条规则。")
+                } else {
+                    self.presentAlert(title: "导入失败", message: "链接中没有识别到有效规则。")
+                }
+            } catch {
+                self.presentAlert(title: "导入失败", message: "无法下载规则，请检查链接与网络。")
+            }
+        }
     }
 
     private func presentAlert(title: String, message: String?) {
@@ -133,9 +213,9 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
         case 0: return 1
-        case 1: return 4
+        case 1: return 1
         case 2: return manager.filterManager.allLists().count
-        case 3: return 2
+        case 3: return 1
         default: return 2
         }
     }
@@ -184,25 +264,16 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
             return cell
         case 1:
             guard let cell = tableView.dequeueReusableCell(
-                withIdentifier: GlassSummaryCell.reuseIdentifier,
+                withIdentifier: ContentBlockStatsCardCell.reuseIdentifier,
                 for: indexPath
-            ) as? GlassSummaryCell else {
+            ) as? ContentBlockStatsCardCell else {
                 return UITableViewCell()
             }
-            let stats = manager.statisticsManager.current()
-            let values: [(String, String, String)] = [
-                ("今日拦截", "\(stats.todayBlocked) 次", "number"),
-                ("累计拦截", "\(stats.totalBlocked) 次", "number"),
-                ("当前规则", "\(service.ruleCount) 条", "list.bullet"),
-                ("已启用过滤器", "\(manager.filterManager.enabledSourceKeys().count) 个", "checkmark.circle"),
-            ]
-            let value = values[indexPath.row]
             cell.configure(
-                title: value.0,
-                subtitle: value.1,
-                symbol: value.2,
-                tint: .systemGray,
-                isEnabled: false
+                todayBlocked: manager.statisticsManager.current().todayBlocked,
+                todayPageLoads: manager.statisticsManager.current().todayPageLoads,
+                ruleCount: service.ruleCount,
+                filterCount: manager.filterManager.enabledSourceKeys().count
             )
             return cell
         case 2:
@@ -224,36 +295,18 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
             }
             return cell
         case 3:
-            if indexPath.row == 0 {
-                guard let cell = tableView.dequeueReusableCell(
-                    withIdentifier: GlassSummaryCell.reuseIdentifier,
-                    for: indexPath
-                ) as? GlassSummaryCell else {
-                    return UITableViewCell()
-                }
-                cell.configure(
-                    title: "立即更新",
-                    subtitle: service.updateDescription,
-                    symbol: "arrow.triangle.2.circlepath",
-                    tint: AppColors.accent
-                )
-                return cell
-            }
             guard let cell = tableView.dequeueReusableCell(
-                withIdentifier: SettingsToggleCell.reuseIdentifier,
+                withIdentifier: GlassSummaryCell.reuseIdentifier,
                 for: indexPath
-            ) as? SettingsToggleCell else {
+            ) as? GlassSummaryCell else {
                 return UITableViewCell()
             }
             cell.configure(
-                title: "自动更新",
-                subtitle: "启动时检查，超过 5 天自动更新",
-                symbol: "arrow.clockwise.circle",
-                isOn: service.isAutoUpdateEnabled,
-                accessibilityIdentifier: "contentBlocking.autoUpdate"
-            ) { enabled in
-                service.setAutoUpdateEnabled(enabled)
-            }
+                title: "立即更新",
+                subtitle: service.updateDescription,
+                symbol: "arrow.triangle.2.circlepath",
+                tint: AppColors.accent
+            )
             return cell
         default:
             guard let cell = tableView.dequeueReusableCell(
@@ -285,12 +338,10 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
         tableView.deselectRow(at: indexPath, animated: true)
         switch indexPath.section {
         case 3:
-            if indexPath.row == 0 {
-                runUpdate()
-            }
+            runUpdate()
         case 4:
             if indexPath.row == 0 {
-                importRules()
+                showImportMenu()
             } else {
                 navigationController?.pushViewController(
                     WhitelistViewController(),
@@ -300,5 +351,115 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
         default:
             break
         }
+    }
+}
+
+/// 顶部拦截统计卡片：2×2 数据块。
+private final class ContentBlockStatsCardCell: UITableViewCell {
+    static let reuseIdentifier = "ContentBlockStatsCardCell"
+
+    private let gridStack = UIStackView()
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        var background = UIBackgroundConfiguration.listGroupedCell()
+        background.backgroundColor = AppColors.surface
+        backgroundConfiguration = background
+        selectionStyle = .none
+
+        gridStack.axis = .vertical
+        gridStack.spacing = 10
+        gridStack.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(gridStack)
+        NSLayoutConstraint.activate([
+            gridStack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            gridStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
+            gridStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
+            gridStack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
+    func configure(
+        todayBlocked: Int,
+        todayPageLoads: Int,
+        ruleCount: Int,
+        filterCount: Int
+    ) {
+        gridStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        let top = makeRow(
+            (("shield.lefthalf.filled", "今日拦截", "\(todayBlocked)", .systemRed),
+             ("globe", "今日访问", "\(todayPageLoads)", .systemBlue))
+        )
+        let bottom = makeRow(
+            (("list.bullet", "当前规则", "\(ruleCount)", .systemGreen),
+             ("checkmark.circle", "过滤器", "\(filterCount)", .systemOrange))
+        )
+        gridStack.addArrangedSubview(top)
+        gridStack.addArrangedSubview(bottom)
+    }
+
+    private func makeRow(
+        _ items: ((String, String, String, UIColor), (String, String, String, UIColor))
+    ) -> UIStackView {
+        let row = UIStackView()
+        row.axis = .horizontal
+        row.spacing = 10
+        row.distribution = .fillEqually
+        row.addArrangedSubview(makeTile(items.0))
+        row.addArrangedSubview(makeTile(items.1))
+        return row
+    }
+
+    private func makeTile(
+        _ item: (symbol: String, title: String, value: String, color: UIColor)
+    ) -> UIView {
+        let tile = UIView()
+        tile.backgroundColor = UIColor { trait in
+            trait.userInterfaceStyle == .dark
+                ? UIColor(white: 1, alpha: 0.08)
+                : UIColor(white: 0.5, alpha: 0.1)
+        }
+        tile.layer.cornerRadius = AppRadius.control
+        tile.layer.cornerCurve = .continuous
+
+        let iconView = UIImageView(image: UIImage(systemName: item.symbol))
+        iconView.tintColor = item.color
+        iconView.contentMode = .scaleAspectFit
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+
+        let valueLabel = UILabel()
+        valueLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 22, weight: .bold)
+        valueLabel.textColor = AppColors.primaryText
+        valueLabel.text = item.value
+        valueLabel.adjustsFontSizeToFitWidth = true
+        valueLabel.minimumScaleFactor = 0.6
+
+        let titleLabel = UILabel()
+        titleLabel.font = UIFont.preferredFont(forTextStyle: .caption1)
+        titleLabel.textColor = AppColors.secondaryText
+        titleLabel.text = item.title
+        titleLabel.adjustsFontForContentSizeCategory = true
+
+        let stack = UIStackView(arrangedSubviews: [iconView, valueLabel, titleLabel])
+        stack.axis = .vertical
+        stack.alignment = .leading
+        stack.spacing = 4
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        tile.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: tile.topAnchor, constant: 10),
+            stack.leadingAnchor.constraint(equalTo: tile.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: tile.trailingAnchor, constant: -8),
+            stack.bottomAnchor.constraint(equalTo: tile.bottomAnchor, constant: -10),
+            iconView.widthAnchor.constraint(equalToConstant: 20),
+            iconView.heightAnchor.constraint(equalToConstant: 20),
+            tile.heightAnchor.constraint(greaterThanOrEqualToConstant: 78)
+        ])
+        return tile
     }
 }

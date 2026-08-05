@@ -74,7 +74,6 @@ final class ContentBlockerService {
     private var chunks: [RuleChunk] = []
     private var addedRuleListsByTab: [UUID: Set<String>] = [:]
     private var loadTask: Task<Void, Never>?
-    private var didCheckAutoUpdate = false
 
     private lazy var supportDirectory: URL = {
         let applicationSupport = fileManager.urls(
@@ -111,7 +110,6 @@ final class ContentBlockerService {
     private(set) var updatedAt: Date?
     private(set) var filterVersion: String?
     private(set) var isUpdating = false
-    private static let autoUpdateInterval: TimeInterval = 5 * 24 * 60 * 60
 
     var isEnabled: Bool {
         preferences.contentBlockingEnabled
@@ -119,10 +117,6 @@ final class ContentBlockerService {
 
     var whitelistedHosts: [String] {
         preferences.contentBlockingWhitelist
-    }
-
-    var isAutoUpdateEnabled: Bool {
-        preferences.contentBlockingAutoUpdate
     }
 
     var updateDescription: String {
@@ -144,11 +138,6 @@ final class ContentBlockerService {
 
     func setEnabled(_ enabled: Bool) {
         preferences.contentBlockingEnabled = enabled
-        postChange()
-    }
-
-    func setAutoUpdateEnabled(_ enabled: Bool) {
-        preferences.contentBlockingAutoUpdate = enabled
         postChange()
     }
 
@@ -317,10 +306,7 @@ final class ContentBlockerService {
                 data: data,
                 fallbackError: "无法读取已下载的广告过滤规则。"
             )
-            if isReady {
-                checkForUpdatesIfNeeded()
-                return
-            }
+            if isReady { return }
         }
 
         guard let url = Bundle.main.url(
@@ -338,37 +324,6 @@ final class ContentBlockerService {
             data: data,
             fallbackError: "无法读取内置广告过滤规则。"
         )
-        checkForUpdatesIfNeeded()
-    }
-
-    /// 启动加载完成后检查一次：开启自动更新且规则过期时，后台静默更新。
-    func checkForUpdatesIfNeeded() {
-        guard !didCheckAutoUpdate else { return }
-        didCheckAutoUpdate = true
-        guard isAutoUpdateEnabled, !isUpdating, needsAutoUpdate else { return }
-        Task { [weak self] in
-            try? await self?.updateRules(reloadPages: false)
-        }
-    }
-
-    private var needsAutoUpdate: Bool {
-        if let updatedAt {
-            return Date().timeIntervalSince(updatedAt)
-                >= Self.autoUpdateInterval
-        }
-        guard let url = Bundle.main.url(
-            forResource: "content-blocker-rules",
-            withExtension: "json"
-        ),
-        let attributes = try? FileManager.default.attributesOfItem(
-            atPath: url.path
-        ),
-        let modificationDate = attributes[.modificationDate] as? Date
-        else {
-            return false
-        }
-        return Date().timeIntervalSince(modificationDate)
-            >= Self.autoUpdateInterval
     }
 
     private func installRules(data: Data, fallbackError: String) async {

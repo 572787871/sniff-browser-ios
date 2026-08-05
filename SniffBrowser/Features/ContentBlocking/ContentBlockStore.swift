@@ -292,6 +292,8 @@ final class StatisticsManager {
     struct Record: Codable, Equatable, Sendable {
         var todayBlocked: Int
         var totalBlocked: Int
+        var todayPageLoads: Int
+        var totalPageLoads: Int
         var ruleCount: Int
         var filterCount: Int
         var dayKey: String
@@ -299,6 +301,8 @@ final class StatisticsManager {
         static let empty = Record(
             todayBlocked: 0,
             totalBlocked: 0,
+            todayPageLoads: 0,
+            totalPageLoads: 0,
             ruleCount: 0,
             filterCount: 0,
             dayKey: ""
@@ -317,6 +321,7 @@ final class StatisticsManager {
         if record.dayKey != Self.todayKey() {
             record.dayKey = Self.todayKey()
             record.todayBlocked = 0
+            record.todayPageLoads = 0
             persist()
         }
         return record
@@ -338,10 +343,23 @@ final class StatisticsManager {
         persist()
     }
 
+    func recordPageLoad() {
+        if record.dayKey != Self.todayKey() {
+            record.dayKey = Self.todayKey()
+            record.todayBlocked = 0
+            record.todayPageLoads = 0
+        }
+        record.todayPageLoads += 1
+        record.totalPageLoads += 1
+        persist()
+    }
+
     func reset() {
         record = Record(
             todayBlocked: 0,
             totalBlocked: 0,
+            todayPageLoads: 0,
+            totalPageLoads: 0,
             ruleCount: record.ruleCount,
             filterCount: record.filterCount,
             dayKey: Self.todayKey()
