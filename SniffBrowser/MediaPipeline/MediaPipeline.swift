@@ -50,9 +50,10 @@ final class MediaPipeline {
                 let remuxed = workDirectory
                     .appendingPathComponent("\(UUID().uuidString).mp4")
                 let indexURL = sourceURL.appendingPathComponent("index.m3u8")
-                let ffmpegSucceeded = (try? await processors.remuxToMP4(
+                let ffmpegSucceeded = (try? await processors.remux(
                     source: indexURL,
-                    output: remuxed
+                    output: remuxed,
+                    container: "mp4"
                 )) != nil
                 guard ffmpegSucceeded,
                       FileManager.default.fileExists(atPath: remuxed.path)
@@ -65,13 +66,14 @@ final class MediaPipeline {
                 try? FileManager.default.removeItem(at: sourceURL)
             } else {
                 switch type {
-            case .mp4, .m4v, .mov, .ts, .flv, .hls, .dash:
+            case .ts, .flv, .hls, .mkv, .webm, .mov, .m4v:
                 // 无损 passthrough 转封装为 MP4；失败则保留原文件。
                 let remuxed = workDirectory
                     .appendingPathComponent("\(UUID().uuidString).mp4")
-                let remuxSucceeded = (try? await processors.remuxToMP4(
+                let remuxSucceeded = (try? await processors.remux(
                     source: sourceURL,
-                    output: remuxed
+                    output: remuxed,
+                    container: "mp4"
                 )) != nil
                 if remuxSucceeded,
                    FileManager.default.fileExists(atPath: remuxed.path) {
@@ -80,9 +82,34 @@ final class MediaPipeline {
                 } else if type == .mov || type == .m4v {
                     finalExtension = type.rawValue
                 }
-            case .mkv, .webm:
-                // AVFoundation 无法读取时保留原文件，App 内不可预览如实降级。
-                finalExtension = type.rawValue
+            case .dash:
+                // DASH：FFmpeg 直接处理 MPD（下载并封装）；本地 MPD 走转封装。
+                let remuxed = workDirectory
+                    .appendingPathComponent("\(UUID().uuidString).mp4")
+                let isRemote = ["http", "https"].contains(
+                    sourceURL.scheme?.lowercased() ?? ""
+                )
+                let succeeded: Bool
+                if isRemote {
+                    succeeded = (try? await processors.processRemote(
+                        source: sourceURL,
+                        output: remuxed,
+                        container: "mp4"
+                    )) != nil
+                } else {
+                    succeeded = (try? await processors.remux(
+                        source: sourceURL,
+                        output: remuxed,
+                        container: "mp4"
+                    )) != nil
+                }
+                if succeeded, FileManager.default.fileExists(atPath: remuxed.path) {
+                    finalSource = remuxed
+                    finalExtension = "mp4"
+                }
+            case .mp4:
+                // 直接可播，无需转封装。
+                finalExtension = "mp4"
             case .audio:
                 finalExtension = type.preferredFileExtension
             case .unknown:

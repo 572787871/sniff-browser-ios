@@ -23,6 +23,22 @@ FFmpegProcessor（唯一媒体处理入口）
 下载模块与 Media Pipeline 永远不感知 FFmpeg 的集成方式；将来切换实现只改
 `FFmpegProcessorProvider.current` 一行，其余代码零改动。
 
+### FFmpegProcessor 职责（完整 Media Engine）
+
+FFmpegProcessor 统一负责（新增格式时只扩展它，不改下载模块）：
+
+- HLS（m3u8）→ MP4（本地包或远程清单）
+- TS → MP4
+- DASH（MPD）音视频流下载并合并 → MP4
+- FLV 容器 → MP4
+- MKV 容器 → MP4（编码兼容时无损封装）
+- WebM 容器 → MP4（编码兼容时无损封装）
+- Metadata 提取（ffprobe：时长、码率、分辨率、大小）
+- Thumbnail 封面提取
+- 预留：视频裁剪、转码等后续能力
+
+全部为 `-c copy` 无损处理（除未来明确要求转码的功能外），禁止不必要的重新编码。
+
 ## 2. FFmpeg XCFramework 获取方式
 
 正式版只使用**官方 FFmpeg 编译的 iOS XCFramework（或可信的预编译 FFmpeg XCFramework）**，不使用 FFmpegKit / mobile-ffmpeg。

@@ -4,12 +4,12 @@ import Foundation
 
 /// 无损转封装。统一委托给 FFmpegProcessor，下载模块不直接接触 FFmpeg。
 protocol RemuxProcessor {
-    func remuxToMP4(source: URL, output: URL) async throws
+    func remux(source: URL, output: URL, container: String) async throws
 }
 
 /// 合并独立的视频轨与音频轨（DASH / HLS 分离流）。
 protocol MuxProcessor {
-    func muxToMP4(video: URL, audio: URL?, output: URL) async throws
+    func mux(video: URL, audio: URL?, output: URL, container: String) async throws
 }
 
 /// 元数据提取（时长/分辨率/码率/大小）。
@@ -27,12 +27,17 @@ protocol ThumbnailGenerator {
 struct FFmpegMediaProcessors: RemuxProcessor, MuxProcessor, MetadataExtractor, ThumbnailGenerator {
     let processor: FFmpegProcessor
 
-    func remuxToMP4(source: URL, output: URL) async throws {
-        try await processor.remuxToMP4(source: source, output: output)
+    func remux(source: URL, output: URL, container: String) async throws {
+        try await processor.remux(source: source, output: output, container: container)
     }
 
-    func muxToMP4(video: URL, audio: URL?, output: URL) async throws {
-        try await processor.muxToMP4(video: video, audio: audio, output: output)
+    func mux(video: URL, audio: URL?, output: URL, container: String) async throws {
+        try await processor.mux(
+            video: video,
+            audio: audio,
+            output: output,
+            container: container
+        )
     }
 
     func extract(from url: URL) async throws -> MediaAssetInfo {
@@ -41,6 +46,14 @@ struct FFmpegMediaProcessors: RemuxProcessor, MuxProcessor, MetadataExtractor, T
 
     func generate(from url: URL, output: URL) async throws {
         try await processor.generateThumbnail(from: url, output: output)
+    }
+
+    func processRemote(source: URL, output: URL, container: String) async throws {
+        try await processor.processRemote(
+            source: source,
+            output: output,
+            container: container
+        )
     }
 }
 
