@@ -121,7 +121,7 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
         case 0: return 1
-        case 1: return 1
+        case 1: return 2
         default: return service.whitelistedHosts.count + 1
         }
     }
@@ -174,13 +174,32 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
             ) as? GlassSummaryCell else {
                 return UITableViewCell()
             }
-            cell.configure(
-                title: "更新过滤规则",
-                subtitle: service.updateDescription,
-                symbol: "arrow.triangle.2.circlepath",
-                tint: AppColors.accent,
-                isEnabled: !service.isUpdating
-            )
+            if indexPath.row == 0 {
+                cell.configure(
+                    title: "更新过滤规则",
+                    subtitle: service.updateDescription,
+                    symbol: "arrow.triangle.2.circlepath",
+                    tint: AppColors.accent,
+                    isEnabled: !service.isUpdating
+                )
+            } else {
+                guard let toggleCell = tableView.dequeueReusableCell(
+                    withIdentifier: SettingsToggleCell.reuseIdentifier,
+                    for: indexPath
+                ) as? SettingsToggleCell else {
+                    return cell
+                }
+                toggleCell.configure(
+                    title: "自动更新规则",
+                    subtitle: "启动时检查，超过 5 天自动更新",
+                    symbol: "arrow.clockwise.circle",
+                    isOn: service.isAutoUpdateEnabled,
+                    accessibilityIdentifier: "contentBlocking.autoUpdate"
+                ) { [weak self] enabled in
+                    self?.service.setAutoUpdateEnabled(enabled)
+                }
+                return toggleCell
+            }
             return cell
         default:
             break
@@ -214,7 +233,7 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         switch indexPath.section {
-        case 1:
+        case 1 where indexPath.row == 0:
             updateRules()
         case 2 where indexPath.row == service.whitelistedHosts.count:
             presentAddWhitelistAlert()

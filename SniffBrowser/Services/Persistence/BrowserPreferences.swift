@@ -8,6 +8,7 @@ struct BrowserPreferences {
     static let newTabShowsDate = "browser.newTab.showsDate"
     static let contentBlockingEnabled = "browser.contentBlocking.enabled"
     static let contentBlockingWhitelist = "browser.contentBlocking.whitelist"
+    static let contentBlockingAutoUpdate = "browser.contentBlocking.autoUpdate"
   }
 
   private let defaults: UserDefaults
@@ -83,6 +84,17 @@ struct BrowserPreferences {
         Array(Set(newValue.map { $0.lowercased() })).sorted(),
         forKey: Key.contentBlockingWhitelist
       )
+    }
+  }
+
+  var contentBlockingAutoUpdate: Bool {
+    get {
+      defaults.object(forKey: Key.contentBlockingAutoUpdate) == nil
+        ? true
+        : defaults.bool(forKey: Key.contentBlockingAutoUpdate)
+    }
+    nonmutating set {
+      defaults.set(newValue, forKey: Key.contentBlockingAutoUpdate)
     }
   }
 }

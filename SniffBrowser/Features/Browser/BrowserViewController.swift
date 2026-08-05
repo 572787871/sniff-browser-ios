@@ -131,15 +131,18 @@ final class BrowserViewController: UIViewController {
       forName: .contentBlockerDidChange,
       object: nil,
       queue: .main
-    ) { [weak self] _ in
+    ) { [weak self] notification in
       Task { @MainActor in
-        self?.reapplyContentRules()
+        let reloadActivePage =
+          notification.userInfo?[ContentBlockerService.reloadActivePageUserInfoKey]
+            as? Bool ?? true
+        self?.reapplyContentRules(reloadActivePage: reloadActivePage)
       }
     }
     lifecycleObservers.append(observer)
   }
 
-  private func reapplyContentRules() {
+  private func reapplyContentRules(reloadActivePage: Bool) {
     for tab in tabManager.tabs {
       guard let webView = tab.webView else { continue }
       let host = webView.url?.host ?? tab.url?.host
@@ -148,7 +151,7 @@ final class BrowserViewController: UIViewController {
         tabID: tab.id,
         host: host
       )
-      if changed, tab.id == activeTab?.id {
+      if changed, reloadActivePage, tab.id == activeTab?.id {
         webView.reload()
       }
     }
