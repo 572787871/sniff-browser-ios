@@ -105,7 +105,7 @@ struct BundledFFmpegProcessor: FFmpegProcessor {
         let text = (try? String(contentsOf: logURL, encoding: .utf8)) ?? ""
         let size: Int64 = (try? FileManager.default
             .attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
-        return Self.parseFFmpegInfo(text, fileSizeBytes: size)
+        return Self.parseFFmpegInfo(from: text, fileSizeBytes: size)
     }
 
     func generateThumbnail(from url: URL, output: URL) async throws {
