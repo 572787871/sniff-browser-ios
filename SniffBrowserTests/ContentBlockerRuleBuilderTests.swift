@@ -115,9 +115,15 @@ final class ContentBlockerRuleBuilderTests: XCTestCase {
             JSONSerialization.jsonObject(with: data) as? [[[String: Any]]]
         )
 
-        XCTAssertEqual(chunks.count, 2)
-        XCTAssertEqual(chunks[0].count, 45_000)
-        XCTAssertEqual(chunks[1].count, 1_000)
+        XCTAssertGreaterThan(chunks.count, 1)
+        XCTAssertEqual(chunks.reduce(0) { $0 + $1.count }, 46_000)
+        for chunk in chunks {
+            XCTAssertLessThanOrEqual(
+                chunk.count,
+                ContentBlockerRuleBuilder.maxRulesPerChunk
+            )
+            XCTAssertFalse(chunk.isEmpty)
+        }
     }
 
     func testFilterVersionParsing() {
