@@ -2,28 +2,6 @@ import AVKit
 import QuickLook
 import UIKit
 
-/// iOS 不会把 cell 背景配置里的内缩和圆角同步给左滑按钮，
-/// 这里在布局时修正系统私有的 `UISwipeActionPullView`，
-/// 让左滑操作按钮与圆角卡片同高、同圆角。
-private final class CardSwipeTableView: UITableView {
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        guard let pullViewClass = NSClassFromString("UISwipeActionPullView") else {
-            return
-        }
-        for subview in subviews where subview.isKind(of: pullViewClass) {
-            let inset: CGFloat = 5
-            var frame = subview.frame
-            frame.origin.y += inset
-            frame.size.height = max(0, frame.height - inset * 2)
-            subview.frame = frame
-            subview.layer.cornerRadius = AppRadius.card
-            subview.layer.cornerCurve = .continuous
-            subview.layer.masksToBounds = true
-        }
-    }
-}
-
 final class DownloadManagerViewController: BaseViewController {
     var onError: ((Error) -> Void)?
     var onBrowseForDownloads: (() -> Void)? {
@@ -69,7 +47,7 @@ final class DownloadManagerViewController: BaseViewController {
     private var navigationMenuTasksHash: Int = 0
 
     private let scopeControl = UISegmentedControl(items: Scope.allCases.map(\.title))
-    private let tableView = CardSwipeTableView(frame: .zero, style: .insetGrouped)
+    private let tableView = UITableView(frame: .zero, style: .insetGrouped)
     private let emptyState = EmptyStateView(
         configuration: .init(
             symbolName: "arrow.down.circle",
@@ -122,12 +100,12 @@ final class DownloadManagerViewController: BaseViewController {
         } else {
             let oldByID = Dictionary(uniqueKeysWithValues: oldTasks.map { ($0.id, $0) })
             for indexPath in tableView.indexPathsForVisibleRows ?? [] {
-                guard nextTasks.indices.contains(indexPath.row),
-                      let oldTask = oldByID[nextTasks[indexPath.row].id],
-                      oldTask != nextTasks[indexPath.row],
+                guard nextTasks.indices.contains(indexPath.section),
+                      let oldTask = oldByID[nextTasks[indexPath.section].id],
+                      oldTask != nextTasks[indexPath.section],
                       let cell = tableView.cellForRow(at: indexPath) as? DownloadTaskCell
                 else { continue }
-                let task = nextTasks[indexPath.row]
+                let task = nextTasks[indexPath.section]
                 cell.configure(
                     task: task,
                     fileURL: task.state == .completed ? manager?.fileURL(for: task.id) : nil
@@ -164,6 +142,7 @@ final class DownloadManagerViewController: BaseViewController {
     private func configureTable() {
         tableView.backgroundColor = .clear
         tableView.separatorStyle = .none
+        tableView.sectionHeaderTopPadding = 0
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 118
         tableView.register(
@@ -400,8 +379,26 @@ final class DownloadManagerViewController: BaseViewController {
 }
 
 extension DownloadManagerViewController: UITableViewDataSource, UITableViewDelegate {
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+    func numberOfSections(in tableView: UITableView) -> Int {
         displayedTasks.count
+    }
+
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        1
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        heightForHeaderInSection section: Int
+    ) -> CGFloat {
+        5
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        heightForFooterInSection section: Int
+    ) -> CGFloat {
+        5
     }
 
     func tableView(
@@ -414,7 +411,7 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
         ) as? DownloadTaskCell else {
             return UITableViewCell()
         }
-        let task = displayedTasks[indexPath.row]
+        let task = displayedTasks[indexPath.section]
         cell.configure(
             task: task,
             fileURL: task.state == .completed ? manager?.fileURL(for: task.id) : nil
@@ -424,7 +421,7 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        let task = displayedTasks[indexPath.row]
+        let task = displayedTasks[indexPath.section]
         guard task.state == .completed,
               let url = manager?.fileURL(for: task.id)
         else { return }
@@ -458,7 +455,7 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
         _ tableView: UITableView,
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
-        let task = displayedTasks[indexPath.row]
+        let task = displayedTasks[indexPath.section]
         var actions: [UIContextualAction] = []
 
         switch task.state {
@@ -772,13 +769,6 @@ private final class DownloadTaskCell: UITableViewCell {
     private func configureView() {
         var background = UIBackgroundConfiguration.listGroupedCell()
         background.backgroundColor = AppColors.surface
-        background.cornerRadius = AppRadius.card
-        background.backgroundInsets = NSDirectionalEdgeInsets(
-            top: 5,
-            leading: 0,
-            bottom: 5,
-            trailing: 0
-        )
         backgroundConfiguration = background
         selectionStyle = .none
 
@@ -827,10 +817,10 @@ private final class DownloadTaskCell: UITableViewCell {
         contentView.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 19),
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 14),
             stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
             stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
-            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -19),
+            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -14),
 
             iconView.widthAnchor.constraint(
                 equalToConstant: AppMetrics.primaryButtonHeight
