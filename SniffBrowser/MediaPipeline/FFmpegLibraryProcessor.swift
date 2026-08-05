@@ -46,6 +46,13 @@ struct FFmpegLibraryProcessor: FFmpegProcessor {
 }
 
 /// libav* 桥接核心：所有 C 调用集中在后台串行队列执行，不阻塞 UI。
+///
+/// Swift 互操作约定（与 libav 头文件一一对应）：
+/// - 完整结构体（AVFormatContext / AVStream / AVCodecContext / AVFrame /
+///   AVCodecParameters）以命名类型导入；
+/// - 不透明结构体（AVDictionary / AVCodec / SwsContext）以 `OpaquePointer` 导入；
+/// - 释放类 API 接收 `Type **`，因此上下文一律用可选指针变量持有，
+///   使用时以 `!` 取出。
 private enum FFmpegCore {
 
     static let queue = DispatchQueue(
@@ -72,12 +79,6 @@ private enum FFmpegCore {
         }
     }
 
-    static func errorText(_ code: Int32) -> String {
-        var buffer = [CChar](repeating: 0, count: 256)
-        av_strerror(code, &buffer, buffer.count)
-        return String(cString: buffer)
-    }
-
     static func inputURLString(for url: URL) -> String {
         url.isFileURL ? url.path : url.absoluteString
     }
@@ -92,15 +93,18 @@ private enum FFmpegCore {
         }
         var context: UnsafeMutablePointer<AVFormatContext>?
         let openResult = avformat_open_input(&context, urlString, nil, nil)
-        guard openResult == 0, let context else {
+        guard openResult == 0 else {
             throw MediaProcessError.unsupportedFormat
         }
-        let infoResult = avformat_find_stream_info(context, nil)
+        guard let opened = context else {
+            throw MediaProcessError.unsupportedFormat
+        }
+        let infoResult = avformat_find_stream_info(opened, nil)
         guard infoResult == 0 else {
             avformat_close_input(&context)
             throw MediaProcessError.metadataFailed
         }
-        return context
+        return opened
     }
 
     // MARK: - 无损转封装（HLS/TS/FLV/MKV/WebM/MOV → 目标容器）
@@ -110,10 +114,11 @@ private enum FFmpegCore {
         output: URL,
         container: String
     ) throws {
-        var input = try openInput(urlString: inputURLString(for: source))
+        var input: UnsafeMutablePointer<AVFormatContext>? =
+            try openInput(urlString: inputURLString(for: source))
         defer { avformat_close_input(&input) }
 
-        var options: UnsafeMutablePointer<AVDictionary>?
+        var options: OpaquePointer?
         defer { av_dict_free(&options) }
         av_dict_set(&options, "movflags", "faststart", 0)
 
@@ -129,10 +134,10 @@ private enum FFmpegCore {
         }
         defer { avformat_free_context(outputContext) }
 
-        guard let inputStreams = input.pointee.streams else {
+        guard let inputStreams = input!.pointee.streams else {
             throw MediaProcessError.remuxFailed
         }
-        for index in 0..<Int(input.pointee.nb_streams) {
+        for index in 0..<Int(input!.pointee.nb_streams) {
             guard let inputStream = inputStreams[index] else { continue }
             guard let outputStream = avformat_new_stream(outputContext, nil) else {
                 throw MediaProcessError.remuxFailed
@@ -160,7 +165,7 @@ private enum FFmpegCore {
         var packet = AVPacket()
         var lastReadResult: Int32 = 0
         while true {
-            lastReadResult = av_read_frame(input, &packet)
+            lastReadResult = av_read_frame(input!, &packet)
             if lastReadResult < 0 { break }
             defer { av_packet_unref(&packet) }
 
@@ -207,7 +212,8 @@ private enum FFmpegCore {
         output: URL,
         container: String
     ) throws {
-        var videoInput = try openInput(urlString: video.path)
+        var videoInput: UnsafeMutablePointer<AVFormatContext>? =
+            try openInput(urlString: video.path)
         defer { avformat_close_input(&videoInput) }
 
         var audioInput: UnsafeMutablePointer<AVFormatContext>?
@@ -217,7 +223,7 @@ private enum FFmpegCore {
         // 无条件 defer：audioInput 为 nil 时 avformat_close_input 也是安全的。
         defer { avformat_close_input(&audioInput) }
 
-        var options: UnsafeMutablePointer<AVDictionary>?
+        var options: OpaquePointer?
         defer { av_dict_free(&options) }
         av_dict_set(&options, "movflags", "faststart", 0)
 
@@ -237,7 +243,7 @@ private enum FFmpegCore {
             (input: UnsafeMutablePointer<AVFormatContext>, inputIndex: Int, outputIndex: Int)
         ] = []
         try appendStreams(
-            from: videoInput,
+            from: videoInput!,
             kind: .video,
             output: outputContext,
             mappings: &mappings
@@ -298,7 +304,7 @@ private enum FFmpegCore {
             defer { av_packet_unref(&packet) }
 
             let context: UnsafeMutablePointer<AVFormatContext> =
-                chosenSlot == 0 ? videoInput : audioInput!
+                chosenSlot == 0 ? videoInput! : audioInput!
             guard let mapping = mappings.first(where: {
                 $0.input == context && $0.inputIndex == Int(packet.stream_index)
             }) else {
@@ -395,21 +401,22 @@ private enum FFmpegCore {
     // MARK: - 元数据（ffprobe 等价能力）
 
     static func extractMetadata(from url: URL) throws -> MediaAssetInfo {
-        var input = try openInput(urlString: inputURLString(for: url))
+        var input: UnsafeMutablePointer<AVFormatContext>? =
+            try openInput(urlString: inputURLString(for: url))
         defer { avformat_close_input(&input) }
 
         var duration: TimeInterval = 0
-        if input.pointee.duration != avNopts {
-            duration = Double(input.pointee.duration) / avTimeBase
+        if input!.pointee.duration != avNopts {
+            duration = Double(input!.pointee.duration) / avTimeBase
         }
-        let bitrate: Double = input.pointee.bit_rate > 0
-            ? Double(input.pointee.bit_rate)
+        let bitrate: Double = input!.pointee.bit_rate > 0
+            ? Double(input!.pointee.bit_rate)
             : 0
 
         var width = 0
         var height = 0
         let videoIndex = av_find_best_stream(
-            input,
+            input!,
             AVMEDIA_TYPE_VIDEO,
             -1,
             -1,
@@ -417,7 +424,7 @@ private enum FFmpegCore {
             0
         )
         if videoIndex >= 0,
-           let streams = input.pointee.streams,
+           let streams = input!.pointee.streams,
            let stream = streams[Int(videoIndex)],
            let codecpar = stream.pointee.codecpar {
             width = Int(codecpar.pointee.width)
@@ -441,11 +448,12 @@ private enum FFmpegCore {
     // MARK: - 封面（解码首帧 → 缩放 → JPEG）
 
     static func generateThumbnail(from url: URL, output: URL) throws {
-        var input = try openInput(urlString: url.path)
+        var input: UnsafeMutablePointer<AVFormatContext>? =
+            try openInput(urlString: url.path)
         defer { avformat_close_input(&input) }
 
         let videoIndex = av_find_best_stream(
-            input,
+            input!,
             AVMEDIA_TYPE_VIDEO,
             -1,
             -1,
@@ -453,7 +461,7 @@ private enum FFmpegCore {
             0
         )
         guard videoIndex >= 0,
-              let streams = input.pointee.streams,
+              let streams = input!.pointee.streams,
               let stream = streams[Int(videoIndex)],
               let codecpar = stream.pointee.codecpar
         else {
@@ -463,15 +471,17 @@ private enum FFmpegCore {
         guard let decoder = avcodec_find_decoder(codecpar.pointee.codec_id) else {
             throw MediaProcessError.thumbnailFailed
         }
-        guard var decoderContext = avcodec_alloc_context3(decoder) else {
+        var decoderContext: UnsafeMutablePointer<AVCodecContext>? =
+            avcodec_alloc_context3(decoder)
+        guard decoderContext != nil else {
             throw MediaProcessError.thumbnailFailed
         }
         defer { avcodec_free_context(&decoderContext) }
-        guard avcodec_parameters_to_context(decoderContext, codecpar) >= 0 else {
+        guard avcodec_parameters_to_context(decoderContext!, codecpar) >= 0 else {
             throw MediaProcessError.thumbnailFailed
         }
-        decoderContext.pointee.pkt_timebase = stream.pointee.time_base
-        guard avcodec_open2(decoderContext, decoder, nil) >= 0 else {
+        decoderContext!.pointee.pkt_timebase = stream.pointee.time_base
+        guard avcodec_open2(decoderContext!, decoder, nil) >= 0 else {
             throw MediaProcessError.thumbnailFailed
         }
 
@@ -483,20 +493,21 @@ private enum FFmpegCore {
             Int((Double(targetWidth) * Double(sourceHeight) / Double(sourceWidth)).rounded())
         )
 
-        guard var frame = av_frame_alloc() else {
+        var frame: UnsafeMutablePointer<AVFrame>? = av_frame_alloc()
+        guard frame != nil else {
             throw MediaProcessError.thumbnailFailed
         }
         defer { av_frame_free(&frame) }
 
         var packet = AVPacket()
         var succeeded = false
-        while av_read_frame(input, &packet) >= 0 {
+        while av_read_frame(input!, &packet) >= 0 {
             defer { av_packet_unref(&packet) }
             guard Int(packet.stream_index) == Int(videoIndex) else { continue }
-            if avcodec_send_packet(decoderContext, &packet) == 0 {
-                while avcodec_receive_frame(decoderContext, frame) == 0 {
+            if avcodec_send_packet(decoderContext!, &packet) == 0 {
+                while avcodec_receive_frame(decoderContext!, frame!) == 0 {
                     succeeded = writeJPEG(
-                        frame: frame,
+                        frame: frame!,
                         targetWidth: targetWidth,
                         targetHeight: targetHeight,
                         output: output
@@ -535,30 +546,33 @@ private enum FFmpegCore {
         }
         defer { sws_freeContext(scaler) }
 
-        guard var scaled = av_frame_alloc() else { return false }
+        var scaled: UnsafeMutablePointer<AVFrame>? = av_frame_alloc()
+        guard scaled != nil else { return false }
         defer { av_frame_free(&scaled) }
-        scaled.pointee.width = Int32(targetWidth)
-        scaled.pointee.height = Int32(targetHeight)
-        scaled.pointee.format = Int32(AV_PIX_FMT_YUV420P.rawValue)
-        guard av_frame_get_buffer(scaled, 32) >= 0 else { return false }
-        guard sws_scale_frame(scaler, scaled, frame) >= 0 else { return false }
+        scaled!.pointee.width = Int32(targetWidth)
+        scaled!.pointee.height = Int32(targetHeight)
+        scaled!.pointee.format = Int32(AV_PIX_FMT_YUV420P.rawValue)
+        guard av_frame_get_buffer(scaled!, 32) >= 0 else { return false }
+        guard sws_scale_frame(scaler, scaled!, frame) >= 0 else { return false }
 
         guard let encoder = avcodec_find_encoder(AV_CODEC_ID_MJPEG) else {
             return false
         }
-        guard var encoderContext = avcodec_alloc_context3(encoder) else {
+        var encoderContext: UnsafeMutablePointer<AVCodecContext>? =
+            avcodec_alloc_context3(encoder)
+        guard encoderContext != nil else {
             return false
         }
         defer { avcodec_free_context(&encoderContext) }
-        encoderContext.pointee.width = Int32(targetWidth)
-        encoderContext.pointee.height = Int32(targetHeight)
-        encoderContext.pointee.pix_fmt = AV_PIX_FMT_YUV420P
-        encoderContext.pointee.time_base = AVRational(num: 1, den: 25)
-        guard avcodec_open2(encoderContext, encoder, nil) >= 0 else {
+        encoderContext!.pointee.width = Int32(targetWidth)
+        encoderContext!.pointee.height = Int32(targetHeight)
+        encoderContext!.pointee.pix_fmt = AV_PIX_FMT_YUV420P
+        encoderContext!.pointee.time_base = AVRational(num: 1, den: 25)
+        guard avcodec_open2(encoderContext!, encoder, nil) >= 0 else {
             return false
         }
 
-        guard avcodec_send_frame(encoderContext, scaled) >= 0 else {
+        guard avcodec_send_frame(encoderContext!, scaled!) >= 0 else {
             return false
         }
 
@@ -571,7 +585,7 @@ private enum FFmpegCore {
 
         var encoded = AVPacket()
         var wroteAny = false
-        while avcodec_receive_packet(encoderContext, &encoded) >= 0 {
+        while avcodec_receive_packet(encoderContext!, &encoded) >= 0 {
             defer { av_packet_unref(&encoded) }
             if encoded.size > 0, let data = encoded.data {
                 handle.write(Data(bytes: data, count: Int(encoded.size)))
