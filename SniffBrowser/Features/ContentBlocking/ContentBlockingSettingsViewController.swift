@@ -141,14 +141,31 @@ final class ContentBlockingSettingsViewController: BaseViewController {
     }
 
     private func configureStatsCell(_ cell: ContentBlockStatsCardCell) {
-        let summary = manager.statisticsManager.summary(for: selectedRange)
+        let statistics = manager.statisticsManager
+        let summary = statistics.summary(for: selectedRange)
         cell.configure(
             blocked: summary.todayBlocked,
             pageLoads: summary.todayPageLoads,
             ruleCount: summary.ruleCount,
             filterCount: summary.filterCount,
             blockedTitle: selectedRange.metricTitle(for: .blocked),
-            pageLoadTitle: selectedRange.metricTitle(for: .pageLoads)
+            pageLoadTitle: selectedRange.metricTitle(for: .pageLoads),
+            blockedSeries: statistics.sparkline(
+                for: selectedRange,
+                kind: .blocked
+            ),
+            pageLoadSeries: statistics.sparkline(
+                for: selectedRange,
+                kind: .pageLoads
+            ),
+            ruleSeries: statistics.sparkline(
+                for: selectedRange,
+                kind: .ruleCount
+            ),
+            filterSeries: statistics.sparkline(
+                for: selectedRange,
+                kind: .filterCount
+            )
         )
     }
 

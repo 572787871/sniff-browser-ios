@@ -219,20 +219,25 @@ final class ContentBlockStatsCardCell: UITableViewCell {
         ruleCount: Int,
         filterCount: Int,
         blockedTitle: String,
-        pageLoadTitle: String
+        pageLoadTitle: String,
+        blockedSeries: [Double],
+        pageLoadSeries: [Double],
+        ruleSeries: [Double],
+        filterSeries: [Double]
     ) {
-        let values: [(icon: String, trend: String, title: String, value: Int)] = [
-            ("stat_red_shield", "chart_red", blockedTitle, blocked),
-            ("stat_blue_globe", "chart_blue", pageLoadTitle, pageLoads),
-            ("stat_green_rules", "chart_green", "当前规则", ruleCount),
-            ("stat_orange_filter", "chart_orange", "过滤器", filterCount)
+        let values: [(icon: String, title: String, value: Int, series: [Double], color: UIColor)] = [
+            ("stat_red_shield", blockedTitle, blocked, blockedSeries, ContentBlockChartColors.blocked),
+            ("stat_blue_globe", pageLoadTitle, pageLoads, pageLoadSeries, ContentBlockChartColors.pageLoads),
+            ("stat_green_rules", "当前规则", ruleCount, ruleSeries, ContentBlockChartColors.rules),
+            ("stat_orange_filter", "过滤器", filterCount, filterSeries, ContentBlockChartColors.filters)
         ]
         for index in 0..<4 {
             tiles[index].update(
                 iconName: values[index].icon,
-                trendName: values[index].trend,
                 title: values[index].title,
-                value: values[index].value
+                value: values[index].value,
+                series: values[index].series,
+                color: values[index].color
             )
         }
     }
@@ -247,19 +252,20 @@ final class ContentBlockStatsCardCell: UITableViewCell {
         gridStack.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(gridStack)
 
-        let tileLayout: [(icon: String, trend: String, title: String)] = [
-            ("stat_red_shield", "chart_red", "今日拦截"),
-            ("stat_blue_globe", "chart_blue", "今日访问"),
-            ("stat_green_rules", "chart_green", "当前规则"),
-            ("stat_orange_filter", "chart_orange", "过滤器")
+        let tileLayout: [(icon: String, title: String, color: UIColor)] = [
+            ("stat_red_shield", "今日拦截", ContentBlockChartColors.blocked),
+            ("stat_blue_globe", "今日访问", ContentBlockChartColors.pageLoads),
+            ("stat_green_rules", "当前规则", ContentBlockChartColors.rules),
+            ("stat_orange_filter", "过滤器", ContentBlockChartColors.filters)
         ]
         for index in 0..<tileLayout.count {
             let tile = StatTileView()
             tile.update(
                 iconName: tileLayout[index].icon,
-                trendName: tileLayout[index].trend,
                 title: tileLayout[index].title,
-                value: 0
+                value: 0,
+                series: [],
+                color: tileLayout[index].color
             )
             tiles.append(tile)
         }
@@ -290,7 +296,7 @@ private final class StatTileView: UIView {
     private let iconImageView = UIImageView()
     private let valueLabel = UILabel()
     private let titleLabel = UILabel()
-    private let trendImageView = UIImageView()
+    private let sparkline = SparklineView()
     private let textStack = UIStackView()
 
     override init(frame: CGRect) {
@@ -302,14 +308,20 @@ private final class StatTileView: UIView {
         return nil
     }
 
-    func update(iconName: String, trendName: String, title: String, value: Int) {
+    func update(
+        iconName: String,
+        title: String,
+        value: Int,
+        series: [Double],
+        color: UIColor
+    ) {
         // 素材直接来自目标参考图：alwaysOriginal，禁止 tint / 拉伸。
         iconImageView.image = UIImage(named: iconName)?
             .withRenderingMode(.alwaysOriginal)
-        trendImageView.image = UIImage(named: trendName)?
-            .withRenderingMode(.alwaysOriginal)
         valueLabel.text = value.formatted()
         titleLabel.text = title
+        sparkline.values = series
+        sparkline.tint = color
     }
 
     private func configureView() {
@@ -324,7 +336,7 @@ private final class StatTileView: UIView {
         iconImageView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(iconImageView)
 
-        valueLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 30, weight: .bold)
+        valueLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 22, weight: .bold)
         valueLabel.textColor = AppColors.primaryText
         valueLabel.adjustsFontSizeToFitWidth = true
         valueLabel.minimumScaleFactor = 0.7
@@ -341,11 +353,9 @@ private final class StatTileView: UIView {
         textStack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(textStack)
 
-        // 趋势图托底，横跨卡片宽度。
-        trendImageView.contentMode = .scaleAspectFit
-        trendImageView.clipsToBounds = false
-        trendImageView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(trendImageView)
+        // 真实数据趋势曲线（拦截日期数量变化），托底横跨卡片宽度。
+        sparkline.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(sparkline)
 
         NSLayoutConstraint.activate([
             iconImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
@@ -357,14 +367,110 @@ private final class StatTileView: UIView {
             textStack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -10),
             textStack.centerYAnchor.constraint(equalTo: iconImageView.centerYAnchor),
 
-            trendImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-            trendImageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            trendImageView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
-            trendImageView.heightAnchor.constraint(equalToConstant: 38),
+            sparkline.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            sparkline.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            sparkline.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
+            sparkline.heightAnchor.constraint(equalToConstant: 38),
 
             heightAnchor.constraint(greaterThanOrEqualToConstant: 132)
         ])
     }
+}
+
+// MARK: - 真实数据趋势曲线
+
+/// 参考图配色 + 逐日数据绘制的平滑波浪曲线（无黑底、无静态图片）。
+final class SparklineView: UIView {
+    var values: [Double] = [] {
+        didSet { setNeedsDisplay() }
+    }
+    var tint: UIColor = .systemRed {
+        didSet { setNeedsDisplay() }
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isOpaque = false
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
+    override func draw(_ rect: CGRect) {
+        guard values.count >= 2, rect.width > 0, rect.height > 0 else { return }
+        let maxValue = values.max() ?? 0
+        let minValue = values.min() ?? 0
+        let step = rect.width / CGFloat(values.count - 1)
+        var points: [CGPoint] = []
+
+        if maxValue == minValue {
+            let y = rect.height * 0.55
+            for index in values.indices {
+                points.append(CGPoint(x: CGFloat(index) * step, y: y))
+            }
+        } else {
+            let span = maxValue - minValue
+            for (index, value) in values.enumerated() {
+                let normalized = (value - minValue) / span
+                let x = CGFloat(index) * step
+                let y = rect.height - CGFloat(normalized) * (rect.height - 3) - 1.5
+                points.append(CGPoint(x: x, y: y))
+            }
+        }
+
+        let path = UIBezierPath()
+        path.move(to: points[0])
+        for index in 1..<points.count {
+            let previous = points[index - 1]
+            let current = points[index]
+            let mid = CGPoint(
+                x: (previous.x + current.x) / 2,
+                y: (previous.y + current.y) / 2
+            )
+            path.addQuadCurve(to: mid, controlPoint: previous)
+        }
+        path.addLine(to: points[points.count - 1])
+
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        context.saveGState()
+        let fill = UIBezierPath(cgPath: path.cgPath)
+        fill.addLine(to: CGPoint(x: points[points.count - 1].x, y: rect.height))
+        fill.addLine(to: CGPoint(x: points[0].x, y: rect.height))
+        fill.close()
+        fill.addClip()
+        if let gradient = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: [
+                tint.withAlphaComponent(0.28).cgColor,
+                tint.withAlphaComponent(0.0).cgColor
+            ] as CFArray,
+            locations: [0, 1]
+        ) {
+            context.drawLinearGradient(
+                gradient,
+                start: CGPoint(x: 0, y: rect.minY),
+                end: CGPoint(x: 0, y: rect.maxY),
+                options: []
+            )
+        }
+        context.restoreGState()
+
+        path.lineWidth = 1.6
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        tint.setStroke()
+        path.stroke()
+    }
+}
+
+/// 参考图趋势线配色（从素材包 chart_* 采样）。
+enum ContentBlockChartColors {
+    static let blocked = UIColor(red: 228 / 255, green: 123 / 255, blue: 138 / 255, alpha: 1)
+    static let pageLoads = UIColor(red: 69 / 255, green: 130 / 255, blue: 224 / 255, alpha: 1)
+    static let rules = UIColor(red: 97 / 255, green: 194 / 255, blue: 127 / 255, alpha: 1)
+    static let filters = UIColor(red: 235 / 255, green: 162 / 255, blue: 98 / 255, alpha: 1)
 }
 
 // MARK: - 动作列表项（导入规则 / 网站白名单）
