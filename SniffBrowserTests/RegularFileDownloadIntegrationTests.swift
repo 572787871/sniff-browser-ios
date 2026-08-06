@@ -88,16 +88,16 @@ final class RegularFileDownloadIntegrationTests: XCTestCase {
 
     func testTextFileDownloadStoresCorrectly() async throws {
         let (data, response) = try await download(
-            "https://www.w3.org/TR/PNG/iso_8859-1.txt"
+            "https://raw.githubusercontent.com/FFmpeg/FFmpeg/n7.1/LICENSE.md"
         )
         let stored = try validateAndStore(
             data: data,
             response: response,
-            name: "robots",
+            name: "license.md",
             type: .document
         )
         XCTAssertTrue(stored.relativePath.hasPrefix("Documents/"))
         XCTAssertTrue(FileManager.default.fileExists(atPath: stored.fileURL.path))
-        XCTAssertFalse(stored.fileURL.pathExtension.isEmpty)
+        XCTAssertEqual(stored.fileURL.pathExtension, "md")
     }
 }
