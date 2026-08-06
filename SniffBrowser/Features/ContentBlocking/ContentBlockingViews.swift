@@ -160,6 +160,8 @@ final class ContentBlockMasterCardCell: UITableViewCell {
         cardView.addSubview(subtitleLabel)
 
         toggle.addTarget(self, action: #selector(toggleChanged), for: .valueChanged)
+        // 品牌蓝色开关（参考图：开启态为蓝色，而非系统默认绿色）。
+        toggle.onTintColor = AppColors.accent
         toggle.translatesAutoresizingMaskIntoConstraints = false
         cardView.addSubview(toggle)
 
@@ -302,13 +304,20 @@ private final class StatTileView: UIView {
     func update(
         _ item: (symbol: String, title: String, value: Int, color: UIColor, series: [Double])
     ) {
-        iconView.image = UIImage(
-            systemName: item.symbol,
-            withConfiguration: UIImage.SymbolConfiguration(
-                pointSize: 14,
-                weight: .semibold
+        if item.symbol == "funnel.fill" {
+            iconView.image = ContentBlockSymbols.funnelImage(
+                color: item.color,
+                pointSize: 14
             )
-        )
+        } else {
+            iconView.image = UIImage(
+                systemName: item.symbol,
+                withConfiguration: UIImage.SymbolConfiguration(
+                    pointSize: 14,
+                    weight: .semibold
+                )
+            )
+        }
         iconView.tintColor = item.color
         iconContainer.backgroundColor = item.color.withAlphaComponent(0.14)
         valueLabel.text = item.value.formatted()
@@ -369,6 +378,266 @@ private final class StatTileView: UIView {
 
             heightAnchor.constraint(greaterThanOrEqualToConstant: 126)
         ])
+    }
+}
+
+// MARK: - 统计说明横幅
+
+/// 统计说明横幅：盾牌小图标 + 说明文字 + 右侧蓝色锁头装饰。
+final class ContentBlockInfoBannerCell: UITableViewCell {
+    static let reuseIdentifier = "ContentBlockInfoBannerCell"
+
+    private let cardView = UIView()
+    private let shieldIcon = UIImageView()
+    private let messageLabel = UILabel()
+    private let lockContainer = UIView()
+    private let lockIcon = UIImageView()
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        configureView()
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
+    func configure(message: String) {
+        messageLabel.text = message
+        accessibilityLabel = message
+    }
+
+    private func configureView() {
+        backgroundColor = .clear
+        backgroundConfiguration = UIBackgroundConfiguration.clear()
+        selectionStyle = .none
+
+        cardView.backgroundColor = AppColors.surface
+        cardView.layer.cornerRadius = AppRadius.control
+        cardView.layer.cornerCurve = .continuous
+        ContentBlockCardStyle.applyShadow(to: cardView)
+        cardView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(cardView)
+
+        shieldIcon.image = UIImage(
+            systemName: "shield.lefthalf.filled",
+            withConfiguration: UIImage.SymbolConfiguration(
+                pointSize: 17,
+                weight: .medium
+            )
+        )
+        shieldIcon.tintColor = AppColors.accent
+        shieldIcon.contentMode = .scaleAspectFit
+        shieldIcon.translatesAutoresizingMaskIntoConstraints = false
+        cardView.addSubview(shieldIcon)
+
+        AppTypography.configure(messageLabel, style: .footnote)
+        messageLabel.textColor = AppColors.secondaryText
+        messageLabel.numberOfLines = 0
+        messageLabel.translatesAutoresizingMaskIntoConstraints = false
+        cardView.addSubview(messageLabel)
+
+        lockContainer.backgroundColor = AppColors.accent.withAlphaComponent(0.12)
+        lockContainer.layer.cornerRadius = 15
+        lockContainer.layer.cornerCurve = .continuous
+        lockContainer.translatesAutoresizingMaskIntoConstraints = false
+        cardView.addSubview(lockContainer)
+
+        lockIcon.image = UIImage(
+            systemName: "lock.fill",
+            withConfiguration: UIImage.SymbolConfiguration(
+                pointSize: 15,
+                weight: .semibold
+            )
+        )
+        lockIcon.tintColor = AppColors.accent
+        lockIcon.contentMode = .scaleAspectFit
+        lockIcon.translatesAutoresizingMaskIntoConstraints = false
+        lockContainer.addSubview(lockIcon)
+
+        NSLayoutConstraint.activate([
+            cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 4),
+            cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
+            cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
+            cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
+
+            shieldIcon.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 15),
+            shieldIcon.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
+            shieldIcon.widthAnchor.constraint(equalToConstant: 24),
+            shieldIcon.heightAnchor.constraint(equalToConstant: 24),
+
+            messageLabel.leadingAnchor.constraint(equalTo: shieldIcon.trailingAnchor, constant: 10),
+            messageLabel.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 11),
+            messageLabel.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -11),
+            messageLabel.trailingAnchor.constraint(
+                lessThanOrEqualTo: lockContainer.leadingAnchor,
+                constant: -10
+            ),
+
+            lockContainer.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
+            lockContainer.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
+            lockContainer.widthAnchor.constraint(equalToConstant: 30),
+            lockContainer.heightAnchor.constraint(equalToConstant: 30),
+            lockIcon.centerXAnchor.constraint(equalTo: lockContainer.centerXAnchor),
+            lockIcon.centerYAnchor.constraint(equalTo: lockContainer.centerYAnchor)
+        ])
+    }
+}
+
+// MARK: - 底部四按钮操作栏
+
+/// 底部大圆角操作栏：编辑 / 评论 / 调整大小 / 移除。
+final class ContentBlockActionBarCell: UITableViewCell {
+    static let reuseIdentifier = "ContentBlockActionBarCell"
+
+    private let cardView = UIView()
+    private let stackView = UIStackView()
+
+    private struct ActionItem {
+        let title: String
+        let symbol: String
+    }
+
+    private let actions: [ActionItem] = [
+        ActionItem(title: "编辑", symbol: "square.and.pencil"),
+        ActionItem(title: "评论", symbol: "text.bubble"),
+        ActionItem(title: "调整大小", symbol: "arrow.up.left.and.arrow.down.right"),
+        ActionItem(title: "移除", symbol: "trash")
+    ]
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        configureView()
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
+    private func configureView() {
+        backgroundColor = .clear
+        backgroundConfiguration = UIBackgroundConfiguration.clear()
+        selectionStyle = .none
+
+        cardView.backgroundColor = AppColors.surface
+        cardView.layer.cornerRadius = AppRadius.card
+        cardView.layer.cornerCurve = .continuous
+        ContentBlockCardStyle.applyShadow(to: cardView)
+        cardView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(cardView)
+
+        stackView.axis = .horizontal
+        stackView.distribution = .fillEqually
+        stackView.alignment = .center
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        cardView.addSubview(stackView)
+
+        for action in actions {
+            stackView.addArrangedSubview(makeActionButton(action))
+        }
+
+        NSLayoutConstraint.activate([
+            cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),
+            cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
+            cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
+            cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6),
+            stackView.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 16),
+            stackView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 8),
+            stackView.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -8),
+            stackView.bottomAnchor.constraint(equalTo: cardView.bottomAnchor, constant: -16)
+        ])
+    }
+
+    private func makeActionButton(_ action: ActionItem) -> UIButton {
+        let button = UIButton(type: .system)
+        var configuration = UIButton.Configuration.plain()
+        configuration.image = UIImage(
+            systemName: action.symbol,
+            withConfiguration: UIImage.SymbolConfiguration(
+                pointSize: 17,
+                weight: .medium
+            )
+        )
+        configuration.imagePlacement = .top
+        configuration.imagePadding = 7
+        configuration.title = action.title
+        configuration.baseForegroundColor = AppColors.accent
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer {
+            incoming in
+            var outgoing = incoming
+            outgoing.font = UIFont.preferredFont(forTextStyle: .caption1)
+            outgoing.foregroundColor = AppColors.primaryText
+            return outgoing
+        }
+        button.configuration = configuration
+        button.accessibilityLabel = action.title
+        // 圆形浅底图标按钮：给图标单独包一层圆形浅色背景。
+        // 这里用 image 内边距 + 圆底渲染：将图标放在圆形浅色圆片内。
+        if let image = button.configuration?.image {
+            let circle = roundedIconBackground(image: image, tint: AppColors.accent)
+            button.configuration?.image = circle
+        }
+        button.addTarget(self, action: #selector(actionTapped(_:)), for: .touchUpInside)
+        button.tag = actions.firstIndex(where: { $0.title == action.title }) ?? 0
+        return button
+    }
+
+    /// 把线性 SF Symbol 放进圆形浅色底片，得到“圆形浅底图标按钮”。
+    private func roundedIconBackground(image: UIImage, tint: UIColor) -> UIImage {
+        let size: CGFloat = 44
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+        return renderer.image { context in
+            let circleRect = CGRect(x: 0, y: 0, width: size, height: size)
+            let circlePath = UIBezierPath(
+                roundedRect: circleRect,
+                cornerRadius: size / 2
+            )
+            tint.withAlphaComponent(0.12).setFill()
+            circlePath.fill()
+            let symbolSize: CGFloat = 20
+            let symbolRect = CGRect(
+                x: (size - symbolSize) / 2,
+                y: (size - symbolSize) / 2,
+                width: symbolSize,
+                height: symbolSize
+            )
+            image.withTintColor(tint).draw(in: symbolRect)
+        }
+    }
+
+    @objc private func actionTapped(_ sender: UIButton) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    }
+}
+
+// MARK: - 图标兜底
+
+enum ContentBlockSymbols {
+    /// 橙色漏斗图标。优先用 SF Symbol；个别系统渲染异常时用路径兜底绘制。
+    static func funnelImage(color: UIColor, pointSize: CGFloat) -> UIImage? {
+        if let image = UIImage(
+            systemName: "funnel.fill",
+            withConfiguration: UIImage.SymbolConfiguration(
+                pointSize: pointSize,
+                weight: .semibold
+            )
+        ) {
+            return image
+        }
+        let size = pointSize + 5
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+        return renderer.image { _ in
+            color.setFill()
+            let path = UIBezierPath()
+            path.move(to: CGPoint(x: size * 0.16, y: size * 0.20))
+            path.addLine(to: CGPoint(x: size * 0.84, y: size * 0.20))
+            path.addLine(to: CGPoint(x: size * 0.52, y: size * 0.55))
+            path.addLine(to: CGPoint(x: size * 0.52, y: size * 0.80))
+            path.addLine(to: CGPoint(x: size * 0.40, y: size * 0.84))
+            path.addLine(to: CGPoint(x: size * 0.40, y: size * 0.55))
+            path.close()
+            path.fill()
+        }
     }
 }
 
@@ -511,6 +780,16 @@ final class SparklineView: UIView {
     }
     var tint: UIColor = .systemRed {
         didSet { setNeedsDisplay() }
+    }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isOpaque = false
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
     }
 
     override func draw(_ rect: CGRect) {

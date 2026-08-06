@@ -25,6 +25,7 @@ final class ContentBlockingSettingsViewController: BaseViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        configureNavigationItems()
         configureTableView()
         observeChanges()
         ContentBlockerService.shared.loadIfNeeded()
@@ -52,6 +53,14 @@ final class ContentBlockingSettingsViewController: BaseViewController {
             ContentBlockActionCardCell.self,
             forCellReuseIdentifier: ContentBlockActionCardCell.reuseIdentifier
         )
+        tableView.register(
+            ContentBlockInfoBannerCell.self,
+            forCellReuseIdentifier: ContentBlockInfoBannerCell.reuseIdentifier
+        )
+        tableView.register(
+            ContentBlockActionBarCell.self,
+            forCellReuseIdentifier: ContentBlockActionBarCell.reuseIdentifier
+        )
         tableView.dataSource = self
         tableView.delegate = self
         tableView.translatesAutoresizingMaskIntoConstraints = false
@@ -62,6 +71,58 @@ final class ContentBlockingSettingsViewController: BaseViewController {
             tableView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
+    }
+
+    /// 顶部导航：左侧圆形返回按钮、居中标题、右侧圆形导入按钮。
+    private func configureNavigationItems() {
+        navigationItem.hidesBackButton = true
+        navigationItem.leftBarButtonItem = makeNavCircleButton(
+            symbol: "chevron.left",
+            tint: AppColors.primaryText
+        ) { [weak self] in
+            self?.navigationController?.popViewController(animated: true)
+        }
+        navigationItem.rightBarButtonItem = makeNavCircleButton(
+            symbol: "square.and.arrow.down",
+            tint: AppColors.accent
+        ) { [weak self] in
+            self?.showImportMenu()
+        }
+        // 隐藏系统返回按钮后保留边缘右滑返回手势。
+        navigationController?.interactivePopGestureRecognizer?.delegate = self
+    }
+
+    private func makeNavCircleButton(
+        symbol: String,
+        tint: UIColor,
+        action: @escaping () -> Void
+    ) -> UIBarButtonItem {
+        let button = UIButton(type: .system)
+        button.backgroundColor = AppColors.surface
+        button.tintColor = tint
+        button.setImage(
+            UIImage(
+                systemName: symbol,
+                withConfiguration: UIImage.SymbolConfiguration(
+                    pointSize: 15,
+                    weight: .semibold
+                )
+            ),
+            for: .normal
+        )
+        button.layer.cornerRadius = 18
+        button.layer.cornerCurve = .continuous
+        button.layer.shadowColor = UIColor.black.cgColor
+        button.layer.shadowOpacity = 0.08
+        button.layer.shadowRadius = 6
+        button.layer.shadowOffset = CGSize(width: 0, height: 2)
+        button.frame = CGRect(x: 0, y: 0, width: 36, height: 36)
+        button.addAction(
+            UIAction { _ in action() },
+            for: .touchUpInside
+        )
+        button.accessibilityLabel = symbol == "chevron.left" ? "返回" : "导入规则"
+        return UIBarButtonItem(customView: button)
     }
 
     private func observeChanges() {
@@ -286,16 +347,25 @@ extension ContentBlockingSettingsViewController: UIDocumentPickerDelegate {
     }
 }
 
+extension ContentBlockingSettingsViewController: UIGestureRecognizerDelegate {
+    func gestureRecognizerShouldBegin(
+        _ gestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        navigationController?.viewControllers.count ?? 0 > 1
+    }
+}
+
 extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableViewDelegate {
     func numberOfSections(in tableView: UITableView) -> Int {
-        3
+        4
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch section {
         case 0: return 1
-        case 1: return 1
-        default: return 2
+        case 1: return 2
+        case 2: return 2
+        default: return 1
         }
     }
 
@@ -320,7 +390,7 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
         _ tableView: UITableView,
         heightForHeaderInSection section: Int
     ) -> CGFloat {
-        section == 0 ? 10 : 36
+        section == 0 || section == 3 ? 10 : 36
     }
 
     func tableView(
@@ -357,7 +427,7 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
                 self?.tableView.reloadData()
             }
             return cell
-        case 1:
+        case 1 where indexPath.row == 0:
             guard let cell = tableView.dequeueReusableCell(
                 withIdentifier: ContentBlockStatsCardCell.reuseIdentifier,
                 for: indexPath
@@ -366,7 +436,18 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
             }
             configureStatsCell(cell)
             return cell
-        default:
+        case 1:
+            guard let cell = tableView.dequeueReusableCell(
+                withIdentifier: ContentBlockInfoBannerCell.reuseIdentifier,
+                for: indexPath
+            ) as? ContentBlockInfoBannerCell else {
+                return UITableViewCell()
+            }
+            cell.configure(
+                message: "统计被隐藏的广告元素与拦截的主框架导航，为近似值。"
+            )
+            return cell
+        case 2:
             guard let cell = tableView.dequeueReusableCell(
                 withIdentifier: ContentBlockActionCardCell.reuseIdentifier,
                 for: indexPath
@@ -387,6 +468,14 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
                     symbol: "shield.slash",
                     tint: .systemGray
                 )
+            }
+            return cell
+        default:
+            guard let cell = tableView.dequeueReusableCell(
+                withIdentifier: ContentBlockActionBarCell.reuseIdentifier,
+                for: indexPath
+            ) as? ContentBlockActionBarCell else {
+                return UITableViewCell()
             }
             return cell
         }
