@@ -6,6 +6,7 @@ final class ContentBlockingSettingsViewController: BaseViewController {
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
     private let manager = ContentBlockManager.shared
     private var selectedRange: StatisticsRange = .today
+    private weak var rangeButton: UIButton?
     private var changeObserver: NSObjectProtocol?
 
     init() {
@@ -48,8 +49,8 @@ final class ContentBlockingSettingsViewController: BaseViewController {
             forCellReuseIdentifier: ContentBlockStatsCardCell.reuseIdentifier
         )
         tableView.register(
-            GlassSummaryCell.self,
-            forCellReuseIdentifier: GlassSummaryCell.reuseIdentifier
+            ContentBlockActionCardCell.self,
+            forCellReuseIdentifier: ContentBlockActionCardCell.reuseIdentifier
         )
         tableView.dataSource = self
         tableView.delegate = self
@@ -77,14 +78,24 @@ final class ContentBlockingSettingsViewController: BaseViewController {
 
     private func selectRange(_ range: StatisticsRange) {
         selectedRange = range
-        tableView.reloadSections(IndexSet(integer: 1), with: .fade)
+        // 原位更新数据与按钮标题，避免整段刷新造成的闪动。
+        rangeButton?.configuration?.title = range.rawValue
+        rangeButton?.accessibilityLabel = "统计时间范围，当前\(range.rawValue)"
+        rangeButton?.menu = makeRangeMenu()
+        if let cell = tableView.cellForRow(
+            at: IndexPath(row: 0, section: 1)
+        ) as? ContentBlockStatsCardCell {
+            configureStatsCell(cell)
+        }
     }
 
     private func makeRangeButton() -> UIButton {
         var configuration = UIButton.Configuration.filled()
-        configuration.baseBackgroundColor = UIColor.secondarySystemFill
+        configuration.baseBackgroundColor = AppColors.surface
         configuration.baseForegroundColor = AppColors.primaryText
         configuration.cornerStyle = .capsule
+        configuration.background.strokeColor = UIColor.systemGray4
+        configuration.background.strokeWidth = 1
         configuration.contentInsets = NSDirectionalEdgeInsets(
             top: 5,
             leading: 12,
@@ -107,7 +118,14 @@ final class ContentBlockingSettingsViewController: BaseViewController {
 
         let button = UIButton(configuration: configuration, primaryAction: nil)
         button.showsMenuAsPrimaryAction = true
-        button.menu = UIMenu(children: StatisticsRange.allCases.map { range in
+        button.menu = makeRangeMenu()
+        button.accessibilityLabel = "统计时间范围，当前\(selectedRange.rawValue)"
+        rangeButton = button
+        return button
+    }
+
+    private func makeRangeMenu() -> UIMenu {
+        UIMenu(children: StatisticsRange.allCases.map { range in
             UIAction(
                 title: range.rawValue,
                 state: range == selectedRange ? .on : .off
@@ -115,8 +133,35 @@ final class ContentBlockingSettingsViewController: BaseViewController {
                 self?.selectRange(range)
             }
         })
-        button.accessibilityLabel = "统计时间范围，当前\(selectedRange.rawValue)"
-        return button
+    }
+
+    private func configureStatsCell(_ cell: ContentBlockStatsCardCell) {
+        let statistics = manager.statisticsManager
+        let summary = statistics.summary(for: selectedRange)
+        cell.configure(
+            blocked: summary.todayBlocked,
+            pageLoads: summary.todayPageLoads,
+            ruleCount: summary.ruleCount,
+            filterCount: summary.filterCount,
+            blockedTitle: selectedRange.metricTitle(for: .blocked),
+            pageLoadTitle: selectedRange.metricTitle(for: .pageLoads),
+            blockedSeries: statistics.sparkline(
+                for: selectedRange,
+                kind: .blocked
+            ),
+            pageLoadSeries: statistics.sparkline(
+                for: selectedRange,
+                kind: .pageLoads
+            ),
+            ruleSeries: statistics.sparkline(
+                for: selectedRange,
+                kind: .ruleCount
+            ),
+            filterSeries: statistics.sparkline(
+                for: selectedRange,
+                kind: .filterCount
+            )
+        )
     }
 
     // MARK: - 导入规则
@@ -319,38 +364,13 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
             ) as? ContentBlockStatsCardCell else {
                 return UITableViewCell()
             }
-            let statistics = manager.statisticsManager
-            let summary = statistics.summary(for: selectedRange)
-            cell.configure(
-                blocked: summary.todayBlocked,
-                pageLoads: summary.todayPageLoads,
-                ruleCount: summary.ruleCount,
-                filterCount: summary.filterCount,
-                blockedTitle: selectedRange.metricTitle(for: .blocked),
-                pageLoadTitle: selectedRange.metricTitle(for: .pageLoads),
-                blockedSeries: statistics.sparkline(
-                    for: selectedRange,
-                    kind: .blocked
-                ),
-                pageLoadSeries: statistics.sparkline(
-                    for: selectedRange,
-                    kind: .pageLoads
-                ),
-                ruleSeries: statistics.sparkline(
-                    for: selectedRange,
-                    kind: .ruleCount
-                ),
-                filterSeries: statistics.sparkline(
-                    for: selectedRange,
-                    kind: .filterCount
-                )
-            )
+            configureStatsCell(cell)
             return cell
         default:
             guard let cell = tableView.dequeueReusableCell(
-                withIdentifier: GlassSummaryCell.reuseIdentifier,
+                withIdentifier: ContentBlockActionCardCell.reuseIdentifier,
                 for: indexPath
-            ) as? GlassSummaryCell else {
+            ) as? ContentBlockActionCardCell else {
                 return UITableViewCell()
             }
             if indexPath.row == 0 {
