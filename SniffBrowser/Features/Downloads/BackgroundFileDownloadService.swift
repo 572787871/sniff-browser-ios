@@ -254,9 +254,15 @@ extension BackgroundFileDownloadService: URLSessionDownloadDelegate {
         else { return }
         do {
             try validate(task: downloadTask, fileURL: location)
+            // 许多图片/资源 URL 不带扩展名，但响应头带真实 MIME。
+            // 文件名缺少扩展名时按 MIME 补上，保证文件可预览、可分享。
+            let fileName = Self.fileNameWithFallbackExtension(
+                plan.fileName,
+                mimeType: downloadTask.response?.mimeType
+            )
             let stored = try storage.storeDownloadedFile(
                 from: location,
-                preferredFileName: plan.fileName,
+                preferredFileName: fileName,
                 resourceType: plan.resourceType
             )
             lock.withLock {
@@ -276,6 +282,49 @@ extension BackgroundFileDownloadService: URLSessionDownloadDelegate {
             Task { @MainActor [weak self] in
                 self?.delegate?.fileDownloadDidFail(taskID: id, error: error)
             }
+        }
+    }
+}
+
+extension BackgroundFileDownloadService {
+    static func fileNameWithFallbackExtension(
+        _ name: String,
+        mimeType: String?
+    ) -> String {
+        guard (name as NSString).pathExtension.isEmpty,
+              let mimeType,
+              let ext = preferredExtension(forMIMEType: mimeType)
+        else { return name }
+        return name + "." + ext
+    }
+
+    static func preferredExtension(forMIMEType mimeType: String) -> String? {
+        let mime = mimeType
+            .split(separator: ";", maxSplits: 1)
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        switch mime {
+        case "image/jpeg": return "jpg"
+        case "image/png": return "png"
+        case "image/gif": return "gif"
+        case "image/webp": return "webp"
+        case "image/avif": return "avif"
+        case "image/heic", "image/heif": return "heic"
+        case "image/svg+xml": return "svg"
+        case "image/bmp": return "bmp"
+        case "image/tiff": return "tiff"
+        case "audio/mpeg": return "mp3"
+        case "audio/mp4", "audio/x-m4a", "audio/aac": return "m4a"
+        case "audio/wav", "audio/x-wav": return "wav"
+        case "video/mp4": return "mp4"
+        case "video/quicktime": return "mov"
+        case "video/webm": return "webm"
+        case "application/pdf": return "pdf"
+        case "text/plain": return "txt"
+        case "application/zip": return "zip"
+        default: return nil
         }
     }
 }

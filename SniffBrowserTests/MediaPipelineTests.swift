@@ -115,6 +115,26 @@ final class MediaPipelineTests: XCTestCase {
         XCTAssertTrue(second.lastPathComponent.contains("-1"))
     }
 
+    func testStoreFinalFileSkipsMoveWhenSourceIsAlreadyInVideosDirectory() throws {
+        let storage = FileStorageManager()
+        try FileManager.default.createDirectory(
+            at: storage.videosDirectory,
+            withIntermediateDirectories: true
+        )
+        let source = storage.videosDirectory.appendingPathComponent("movie.mp4")
+        try Data("video".utf8).write(to: source)
+
+        let stored = try storage.storeFinalFile(
+            from: source,
+            fileName: "movie.mp4",
+            extension: "mp4"
+        )
+
+        // 源文件已在最终目录时保持原名，不得改名为 “movie 2.mp4”。
+        XCTAssertEqual(stored.path, source.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stored.path))
+    }
+
     func testPostProcessRejectsInvalidSource() async {
         let invalid = temporaryDirectoryURL.appendingPathComponent("note.txt")
         try? "not a media file".data(using: .utf8)?.write(to: invalid)

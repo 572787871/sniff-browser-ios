@@ -24,17 +24,15 @@ final class DownloadFileStorage {
             in: .userDomainMask
         )[0]
         try? fileManager.createDirectory(
-            at: downloadsRootURL,
-            withIntermediateDirectories: true
-        )
-        try? fileManager.createDirectory(
             at: resumeDataRootURL,
             withIntermediateDirectories: true
         )
     }
 
-    var downloadsRootURL: URL {
-        documentsURL.appendingPathComponent("Downloads", isDirectory: true)
+    /// 分类目录直接位于 Documents 根下（“文件”App 中不再出现多余的
+    /// Downloads 包装层）。视频与媒体管线共用 Documents/Videos。
+    var categoryRootURL: URL {
+        documentsURL
     }
 
     var resumeDataRootURL: URL {
@@ -110,6 +108,95 @@ final class DownloadFileStorage {
         return storedFile(for: destination)
     }
 
+    // MARK: - 旧布局迁移
+
+    /// 把旧版 `Documents/Downloads/<分类>/*` 与 `Documents/Thumbnails/*`
+    /// 迁移到新布局（分类直接放 Documents 根、缩略图移入 Application Support），
+    /// 并删除空目录。幂等，可重复调用。
+    func migrateLegacyLayoutIfNeeded() {
+        let fileManager = FileManager.default
+        let legacyDownloads = documentsURL.appendingPathComponent(
+            "Downloads",
+            isDirectory: true
+        )
+        if fileManager.fileExists(atPath: legacyDownloads.path) {
+            for name in ["Videos", "Audio", "Images", "Documents",
+                         "Subtitles", "Archives", "Other"] {
+                let source = legacyDownloads.appendingPathComponent(
+                    name,
+                    isDirectory: true
+                )
+                guard fileManager.fileExists(atPath: source.path) else { continue }
+                let destination = documentsURL.appendingPathComponent(
+                    name,
+                    isDirectory: true
+                )
+                try? fileManager.createDirectory(
+                    at: destination,
+                    withIntermediateDirectories: true
+                )
+                if let entries = try? fileManager.contentsOfDirectory(
+                    atPath: source.path
+                ) {
+                    for entry in entries {
+                        let from = source.appendingPathComponent(entry)
+                        let to = destination.appendingPathComponent(entry)
+                        if !fileManager.fileExists(atPath: to.path) {
+                            try? fileManager.moveItem(at: from, to: to)
+                        }
+                    }
+                }
+                try? fileManager.removeItem(at: source)
+            }
+            try? fileManager.removeItem(at: legacyDownloads)
+        }
+
+        let legacyThumbnails = documentsURL.appendingPathComponent(
+            "Thumbnails",
+            isDirectory: true
+        )
+        if fileManager.fileExists(atPath: legacyThumbnails.path) {
+            let destination = applicationSupportURL.appendingPathComponent(
+                "Thumbnails",
+                isDirectory: true
+            )
+            try? fileManager.createDirectory(
+                at: destination,
+                withIntermediateDirectories: true
+            )
+            if let entries = try? fileManager.contentsOfDirectory(
+                atPath: legacyThumbnails.path
+            ) {
+                for entry in entries {
+                    let from = legacyThumbnails.appendingPathComponent(entry)
+                    let to = destination.appendingPathComponent(entry)
+                    if !fileManager.fileExists(atPath: to.path) {
+                        try? fileManager.moveItem(at: from, to: to)
+                    }
+                }
+            }
+            try? fileManager.removeItem(at: legacyThumbnails)
+        }
+
+    }
+
+    /// 把旧版相对路径 `Downloads/Videos/x.mp4` 重写为 `Videos/x.mp4`。
+    func migratedRelativePath(_ path: String) -> String {
+        if path.hasPrefix("Downloads/") {
+            return String(path.dropFirst("Downloads/".count))
+        }
+        return path
+    }
+
+    /// 把旧版缩略图路径 `Thumbnails/x.jpg` 重写为 `AppSupport/Thumbnails/x.jpg`。
+    func migratedThumbnailPath(_ path: String?) -> String? {
+        guard let path else { return nil }
+        if path.hasPrefix("Thumbnails/") {
+            return "AppSupport/\(path)"
+        }
+        return path
+    }
+
     func saveResumeData(_ data: Data, taskID: UUID) throws -> String {
         let url = resumeDataRootURL.appendingPathComponent("\(taskID.uuidString).resume")
         try data.write(to: url, options: .atomic)
@@ -140,6 +227,10 @@ final class DownloadFileStorage {
         if relativePath.hasPrefix("Container/") {
             let suffix = String(relativePath.dropFirst("Container/".count))
             allowedRoot = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            url = allowedRoot.appendingPathComponent(suffix)
+        } else if relativePath.hasPrefix("AppSupport/") {
+            let suffix = String(relativePath.dropFirst("AppSupport/".count))
+            allowedRoot = applicationSupportURL
             url = allowedRoot.appendingPathComponent(suffix)
         } else {
             allowedRoot = documentsURL
@@ -193,7 +284,7 @@ final class DownloadFileStorage {
         case .hls: name = "Videos"
         case .other: name = "Other"
         }
-        let url = downloadsRootURL.appendingPathComponent(name, isDirectory: true)
+        let url = categoryRootURL.appendingPathComponent(name, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }

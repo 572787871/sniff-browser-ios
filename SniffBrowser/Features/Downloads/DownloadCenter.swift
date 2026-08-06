@@ -74,7 +74,22 @@ final class DownloadCenter: DownloadManaging {
         }
         isReloading = true
         do {
+            storage.migrateLegacyLayoutIfNeeded()
             tasks = try await repository.load()
+            for index in tasks.indices {
+                if let path = tasks[index].destinationRelativePath {
+                    let migrated = storage.migratedRelativePath(path)
+                    if migrated != path {
+                        tasks[index].destinationRelativePath = migrated
+                    }
+                }
+                if let thumbnail = tasks[index].thumbnailLocalPath {
+                    let migrated = storage.migratedThumbnailPath(thumbnail)
+                    if migrated != thumbnail {
+                        tasks[index].thumbnailLocalPath = migrated
+                    }
+                }
+            }
             repairMissingFiles()
             registerPlansForPersistedTasks()
             let regularIDs = await restoredRegularTaskIDs()

@@ -38,6 +38,26 @@ final class ResourceClassifierTests: XCTestCase {
         )
     }
 
+    func testImageElementWithoutMIMEOrExtensionClassifiesAsImage() throws {
+        let url = try XCTUnwrap(URL(string: "https://example.com/pixel?id=123"))
+        XCTAssertEqual(
+            classifier.classify(
+                mimeType: nil,
+                url: url,
+                elementType: "img"
+            ),
+            .image
+        )
+        XCTAssertEqual(
+            classifier.classify(
+                mimeType: nil,
+                url: url,
+                elementType: "image"
+            ),
+            .image
+        )
+    }
+
     func testOrdinaryWebPageIsNotAResource() throws {
         let url = try XCTUnwrap(URL(string: "https://example.com/article"))
         XCTAssertNil(

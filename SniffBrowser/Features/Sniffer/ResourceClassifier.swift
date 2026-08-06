@@ -83,7 +83,7 @@ struct ResourceClassifier: Sendable {
         if element == "track" {
             return .subtitle
         }
-        if element == "img", element == "image" {
+        if element == "img" || element == "image" {
             return .image
         }
         if mime == "application/octet-stream" {

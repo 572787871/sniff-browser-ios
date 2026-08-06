@@ -206,6 +206,15 @@ bash scripts/generate-project.sh   # 自动选择 project.nofmpeg.yml，使用 S
 
 ## 7. 实现说明
 
+### 苹果“文件”App 目录布局
+
+- 最终视频统一存放在 `Documents/Videos`（下载模块与 Media Pipeline 共用同一目录）；
+- 图片/音频/文档等分类目录直接位于 Documents 根下，按需创建，不再有
+  `Downloads/` 包装层；缩略图移入 Application Support（“文件”App 不可见）；
+- 启动时会自动迁移旧布局（`Documents/Downloads/*` → Documents 根、
+  `Documents/Thumbnails/*` → Application Support），并重写数据库中的相对路径，
+  幂等可重复执行。
+
 ### FFmpegLibraryProcessor（libav* C API）
 
 - `remux`：`avformat_open_input` → 复制 stream codecpar → `mp4` muxer

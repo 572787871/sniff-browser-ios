@@ -99,6 +99,12 @@ final class FileStorageManager {
     /// 把最终文件原子移动到 Videos 目录，返回新位置。
     @discardableResult
     func storeFinalFile(from source: URL, fileName: String, extension ext: String) throws -> URL {
+        // 源文件已经位于最终 Videos 目录（如直接可播的 MP4 下载）时，
+        // 无需再移动，否则会因“同名已存在”而被改名为 “xxx 2.mp4”。
+        if source.deletingLastPathComponent().standardizedFileURL.path
+            == videosDirectory.standardizedFileURL.path {
+            return source
+        }
         let destination = uniqueDestination(fileName: fileName, preferredExtension: ext)
         do {
             try fileManager.moveItem(at: source, to: destination)

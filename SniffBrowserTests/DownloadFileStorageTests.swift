@@ -18,7 +18,7 @@ final class DownloadFileStorageTests: XCTestCase {
             resourceType: .video
         )
 
-        XCTAssertTrue(first.relativePath.hasPrefix("Downloads/Videos/"))
+        XCTAssertTrue(first.relativePath.hasPrefix("Videos/"))
         XCTAssertEqual(first.fileURL.lastPathComponent, "movie.mp4")
         XCTAssertEqual(second.fileURL.lastPathComponent, "movie 2.mp4")
     }
@@ -38,7 +38,7 @@ final class DownloadFileStorageTests: XCTestCase {
                 preferredFileName: "file-\(index)",
                 resourceType: pair.0
             )
-            XCTAssertTrue(stored.relativePath.contains("/\(pair.1)/"))
+            XCTAssertTrue(stored.relativePath.hasPrefix("\(pair.1)/"))
         }
     }
 
@@ -96,12 +96,64 @@ final class DownloadFileStorageTests: XCTestCase {
             preferredFileName: "Sample.m3u8"
         )
 
-        XCTAssertTrue(stored.relativePath.hasPrefix("Downloads/Videos/"))
+        XCTAssertTrue(stored.relativePath.hasPrefix("Videos/"))
         XCTAssertEqual(stored.fileURL.pathExtension, "sniffhls")
         XCTAssertTrue(FileManager.default.fileExists(
             atPath: stored.fileURL.appendingPathComponent("index.m3u8").path
         ))
         XCTAssertEqual(stored.byteCount, 151)
+    }
+
+    func testMigratesLegacyDownloadsAndThumbnailLayouts() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+
+        // 构造旧布局：Documents/Downloads/Videos、Documents/Thumbnails。
+        let legacyVideo = fixture.root
+            .appendingPathComponent("Documents/Downloads/Videos", isDirectory: true)
+        let legacyThumbnails = fixture.root
+            .appendingPathComponent("Documents/Thumbnails", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: legacyVideo,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: legacyThumbnails,
+            withIntermediateDirectories: true
+        )
+        try Data("video".utf8).write(
+            to: legacyVideo.appendingPathComponent("movie.mp4")
+        )
+        try Data("thumb".utf8).write(
+            to: legacyThumbnails.appendingPathComponent("thumb.jpg")
+        )
+
+        fixture.storage.migrateLegacyLayoutIfNeeded()
+
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: fixture.root.appendingPathComponent("Documents/Downloads").path
+        ))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: fixture.root.appendingPathComponent("Documents/Thumbnails").path
+        ))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: fixture.root
+                .appendingPathComponent("Documents/Videos/movie.mp4")
+                .path
+        ))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: fixture.root
+                .appendingPathComponent("ApplicationSupport/Thumbnails/thumb.jpg")
+                .path
+        ))
+        XCTAssertEqual(
+            fixture.storage.migratedRelativePath("Downloads/Videos/movie.mp4"),
+            "Videos/movie.mp4"
+        )
+        XCTAssertEqual(
+            fixture.storage.migratedThumbnailPath("Thumbnails/thumb.jpg"),
+            "AppSupport/Thumbnails/thumb.jpg"
+        )
     }
 
     private func makeFixture() throws -> (root: URL, storage: DownloadFileStorage) {

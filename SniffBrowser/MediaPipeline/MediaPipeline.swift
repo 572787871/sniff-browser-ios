@@ -171,14 +171,17 @@ final class MediaPipeline {
         let output = directory.appendingPathComponent("\(taskID.uuidString).jpg")
         _ = try? await processors.generate(from: url, output: output)
         guard let data = try? Data(contentsOf: output) else { return nil }
-        return (data, "Thumbnails/\(output.lastPathComponent)")
+        return (data, "AppSupport/Thumbnails/\(output.lastPathComponent)")
     }
 
     private var thumbnailsDirectory: URL {
-        let documents = FileManager.default.urls(
-            for: .documentDirectory,
+        let applicationSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
             in: .userDomainMask
         ).first!
-        return documents.appendingPathComponent("Thumbnails", isDirectory: true)
+        return applicationSupport.appendingPathComponent(
+            "Thumbnails",
+            isDirectory: true
+        )
     }
 }

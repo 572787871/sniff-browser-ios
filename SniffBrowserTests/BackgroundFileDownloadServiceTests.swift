@@ -93,4 +93,35 @@ final class BackgroundFileDownloadServiceTests: XCTestCase {
             URLError(.serverCertificateUntrusted)
         ))
     }
+
+    func testFallbackExtensionIsAppendedForExtensionlessNames() {
+        XCTAssertEqual(
+            BackgroundFileDownloadService.fileNameWithFallbackExtension(
+                "photo",
+                mimeType: "image/jpeg"
+            ),
+            "photo.jpg"
+        )
+        XCTAssertEqual(
+            BackgroundFileDownloadService.fileNameWithFallbackExtension(
+                "cover",
+                mimeType: "image/webp"
+            ),
+            "cover.webp"
+        )
+        XCTAssertEqual(
+            BackgroundFileDownloadService.fileNameWithFallbackExtension(
+                "photo.jpg",
+                mimeType: "image/png"
+            ),
+            "photo.jpg"
+        )
+        XCTAssertEqual(
+            BackgroundFileDownloadService.fileNameWithFallbackExtension(
+                "unknown",
+                mimeType: "application/octet-stream"
+            ),
+            "unknown"
+        )
+    }
 }
