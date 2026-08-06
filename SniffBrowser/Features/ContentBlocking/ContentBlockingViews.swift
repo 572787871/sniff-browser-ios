@@ -4,15 +4,17 @@ import UIKit
 
 /// 内容拦截页的区块标题：左侧蓝色小竖杠 + 加粗标题，右侧可挂筛选按钮。
 final class ContentBlockSectionHeaderView: UIView {
-    private let barView = UIView()
+    private let barView = UIImageView()
     private let titleLabel = UILabel()
 
     init(title: String, trailing: UIView? = nil) {
         super.init(frame: .zero)
 
-        barView.backgroundColor = AppColors.accent
-        barView.layer.cornerRadius = 2
-        barView.layer.cornerCurve = .continuous
+        // 分区蓝色竖条使用 section_bar 素材，禁止 tint。
+        barView.image = UIImage(named: "section_bar")?
+            .withRenderingMode(.alwaysOriginal)
+        barView.contentMode = .scaleAspectFit
+        barView.clipsToBounds = false
         barView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(barView)
 
@@ -26,8 +28,8 @@ final class ContentBlockSectionHeaderView: UIView {
         NSLayoutConstraint.activate([
             barView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
             barView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            barView.widthAnchor.constraint(equalToConstant: 3.5),
-            barView.heightAnchor.constraint(equalToConstant: 15),
+            barView.widthAnchor.constraint(equalToConstant: 4),
+            barView.heightAnchor.constraint(equalToConstant: 16),
             titleLabel.leadingAnchor.constraint(equalTo: barView.trailingAnchor, constant: 7),
             titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             titleLabel.trailingAnchor.constraint(
@@ -65,7 +67,7 @@ enum ContentBlockCardStyle {
 
 // MARK: - 总开关卡片
 
-/// 顶部内容拦截总开关：白色圆角卡片 + 3D 盾牌图标（生成素材）+ UISwitch。
+/// 顶部内容拦截总开关：白色圆角卡片 + shield_blue_main + toggle_on 素材。
 final class ContentBlockMasterCardCell: UITableViewCell {
     static let reuseIdentifier = "ContentBlockMasterCardCell"
 
@@ -73,8 +75,9 @@ final class ContentBlockMasterCardCell: UITableViewCell {
     private let iconView = UIImageView()
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
-    private let toggle = UISwitch()
+    private let toggleButton = UIButton(type: .custom)
     private var onChange: ((Bool) -> Void)?
+    private var isOn = true
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -94,13 +97,13 @@ final class ContentBlockMasterCardCell: UITableViewCell {
     ) {
         titleLabel.text = title
         subtitleLabel.text = subtitle
-        toggle.setOn(isOn, animated: false)
+        self.isOn = isOn
         self.onChange = onChange
         self.accessibilityIdentifier = accessibilityIdentifier
-        toggle.accessibilityIdentifier = "\(accessibilityIdentifier).switch"
+        toggleButton.accessibilityIdentifier = "\(accessibilityIdentifier).switch"
         accessibilityLabel = "\(title)，\(subtitle)"
         accessibilityValue = isOn ? "已开启" : "已关闭"
-        toggle.accessibilityLabel = title
+        toggleButton.accessibilityLabel = title
     }
 
     override func prepareForReuse() {
@@ -112,8 +115,9 @@ final class ContentBlockMasterCardCell: UITableViewCell {
     }
 
     @objc private func toggleChanged() {
-        accessibilityValue = toggle.isOn ? "已开启" : "已关闭"
-        onChange?(toggle.isOn)
+        isOn.toggle()
+        accessibilityValue = isOn ? "已开启" : "已关闭"
+        onChange?(isOn)
     }
 
     private func configureView() {
@@ -128,21 +132,11 @@ final class ContentBlockMasterCardCell: UITableViewCell {
         cardView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(cardView)
 
-        if let shield = UIImage(named: "ContentBlockShield") {
-            iconView.image = shield
-            iconView.contentMode = .scaleAspectFit
-        } else {
-            // 素材缺失时的兜底：系统蓝色盾牌闪电图标。
-            iconView.image = UIImage(
-                systemName: "bolt.shield.fill",
-                withConfiguration: UIImage.SymbolConfiguration(
-                    pointSize: 24,
-                    weight: .semibold
-                )
-            )
-            iconView.tintColor = AppColors.accent
-            iconView.contentMode = .center
-        }
+        // 素材直接来自目标参考图，禁止 tint / 模板渲染 / 拉伸。
+        iconView.image = UIImage(named: "shield_blue_main")?
+            .withRenderingMode(.alwaysOriginal)
+        iconView.contentMode = .scaleAspectFit
+        iconView.clipsToBounds = false
         iconView.translatesAutoresizingMaskIntoConstraints = false
         cardView.addSubview(iconView)
 
@@ -159,11 +153,20 @@ final class ContentBlockMasterCardCell: UITableViewCell {
         subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
         cardView.addSubview(subtitleLabel)
 
-        toggle.addTarget(self, action: #selector(toggleChanged), for: .valueChanged)
-        // 品牌蓝色开关（参考图：开启态为蓝色，而非系统默认绿色）。
-        toggle.onTintColor = AppColors.accent
-        toggle.translatesAutoresizingMaskIntoConstraints = false
-        cardView.addSubview(toggle)
+        // 主开关：toggle_on 素材，保持可点击切换功能。
+        toggleButton.setImage(
+            UIImage(named: "toggle_on")?.withRenderingMode(.alwaysOriginal),
+            for: .normal
+        )
+        toggleButton.imageView?.contentMode = .scaleAspectFit
+        toggleButton.clipsToBounds = false
+        toggleButton.addTarget(
+            self,
+            action: #selector(toggleChanged),
+            for: .touchUpInside
+        )
+        toggleButton.translatesAutoresizingMaskIntoConstraints = false
+        cardView.addSubview(toggleButton)
 
         NSLayoutConstraint.activate([
             cardView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8),
@@ -178,14 +181,16 @@ final class ContentBlockMasterCardCell: UITableViewCell {
 
             titleLabel.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 15),
             titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 12),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: toggle.leadingAnchor, constant: -8),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: toggleButton.leadingAnchor, constant: -8),
             subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 3),
             subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            subtitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: toggle.leadingAnchor, constant: -8),
+            subtitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: toggleButton.leadingAnchor, constant: -8),
             subtitleLabel.bottomAnchor.constraint(lessThanOrEqualTo: cardView.bottomAnchor, constant: -14),
 
-            toggle.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -16),
-            toggle.centerYAnchor.constraint(equalTo: cardView.centerYAnchor)
+            toggleButton.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -14),
+            toggleButton.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
+            toggleButton.widthAnchor.constraint(equalToConstant: 52),
+            toggleButton.heightAnchor.constraint(equalToConstant: 32)
         ])
     }
 }
@@ -217,10 +222,10 @@ final class ContentBlockStatsCardCell: UITableViewCell {
         pageLoadTitle: String
     ) {
         let values: [(icon: String, trend: String, title: String, value: Int)] = [
-            ("ContentBlockStatShield", "ContentBlockTrendBlocked", blockedTitle, blocked),
-            ("ContentBlockStatGlobe", "ContentBlockTrendPageLoads", pageLoadTitle, pageLoads),
-            ("ContentBlockStatList", "ContentBlockTrendRules", "当前规则", ruleCount),
-            ("ContentBlockStatFunnel", "ContentBlockTrendFilters", "过滤器", filterCount)
+            ("stat_red_shield", "chart_red", blockedTitle, blocked),
+            ("stat_blue_globe", "chart_blue", pageLoadTitle, pageLoads),
+            ("stat_green_rules", "chart_green", "当前规则", ruleCount),
+            ("stat_orange_filter", "chart_orange", "过滤器", filterCount)
         ]
         for index in 0..<4 {
             tiles[index].update(
@@ -243,10 +248,10 @@ final class ContentBlockStatsCardCell: UITableViewCell {
         contentView.addSubview(gridStack)
 
         let tileLayout: [(icon: String, trend: String, title: String)] = [
-            ("ContentBlockStatShield", "ContentBlockTrendBlocked", "今日拦截"),
-            ("ContentBlockStatGlobe", "ContentBlockTrendPageLoads", "今日访问"),
-            ("ContentBlockStatList", "ContentBlockTrendRules", "当前规则"),
-            ("ContentBlockStatFunnel", "ContentBlockTrendFilters", "过滤器")
+            ("stat_red_shield", "chart_red", "今日拦截"),
+            ("stat_blue_globe", "chart_blue", "今日访问"),
+            ("stat_green_rules", "chart_green", "当前规则"),
+            ("stat_orange_filter", "chart_orange", "过滤器")
         ]
         for index in 0..<tileLayout.count {
             let tile = StatTileView()
@@ -297,8 +302,11 @@ private final class StatTileView: UIView {
     }
 
     func update(iconName: String, trendName: String, title: String, value: Int) {
-        iconImageView.image = UIImage(named: iconName)
-        trendImageView.image = UIImage(named: trendName)
+        // 素材直接来自目标参考图：alwaysOriginal，禁止 tint / 拉伸。
+        iconImageView.image = UIImage(named: iconName)?
+            .withRenderingMode(.alwaysOriginal)
+        trendImageView.image = UIImage(named: trendName)?
+            .withRenderingMode(.alwaysOriginal)
         valueLabel.text = value.formatted()
         titleLabel.text = title
     }
@@ -310,6 +318,7 @@ private final class StatTileView: UIView {
         ContentBlockCardStyle.applyShadow(to: self)
 
         iconImageView.contentMode = .scaleAspectFit
+        iconImageView.clipsToBounds = false
         iconImageView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(iconImageView)
 
@@ -325,8 +334,8 @@ private final class StatTileView: UIView {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleLabel)
 
-        trendImageView.contentMode = .scaleAspectFill
-        trendImageView.clipsToBounds = true
+        trendImageView.contentMode = .scaleAspectFit
+        trendImageView.clipsToBounds = false
         trendImageView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(trendImageView)
 
@@ -346,7 +355,7 @@ private final class StatTileView: UIView {
             trendImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             trendImageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             trendImageView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
-            trendImageView.heightAnchor.constraint(equalToConstant: 30),
+            trendImageView.heightAnchor.constraint(equalToConstant: 34),
 
             heightAnchor.constraint(greaterThanOrEqualToConstant: 126)
         ])
@@ -363,7 +372,7 @@ final class ContentBlockActionCardCell: UITableViewCell {
     private let iconView = UIImageView()
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
-    private let chevronView = UIImageView(image: UIImage(systemName: "chevron.forward"))
+    private let chevronView = UIImageView()
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -378,7 +387,9 @@ final class ContentBlockActionCardCell: UITableViewCell {
         titleLabel.text = title
         subtitleLabel.text = subtitle
         subtitleLabel.isHidden = subtitle?.isEmpty != false
-        iconView.image = UIImage(named: imageName)
+        // 素材直接来自目标参考图：alwaysOriginal，禁止 tint / 拉伸。
+        iconView.image = UIImage(named: imageName)?
+            .withRenderingMode(.alwaysOriginal)
         accessibilityLabel = [title, subtitle].compactMap { $0 }.joined(separator: "，")
         accessibilityTraits = [.button]
     }
@@ -423,6 +434,7 @@ final class ContentBlockActionCardCell: UITableViewCell {
         contentView.addSubview(cardView)
 
         iconView.contentMode = .scaleAspectFit
+        iconView.clipsToBounds = false
         iconView.isAccessibilityElement = false
         iconView.translatesAutoresizingMaskIntoConstraints = false
         cardView.addSubview(iconView)
@@ -439,8 +451,11 @@ final class ContentBlockActionCardCell: UITableViewCell {
         subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
         cardView.addSubview(subtitleLabel)
 
-        chevronView.tintColor = .systemGray3
+        // 列表箭头使用 chevron_right 素材，禁止 tint。
+        chevronView.image = UIImage(named: "chevron_right")?
+            .withRenderingMode(.alwaysOriginal)
         chevronView.contentMode = .scaleAspectFit
+        chevronView.clipsToBounds = false
         chevronView.translatesAutoresizingMaskIntoConstraints = false
         cardView.addSubview(chevronView)
 

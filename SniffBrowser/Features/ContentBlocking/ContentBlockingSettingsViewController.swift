@@ -68,12 +68,13 @@ final class ContentBlockingSettingsViewController: BaseViewController {
     /// 顶部导航：左侧圆形返回按钮、居中标题（参考图：右上无按钮）。
     private func configureNavigationItems() {
         navigationItem.hidesBackButton = true
-        let backButton = UIButton(type: .system)
+        let backButton = UIButton(type: .custom)
         backButton.setImage(
-            UIImage(named: "ContentBlockBackButton"),
+            UIImage(named: "back_button")?.withRenderingMode(.alwaysOriginal),
             for: .normal
         )
         backButton.imageView?.contentMode = .scaleAspectFit
+        backButton.clipsToBounds = false
         backButton.frame = CGRect(x: 0, y: 0, width: 36, height: 36)
         backButton.addAction(
             UIAction { [weak self] _ in
@@ -102,7 +103,6 @@ final class ContentBlockingSettingsViewController: BaseViewController {
     private func selectRange(_ range: StatisticsRange) {
         selectedRange = range
         // 原位更新数据与按钮标题，避免整段刷新造成的闪动。
-        rangeButton?.configuration?.title = range.rawValue
         rangeButton?.accessibilityLabel = "统计时间范围，当前\(range.rawValue)"
         rangeButton?.menu = makeRangeMenu()
         if let cell = tableView.cellForRow(
@@ -113,33 +113,15 @@ final class ContentBlockingSettingsViewController: BaseViewController {
     }
 
     private func makeRangeButton() -> UIButton {
-        var configuration = UIButton.Configuration.filled()
-        configuration.baseBackgroundColor = AppColors.surface
-        configuration.baseForegroundColor = AppColors.primaryText
-        configuration.cornerStyle = .capsule
-        configuration.background.strokeColor = UIColor.systemGray4
-        configuration.background.strokeWidth = 1
-        configuration.contentInsets = NSDirectionalEdgeInsets(
-            top: 5,
-            leading: 12,
-            bottom: 5,
-            trailing: 10
+        // “今日”筛选按钮使用 today_selector 素材，禁止 tint / 重绘。
+        let button = UIButton(type: .custom)
+        button.setImage(
+            UIImage(named: "today_selector")?.withRenderingMode(.alwaysOriginal),
+            for: .normal
         )
-        configuration.image = UIImage(systemName: "chevron.down")?
-            .withConfiguration(
-                UIImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
-            )
-        configuration.imagePlacement = .trailing
-        configuration.imagePadding = 4
-        configuration.title = selectedRange.rawValue
-        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer {
-            incoming in
-            var outgoing = incoming
-            outgoing.font = UIFont.preferredFont(forTextStyle: .footnote)
-            return outgoing
-        }
-
-        let button = UIButton(configuration: configuration, primaryAction: nil)
+        button.imageView?.contentMode = .scaleAspectFit
+        button.clipsToBounds = false
+        button.frame = CGRect(x: 0, y: 0, width: 82, height: 34)
         button.showsMenuAsPrimaryAction = true
         button.menu = makeRangeMenu()
         button.accessibilityLabel = "统计时间范围，当前\(selectedRange.rawValue)"
@@ -391,13 +373,13 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
                 cell.configure(
                     title: "导入规则",
                     subtitle: "支持 txt / JSON 文件",
-                    imageName: "ContentBlockImport"
+                    imageName: "import_rule"
                 )
             } else {
                 cell.configure(
                     title: "网站白名单",
                     subtitle: "\(manager.whitelistManager.allPatterns().count) 个模式",
-                    imageName: "ContentBlockWhitelist"
+                    imageName: "whitelist"
                 )
             }
             return cell
