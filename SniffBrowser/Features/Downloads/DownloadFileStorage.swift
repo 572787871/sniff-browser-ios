@@ -305,7 +305,7 @@ final class DownloadFileStorage {
         return candidate
     }
 
-    private func storedFile(for url: URL) -> StoredDownloadFile {
+    func storedFile(for url: URL) -> StoredDownloadFile {
         let relative = url.path.replacingOccurrences(
             of: documentsURL.path + "/",
             with: ""

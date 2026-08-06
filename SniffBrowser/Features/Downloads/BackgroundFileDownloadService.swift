@@ -260,11 +260,21 @@ extension BackgroundFileDownloadService: URLSessionDownloadDelegate {
                 plan.fileName,
                 mimeType: downloadTask.response?.mimeType
             )
-            let stored = try storage.storeDownloadedFile(
+            var stored = try storage.storeDownloadedFile(
                 from: location,
                 preferredFileName: fileName,
                 resourceType: plan.resourceType
             )
+            // 部分图床对图片做 AES 加密防盗链：解密后替换为可用图片。
+            if plan.resourceType == .image,
+               let raw = try? Data(contentsOf: stored.fileURL),
+               let decrypted = ImageProtection.decryptedImageData(
+                   from: raw,
+                   sourceHost: downloadTask.originalRequest?.url?.host
+               ),
+               (try? decrypted.write(to: stored.fileURL, options: .atomic)) != nil {
+                stored = storage.storedFile(for: stored.fileURL)
+            }
             lock.withLock {
                 finishedIDs.insert(id)
                 systemTasks[id] = nil
