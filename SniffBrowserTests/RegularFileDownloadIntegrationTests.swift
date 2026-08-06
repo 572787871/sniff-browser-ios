@@ -55,7 +55,9 @@ final class RegularFileDownloadIntegrationTests: XCTestCase {
     }
 
     func testImagePNGDownloadStoresCorrectly() async throws {
-        let (data, response) = try await download("https://httpbin.org/image/png")
+        let (data, response) = try await download(
+            "https://www.w3.org/Icons/w3c_home.png"
+        )
         let stored = try validateAndStore(
             data: data,
             response: response,
@@ -85,7 +87,9 @@ final class RegularFileDownloadIntegrationTests: XCTestCase {
     }
 
     func testTextFileDownloadStoresCorrectly() async throws {
-        let (data, response) = try await download("https://httpbin.org/robots.txt")
+        let (data, response) = try await download(
+            "https://www.w3.org/TR/PNG/iso_8859-1.txt"
+        )
         let stored = try validateAndStore(
             data: data,
             response: response,

@@ -253,6 +253,7 @@ enum DownloadCenterError: LocalizedError, Equatable {
     case unexpectedHTML
     case signedURLExpired
     case fileOperationFailed
+    case invalidImageContent
     case invalidHLSPlaylist
     case invalidHLSKey
     case hlsDecryptionFailed
@@ -272,6 +273,7 @@ enum DownloadCenterError: LocalizedError, Equatable {
         case .unexpectedHTML: return "服务器返回了网页而不是目标文件，资源可能已失效。"
         case .signedURLExpired: return "资源链接可能已过期，请返回网页重新识别。"
         case .fileOperationFailed: return "文件保存失败，请检查可用存储空间。"
+        case .invalidImageContent: return "图片内容无效或受网站保护，无法保存。"
         case .invalidHLSPlaylist: return "视频资源无效或已过期，请返回网页重新识别。"
         case .invalidHLSKey: return "视频解密信息无效或已过期，请返回网页重新识别。"
         case .hlsDecryptionFailed: return "视频下载失败，该资源可能已过期或使用了不支持的保护格式。"

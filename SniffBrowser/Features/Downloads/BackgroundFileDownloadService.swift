@@ -275,6 +275,13 @@ extension BackgroundFileDownloadService: URLSessionDownloadDelegate {
                (try? decrypted.write(to: stored.fileURL, options: .atomic)) != nil {
                 stored = storage.storedFile(for: stored.fileURL)
             }
+            // 图片下载后必须得到有效的图片文件，否则明确失败，
+            // 避免把加密/异常内容静默保存成“打不开的图片”。
+            if plan.resourceType == .image,
+               let raw = try? Data(contentsOf: stored.fileURL),
+               !ImageProtection.isRecognizedImage(raw) {
+                throw DownloadCenterError.invalidImageContent
+            }
             lock.withLock {
                 finishedIDs.insert(id)
                 systemTasks[id] = nil
