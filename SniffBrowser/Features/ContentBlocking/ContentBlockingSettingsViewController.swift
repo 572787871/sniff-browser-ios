@@ -68,47 +68,23 @@ final class ContentBlockingSettingsViewController: BaseViewController {
     /// 顶部导航：左侧圆形返回按钮、居中标题（参考图：右上无按钮）。
     private func configureNavigationItems() {
         navigationItem.hidesBackButton = true
-        navigationItem.leftBarButtonItem = makeNavCircleButton(
-            symbol: "chevron.left",
-            tint: AppColors.primaryText
-        ) { [weak self] in
-            self?.navigationController?.popViewController(animated: true)
-        }
-        // 隐藏系统返回按钮后保留边缘右滑返回手势。
-        navigationController?.interactivePopGestureRecognizer?.delegate = self
-    }
-
-    private func makeNavCircleButton(
-        symbol: String,
-        tint: UIColor,
-        action: @escaping () -> Void
-    ) -> UIBarButtonItem {
-        let button = UIButton(type: .system)
-        button.backgroundColor = AppColors.surface
-        button.tintColor = tint
-        button.setImage(
-            UIImage(
-                systemName: symbol,
-                withConfiguration: UIImage.SymbolConfiguration(
-                    pointSize: 15,
-                    weight: .semibold
-                )
-            ),
+        let backButton = UIButton(type: .system)
+        backButton.setImage(
+            UIImage(named: "ContentBlockBackButton"),
             for: .normal
         )
-        button.layer.cornerRadius = 18
-        button.layer.cornerCurve = .continuous
-        button.layer.shadowColor = UIColor.black.cgColor
-        button.layer.shadowOpacity = 0.08
-        button.layer.shadowRadius = 6
-        button.layer.shadowOffset = CGSize(width: 0, height: 2)
-        button.frame = CGRect(x: 0, y: 0, width: 36, height: 36)
-        button.addAction(
-            UIAction { _ in action() },
+        backButton.imageView?.contentMode = .scaleAspectFit
+        backButton.frame = CGRect(x: 0, y: 0, width: 36, height: 36)
+        backButton.addAction(
+            UIAction { [weak self] _ in
+                self?.navigationController?.popViewController(animated: true)
+            },
             for: .touchUpInside
         )
-        button.accessibilityLabel = symbol == "chevron.left" ? "返回" : "导入规则"
-        return UIBarButtonItem(customView: button)
+        backButton.accessibilityLabel = "返回"
+        navigationItem.leftBarButtonItem = UIBarButtonItem(customView: backButton)
+        // 隐藏系统返回按钮后保留边缘右滑返回手势。
+        navigationController?.interactivePopGestureRecognizer?.delegate = self
     }
 
     private func observeChanges() {
@@ -183,31 +159,14 @@ final class ContentBlockingSettingsViewController: BaseViewController {
     }
 
     private func configureStatsCell(_ cell: ContentBlockStatsCardCell) {
-        let statistics = manager.statisticsManager
-        let summary = statistics.summary(for: selectedRange)
+        let summary = manager.statisticsManager.summary(for: selectedRange)
         cell.configure(
             blocked: summary.todayBlocked,
             pageLoads: summary.todayPageLoads,
             ruleCount: summary.ruleCount,
             filterCount: summary.filterCount,
             blockedTitle: selectedRange.metricTitle(for: .blocked),
-            pageLoadTitle: selectedRange.metricTitle(for: .pageLoads),
-            blockedSeries: statistics.sparkline(
-                for: selectedRange,
-                kind: .blocked
-            ),
-            pageLoadSeries: statistics.sparkline(
-                for: selectedRange,
-                kind: .pageLoads
-            ),
-            ruleSeries: statistics.sparkline(
-                for: selectedRange,
-                kind: .ruleCount
-            ),
-            filterSeries: statistics.sparkline(
-                for: selectedRange,
-                kind: .filterCount
-            )
+            pageLoadTitle: selectedRange.metricTitle(for: .pageLoads)
         )
     }
 
@@ -432,15 +391,13 @@ extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableV
                 cell.configure(
                     title: "导入规则",
                     subtitle: "支持 txt / JSON 文件",
-                    symbol: "square.and.arrow.down",
-                    tint: AppColors.accent
+                    imageName: "ContentBlockImport"
                 )
             } else {
                 cell.configure(
                     title: "网站白名单",
                     subtitle: "\(manager.whitelistManager.allPatterns().count) 个模式",
-                    symbol: "eye.slash",
-                    tint: .systemGray
+                    imageName: "ContentBlockWhitelist"
                 )
             }
             return cell

@@ -214,24 +214,21 @@ final class ContentBlockStatsCardCell: UITableViewCell {
         ruleCount: Int,
         filterCount: Int,
         blockedTitle: String,
-        pageLoadTitle: String,
-        blockedSeries: [Double],
-        pageLoadSeries: [Double],
-        ruleSeries: [Double],
-        filterSeries: [Double]
+        pageLoadTitle: String
     ) {
-        let updates: [(Int, StatTileView)] = [
-            (0, tiles[0]), (1, tiles[1]),
-            (2, tiles[2]), (3, tiles[3])
+        let values: [(icon: String, trend: String, title: String, value: Int)] = [
+            ("ContentBlockStatShield", "ContentBlockTrendBlocked", blockedTitle, blocked),
+            ("ContentBlockStatGlobe", "ContentBlockTrendPageLoads", pageLoadTitle, pageLoads),
+            ("ContentBlockStatList", "ContentBlockTrendRules", "当前规则", ruleCount),
+            ("ContentBlockStatFunnel", "ContentBlockTrendFilters", "过滤器", filterCount)
         ]
-        let values: [(symbol: String, title: String, value: Int, color: UIColor, series: [Double])] = [
-            ("shield.fill", blockedTitle, blocked, .systemRed, blockedSeries),
-            ("globe", pageLoadTitle, pageLoads, .systemBlue, pageLoadSeries),
-            ("list.bullet", "当前规则", ruleCount, .systemGreen, ruleSeries),
-            ("funnel.fill", "过滤器", filterCount, .systemOrange, filterSeries)
-        ]
-        for (index, tile) in updates {
-            tile.update(values[index])
+        for index in 0..<4 {
+            tiles[index].update(
+                iconName: values[index].icon,
+                trendName: values[index].trend,
+                title: values[index].title,
+                value: values[index].value
+            )
         }
     }
 
@@ -245,21 +242,20 @@ final class ContentBlockStatsCardCell: UITableViewCell {
         gridStack.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(gridStack)
 
-        let tileLayout: [(symbol: String, title: String, value: Int, color: UIColor)] = [
-            ("shield.fill", "今日拦截", 0, .systemRed),
-            ("globe", "今日访问", 0, .systemBlue),
-            ("list.bullet", "当前规则", 0, .systemGreen),
-            ("funnel.fill", "过滤器", 0, .systemOrange)
+        let tileLayout: [(icon: String, trend: String, title: String)] = [
+            ("ContentBlockStatShield", "ContentBlockTrendBlocked", "今日拦截"),
+            ("ContentBlockStatGlobe", "ContentBlockTrendPageLoads", "今日访问"),
+            ("ContentBlockStatList", "ContentBlockTrendRules", "当前规则"),
+            ("ContentBlockStatFunnel", "ContentBlockTrendFilters", "过滤器")
         ]
-        for index in 0..<4 {
+        for index in 0..<tileLayout.count {
             let tile = StatTileView()
-            tile.update((
-                tileLayout[index].symbol,
-                tileLayout[index].title,
-                tileLayout[index].value,
-                tileLayout[index].color,
-                []
-            ))
+            tile.update(
+                iconName: tileLayout[index].icon,
+                trendName: tileLayout[index].trend,
+                title: tileLayout[index].title,
+                value: 0
+            )
             tiles.append(tile)
         }
         let top = makeRow([tiles[0], tiles[1]])
@@ -286,11 +282,10 @@ final class ContentBlockStatsCardCell: UITableViewCell {
 
 /// 单个统计卡片视图：构建一次，后续仅更新数值/标题/趋势图，避免刷新闪动。
 private final class StatTileView: UIView {
-    private let iconContainer = UIView()
-    private let iconView = UIImageView()
+    private let iconImageView = UIImageView()
     private let valueLabel = UILabel()
     private let titleLabel = UILabel()
-    private let sparkline = SparklineView()
+    private let trendImageView = UIImageView()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -301,29 +296,11 @@ private final class StatTileView: UIView {
         return nil
     }
 
-    func update(
-        _ item: (symbol: String, title: String, value: Int, color: UIColor, series: [Double])
-    ) {
-        if item.symbol == "funnel.fill" {
-            iconView.image = ContentBlockSymbols.funnelImage(
-                color: item.color,
-                pointSize: 14
-            )
-        } else {
-            iconView.image = UIImage(
-                systemName: item.symbol,
-                withConfiguration: UIImage.SymbolConfiguration(
-                    pointSize: 14,
-                    weight: .semibold
-                )
-            )
-        }
-        iconView.tintColor = item.color
-        iconContainer.backgroundColor = item.color.withAlphaComponent(0.14)
-        valueLabel.text = item.value.formatted()
-        titleLabel.text = item.title
-        sparkline.values = item.series
-        sparkline.tint = item.color
+    func update(iconName: String, trendName: String, title: String, value: Int) {
+        iconImageView.image = UIImage(named: iconName)
+        trendImageView.image = UIImage(named: trendName)
+        valueLabel.text = value.formatted()
+        titleLabel.text = title
     }
 
     private func configureView() {
@@ -332,14 +309,9 @@ private final class StatTileView: UIView {
         layer.cornerCurve = .continuous
         ContentBlockCardStyle.applyShadow(to: self)
 
-        iconContainer.layer.cornerRadius = 8
-        iconContainer.layer.cornerCurve = .continuous
-        iconContainer.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(iconContainer)
-
-        iconView.contentMode = .scaleAspectFit
-        iconView.translatesAutoresizingMaskIntoConstraints = false
-        iconContainer.addSubview(iconView)
+        iconImageView.contentMode = .scaleAspectFit
+        iconImageView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(iconImageView)
 
         valueLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 26, weight: .bold)
         valueLabel.textColor = AppColors.primaryText
@@ -353,73 +325,41 @@ private final class StatTileView: UIView {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleLabel)
 
-        sparkline.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(sparkline)
+        trendImageView.contentMode = .scaleAspectFill
+        trendImageView.clipsToBounds = true
+        trendImageView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(trendImageView)
 
         NSLayoutConstraint.activate([
-            iconContainer.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 11),
-            iconContainer.topAnchor.constraint(equalTo: topAnchor, constant: 11),
-            iconContainer.widthAnchor.constraint(equalToConstant: 30),
-            iconContainer.heightAnchor.constraint(equalToConstant: 30),
-            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
-            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+            iconImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            iconImageView.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            iconImageView.widthAnchor.constraint(equalToConstant: 42),
+            iconImageView.heightAnchor.constraint(equalToConstant: 42),
 
             valueLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             valueLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -6),
-            valueLabel.topAnchor.constraint(equalTo: iconContainer.bottomAnchor, constant: 9),
+            valueLabel.topAnchor.constraint(equalTo: iconImageView.bottomAnchor, constant: 8),
             titleLabel.leadingAnchor.constraint(equalTo: valueLabel.leadingAnchor),
             titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -6),
             titleLabel.topAnchor.constraint(equalTo: valueLabel.bottomAnchor, constant: 1),
 
-            sparkline.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            sparkline.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            sparkline.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
-            sparkline.heightAnchor.constraint(equalToConstant: 26),
+            trendImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            trendImageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            trendImageView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
+            trendImageView.heightAnchor.constraint(equalToConstant: 30),
 
             heightAnchor.constraint(greaterThanOrEqualToConstant: 126)
         ])
     }
 }
 
-// MARK: - 图标兜底
-
-enum ContentBlockSymbols {
-    /// 橙色漏斗图标。优先用 SF Symbol；个别系统渲染异常时用路径兜底绘制。
-    static func funnelImage(color: UIColor, pointSize: CGFloat) -> UIImage? {
-        if let image = UIImage(
-            systemName: "funnel.fill",
-            withConfiguration: UIImage.SymbolConfiguration(
-                pointSize: pointSize,
-                weight: .semibold
-            )
-        ) {
-            return image
-        }
-        let size = pointSize + 5
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
-        return renderer.image { _ in
-            color.setFill()
-            let path = UIBezierPath()
-            path.move(to: CGPoint(x: size * 0.16, y: size * 0.20))
-            path.addLine(to: CGPoint(x: size * 0.84, y: size * 0.20))
-            path.addLine(to: CGPoint(x: size * 0.52, y: size * 0.55))
-            path.addLine(to: CGPoint(x: size * 0.52, y: size * 0.80))
-            path.addLine(to: CGPoint(x: size * 0.40, y: size * 0.84))
-            path.addLine(to: CGPoint(x: size * 0.40, y: size * 0.55))
-            path.close()
-            path.fill()
-        }
-    }
-}
-
 // MARK: - 动作列表项（导入规则 / 网站白名单）
 
-/// 白色圆角卡片列表项：彩色图标块 + 标题/副标题 + 右箭头。
+/// 白色圆角卡片列表项：素材图标 + 标题/副标题 + 右箭头。
 final class ContentBlockActionCardCell: UITableViewCell {
     static let reuseIdentifier = "ContentBlockActionCardCell"
 
     private let cardView = UIView()
-    private let iconContainer = UIView()
     private let iconView = UIImageView()
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
@@ -434,16 +374,11 @@ final class ContentBlockActionCardCell: UITableViewCell {
         return nil
     }
 
-    func configure(title: String, subtitle: String?, symbol: String, tint: UIColor) {
+    func configure(title: String, subtitle: String?, imageName: String) {
         titleLabel.text = title
         subtitleLabel.text = subtitle
         subtitleLabel.isHidden = subtitle?.isEmpty != false
-        iconView.image = UIImage(
-            systemName: symbol,
-            withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .medium)
-        )
-        iconView.tintColor = tint
-        iconContainer.backgroundColor = tint.withAlphaComponent(0.12)
+        iconView.image = UIImage(named: imageName)
         accessibilityLabel = [title, subtitle].compactMap { $0 }.joined(separator: "，")
         accessibilityTraits = [.button]
     }
@@ -487,15 +422,10 @@ final class ContentBlockActionCardCell: UITableViewCell {
         cardView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(cardView)
 
-        iconContainer.layer.cornerRadius = AppRadius.small
-        iconContainer.layer.cornerCurve = .continuous
-        iconContainer.translatesAutoresizingMaskIntoConstraints = false
-        cardView.addSubview(iconContainer)
-
-        iconView.contentMode = .center
+        iconView.contentMode = .scaleAspectFit
         iconView.isAccessibilityElement = false
         iconView.translatesAutoresizingMaskIntoConstraints = false
-        iconContainer.addSubview(iconView)
+        cardView.addSubview(iconView)
 
         AppTypography.configure(titleLabel, style: .body, weight: .medium)
         titleLabel.textColor = AppColors.primaryText
@@ -520,14 +450,12 @@ final class ContentBlockActionCardCell: UITableViewCell {
             cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
             cardView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6),
 
-            iconContainer.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
-            iconContainer.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
-            iconContainer.widthAnchor.constraint(equalToConstant: 34),
-            iconContainer.heightAnchor.constraint(equalToConstant: 34),
-            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
-            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+            iconView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
+            iconView.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 38),
+            iconView.heightAnchor.constraint(equalToConstant: 38),
 
-            titleLabel.leadingAnchor.constraint(equalTo: iconContainer.trailingAnchor, constant: 12),
+            titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 12),
             titleLabel.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 13),
             titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: chevronView.leadingAnchor, constant: -8),
             subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
@@ -539,95 +467,5 @@ final class ContentBlockActionCardCell: UITableViewCell {
             chevronView.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
             chevronView.widthAnchor.constraint(equalToConstant: 10)
         ])
-    }
-}
-
-// MARK: - 趋势图
-
-/// 平滑贝塞尔折线 + 同色渐变填充的小型趋势图。
-final class SparklineView: UIView {
-    var values: [Double] = [] {
-        didSet { setNeedsDisplay() }
-    }
-    var tint: UIColor = .systemRed {
-        didSet { setNeedsDisplay() }
-    }
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backgroundColor = .clear
-        isOpaque = false
-    }
-
-    required init?(coder: NSCoder) {
-        return nil
-    }
-
-    override func draw(_ rect: CGRect) {
-        guard values.count >= 2, rect.width > 0, rect.height > 0 else { return }
-
-        let maxValue = values.max() ?? 0
-        let minValue = values.min() ?? 0
-        let step = rect.width / CGFloat(values.count - 1)
-        var points: [CGPoint] = []
-
-        if maxValue == minValue {
-            // 恒定值（如规则数）：画一条居中平线。
-            let y = rect.height * 0.55
-            for index in values.indices {
-                points.append(CGPoint(x: CGFloat(index) * step, y: y))
-            }
-        } else {
-            let span = maxValue - minValue
-            for (index, value) in values.enumerated() {
-                let normalized = (value - minValue) / span
-                let x = CGFloat(index) * step
-                let y = rect.height - CGFloat(normalized) * (rect.height - 3) - 1.5
-                points.append(CGPoint(x: x, y: y))
-            }
-        }
-
-        let path = UIBezierPath()
-        path.move(to: points[0])
-        for index in 1..<points.count {
-            let previous = points[index - 1]
-            let current = points[index]
-            let mid = CGPoint(
-                x: (previous.x + current.x) / 2,
-                y: (previous.y + current.y) / 2
-            )
-            path.addQuadCurve(to: mid, controlPoint: previous)
-        }
-        path.addLine(to: points[points.count - 1])
-
-        guard let context = UIGraphicsGetCurrentContext() else { return }
-        context.saveGState()
-        let fill = UIBezierPath(cgPath: path.cgPath)
-        fill.addLine(to: CGPoint(x: points[points.count - 1].x, y: rect.height))
-        fill.addLine(to: CGPoint(x: points[0].x, y: rect.height))
-        fill.close()
-        fill.addClip()
-        if let gradient = CGGradient(
-            colorsSpace: CGColorSpaceCreateDeviceRGB(),
-            colors: [
-                tint.withAlphaComponent(0.32).cgColor,
-                tint.withAlphaComponent(0.0).cgColor
-            ] as CFArray,
-            locations: [0, 1]
-        ) {
-            context.drawLinearGradient(
-                gradient,
-                start: CGPoint(x: 0, y: rect.minY),
-                end: CGPoint(x: 0, y: rect.maxY),
-                options: []
-            )
-        }
-        context.restoreGState()
-
-        path.lineWidth = 1.6
-        path.lineCapStyle = .round
-        path.lineJoinStyle = .round
-        tint.setStroke()
-        path.stroke()
     }
 }
