@@ -176,8 +176,8 @@ final class ContentBlockMasterCardCell: UITableViewCell {
 
             iconView.leadingAnchor.constraint(equalTo: cardView.leadingAnchor, constant: 14),
             iconView.centerYAnchor.constraint(equalTo: cardView.centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 56),
-            iconView.heightAnchor.constraint(equalToConstant: 56),
+            iconView.widthAnchor.constraint(equalToConstant: 52),
+            iconView.heightAnchor.constraint(equalToConstant: 52),
 
             titleLabel.topAnchor.constraint(equalTo: cardView.topAnchor, constant: 15),
             titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 12),
@@ -291,6 +291,7 @@ private final class StatTileView: UIView {
     private let valueLabel = UILabel()
     private let titleLabel = UILabel()
     private let trendImageView = UIImageView()
+    private let textStack = UIStackView()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -317,47 +318,51 @@ private final class StatTileView: UIView {
         layer.cornerCurve = .continuous
         ContentBlockCardStyle.applyShadow(to: self)
 
+        // 素材直接来自目标参考图：alwaysOriginal，禁止 tint / 拉伸。
         iconImageView.contentMode = .scaleAspectFit
         iconImageView.clipsToBounds = false
         iconImageView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(iconImageView)
 
-        valueLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 26, weight: .bold)
+        valueLabel.font = UIFont.monospacedDigitSystemFont(ofSize: 30, weight: .bold)
         valueLabel.textColor = AppColors.primaryText
         valueLabel.adjustsFontSizeToFitWidth = true
-        valueLabel.minimumScaleFactor = 0.6
-        valueLabel.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(valueLabel)
+        valueLabel.minimumScaleFactor = 0.7
 
         AppTypography.configure(titleLabel, style: .caption2)
         titleLabel.textColor = AppColors.secondaryText
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(titleLabel)
 
+        // 右侧文本块：数字在上、说明文字在下，与图标同一行垂直居中。
+        textStack.axis = .vertical
+        textStack.alignment = .leading
+        textStack.spacing = 2
+        textStack.addArrangedSubview(valueLabel)
+        textStack.addArrangedSubview(titleLabel)
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(textStack)
+
+        // 趋势图托底，横跨卡片宽度。
         trendImageView.contentMode = .scaleAspectFit
         trendImageView.clipsToBounds = false
         trendImageView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(trendImageView)
 
         NSLayoutConstraint.activate([
-            iconImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            iconImageView.topAnchor.constraint(equalTo: topAnchor, constant: 10),
-            iconImageView.widthAnchor.constraint(equalToConstant: 42),
-            iconImageView.heightAnchor.constraint(equalToConstant: 42),
+            iconImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            iconImageView.topAnchor.constraint(equalTo: topAnchor, constant: 14),
+            iconImageView.widthAnchor.constraint(equalToConstant: 38),
+            iconImageView.heightAnchor.constraint(equalToConstant: 38),
 
-            valueLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            valueLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -6),
-            valueLabel.topAnchor.constraint(equalTo: iconImageView.bottomAnchor, constant: 8),
-            titleLabel.leadingAnchor.constraint(equalTo: valueLabel.leadingAnchor),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -6),
-            titleLabel.topAnchor.constraint(equalTo: valueLabel.bottomAnchor, constant: 1),
+            textStack.leadingAnchor.constraint(equalTo: iconImageView.trailingAnchor, constant: 12),
+            textStack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -10),
+            textStack.centerYAnchor.constraint(equalTo: iconImageView.centerYAnchor),
 
             trendImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             trendImageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             trendImageView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
-            trendImageView.heightAnchor.constraint(equalToConstant: 34),
+            trendImageView.heightAnchor.constraint(equalToConstant: 38),
 
-            heightAnchor.constraint(greaterThanOrEqualToConstant: 126)
+            heightAnchor.constraint(greaterThanOrEqualToConstant: 132)
         ])
     }
 }

@@ -75,7 +75,7 @@ final class ContentBlockingSettingsViewController: BaseViewController {
         )
         backButton.imageView?.contentMode = .scaleAspectFit
         backButton.clipsToBounds = false
-        backButton.frame = CGRect(x: 0, y: 0, width: 36, height: 36)
+        backButton.frame = CGRect(x: 0, y: 0, width: 42, height: 42)
         backButton.addAction(
             UIAction { [weak self] _ in
                 self?.navigationController?.popViewController(animated: true)
