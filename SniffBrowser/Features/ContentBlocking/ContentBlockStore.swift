@@ -311,10 +311,24 @@ final class StatisticsManager {
 
     private let store: ContentBlockStore
     private var record: Record
+    private var history: [String: DailyCount]
 
     init(store: ContentBlockStore) {
         self.store = store
         record = store.load(Record.self, fileName: "stats.json") ?? .empty
+        history = store.load(
+            [String: DailyCount].self,
+            fileName: "stats-history.json"
+        ) ?? [:]
+        // 兼容旧版本：把此前累计的“今日”数据回填进历史，避免切换范围后丢数。
+        let todayKey = Self.todayKey()
+        if history[todayKey] == nil {
+            history[todayKey] = DailyCount(
+                blocked: record.todayBlocked,
+                pageLoads: record.todayPageLoads
+            )
+            persistHistory()
+        }
     }
 
     func current() -> Record {
@@ -333,6 +347,58 @@ final class StatisticsManager {
         persist()
     }
 
+    /// 指定时间范围的统计摘要（拦截/访问为范围内合计，规则数与过滤器数为当前值）。
+    func summary(for range: StatisticsRange) -> Record {
+        _ = current()
+        if range == .all {
+            return Record(
+                todayBlocked: record.totalBlocked,
+                totalBlocked: record.totalBlocked,
+                todayPageLoads: record.totalPageLoads,
+                totalPageLoads: record.totalPageLoads,
+                ruleCount: record.ruleCount,
+                filterCount: record.filterCount,
+                dayKey: record.dayKey
+            )
+        }
+        let keys = Self.recentDayKeys(days: range.days ?? 7)
+        var blocked = 0
+        var pageLoads = 0
+        for key in keys {
+            let day = history[key] ?? .zero
+            blocked += day.blocked
+            pageLoads += day.pageLoads
+        }
+        return Record(
+            todayBlocked: blocked,
+            totalBlocked: record.totalBlocked,
+            todayPageLoads: pageLoads,
+            totalPageLoads: record.totalPageLoads,
+            ruleCount: record.ruleCount,
+            filterCount: record.filterCount,
+            dayKey: record.dayKey
+        )
+    }
+
+    /// 趋势图数据：拦截/访问取对应范围逐日序列；规则数/过滤器数返回当前值序列。
+    func sparkline(
+        for range: StatisticsRange,
+        kind: StatisticsSparklineKind
+    ) -> [Double] {
+        let days = max(range.days ?? 30, 7)
+        let keys = Self.recentDayKeys(days: days)
+        switch kind {
+        case .blocked:
+            return keys.map { Double(history[$0]?.blocked ?? 0) }
+        case .pageLoads:
+            return keys.map { Double(history[$0]?.pageLoads ?? 0) }
+        case .ruleCount:
+            return Array(repeating: Double(record.ruleCount), count: days)
+        case .filterCount:
+            return Array(repeating: Double(record.filterCount), count: days)
+        }
+    }
+
     func recordBlockedRequest() {
         recordBlockedElements(1)
     }
@@ -346,7 +412,13 @@ final class StatisticsManager {
         }
         record.todayBlocked += count
         record.totalBlocked += count
+        let key = Self.todayKey()
+        var day = history[key] ?? .zero
+        day.blocked += count
+        history[key] = day
+        pruneHistory()
         persist()
+        persistHistory()
     }
 
     func recordPageLoad() {
@@ -357,7 +429,13 @@ final class StatisticsManager {
         }
         record.todayPageLoads += 1
         record.totalPageLoads += 1
+        let key = Self.todayKey()
+        var day = history[key] ?? .zero
+        day.pageLoads += 1
+        history[key] = day
+        pruneHistory()
         persist()
+        persistHistory()
     }
 
     func reset() {
@@ -370,18 +448,43 @@ final class StatisticsManager {
             filterCount: record.filterCount,
             dayKey: Self.todayKey()
         )
+        history[Self.todayKey()] = .zero
         persist()
+        persistHistory()
     }
 
     private func persist() {
         store.save(record, fileName: "stats.json")
     }
 
+    private func persistHistory() {
+        store.save(history, fileName: "stats-history.json")
+    }
+
+    /// 只保留最近 40 天的历史，控制文件体积。
+    private func pruneHistory() {
+        let keep = Set(Self.recentDayKeys(days: 40))
+        history = history.filter { keep.contains($0.key) }
+    }
+
     private static func todayKey() -> String {
+        dayKey(for: Date())
+    }
+
+    private static func dayKey(for date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_CN")
         formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: Date())
+        return formatter.string(from: date)
+    }
+
+    private static func recentDayKeys(days: Int, ending: Date = Date()) -> [String] {
+        let calendar = Calendar.current
+        return (0..<days).compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: ending)
+            else { return nil }
+            return dayKey(for: date)
+        }
     }
 }
 
