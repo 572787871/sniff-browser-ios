@@ -32,8 +32,17 @@ enum ResourceSniffingScriptProvider {
       };
       const mediaEvents = ["loadedmetadata", "durationchange", "progress", "play", "canplay"];
       const mediaPattern = /\.(m3u8|mp4|mov|m4v|webm|ts|mpeg|mpg|mkv|mp3|m4a|aac|wav|flac|ogg|opus|vtt|srt|ass|pdf|txt|epub|docx?|xlsx?|pptx?|json|xml|zip|rar|7z|tar|gz|jpe?g|png|gif|webp|heic|avif|svg)(?:$|[?#])/i;
+      // 仅匹配 URL 路径（不含查询参数）以媒体扩展名结尾的链接。
+      // Google 等站点的 /imgres?imgurl=xxx.png、/url?q=xxx.png 跳转包装链接
+      // 会在查询参数里带扩展名，但下载它返回的是 HTML 而非文件。
+      const mediaPathPattern = /\.(m3u8|mp4|mov|m4v|webm|ts|mpeg|mpg|mkv|mp3|m4a|aac|wav|flac|ogg|opus|vtt|srt|ass|pdf|txt|epub|docx?|xlsx?|pptx?|json|xml|zip|rar|7z|tar|gz|jpe?g|png|gif|webp|heic|avif|svg)(?:$|[?#])/i;
       const ignoredPattern = /\.(js|css|woff2?|ttf|otf)(?:$|[?#])/i;
       const validSchemePattern = /^(https?:|blob:|file:)/i;
+      const hasMediaPath = raw => {
+        try {
+          return mediaPathPattern.test(new URL(raw, document.baseURI).pathname);
+        } catch (_) { return false; }
+      };
 
       const safePost = payload => {
         if (!state.enabled) return;
@@ -178,7 +187,7 @@ enum ResourceSniffingScriptProvider {
         } else if (tag === "a" || tag === "link") {
           const raw = element.href || element.getAttribute("href");
           const mime = element.type || null;
-          if (element.hasAttribute("download") || mediaPattern.test(String(raw || "")) || normalizedMIME(mime)) {
+          if (element.hasAttribute("download") || hasMediaPath(raw) || normalizedMIME(mime)) {
             enqueue({ url: raw, mimeType: mime, source, elementType: tag });
           }
         }
