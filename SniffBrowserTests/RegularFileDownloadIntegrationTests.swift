@@ -101,3 +101,19 @@ final class RegularFileDownloadIntegrationTests: XCTestCase {
         XCTAssertEqual(stored.fileURL.pathExtension, "md")
     }
 }
+
+    func testGoogleHostedPNGDownloadStoresCorrectly() async throws {
+        let (data, response) = try await download(
+            "https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_272x92dp.png"
+        )
+        let stored = try validateAndStore(
+            data: data,
+            response: response,
+            name: "googlelogo",
+            type: .image
+        )
+        XCTAssertEqual(stored.fileURL.pathExtension, "png")
+        XCTAssertTrue(stored.relativePath.hasPrefix("Images/"))
+        XCTAssertEqual([UInt8](data.prefix(4)), [0x89, 0x50, 0x4E, 0x47])
+    }
+}
