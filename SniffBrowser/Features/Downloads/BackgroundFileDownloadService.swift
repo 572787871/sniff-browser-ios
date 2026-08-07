@@ -73,6 +73,7 @@ final class BackgroundFileDownloadService: NSObject {
     private var plans: [UUID: FileDownloadPlan] = [:]
     private var systemTasks: [UUID: URLSessionDownloadTask] = [:]
     private var originalRequests: [UUID: URLRequest] = [:]
+    private var foregroundSystemTasks: [UUID: URLSessionDownloadTask] = [:]
 
     private var suppressedCompletionIDs: Set<UUID> = []
     private var finishedIDs: Set<UUID> = []
@@ -87,6 +88,17 @@ final class BackgroundFileDownloadService: NSObject {
         configuration.httpMaximumConnectionsPerHost = 6
         let queue = OperationQueue()
         queue.name = "com.example.SniffBrowser.file-download-delegate"
+        queue.maxConcurrentOperationCount = 1
+        return URLSession(configuration: configuration, delegate: self, delegateQueue: queue)
+    }()
+
+    private lazy var foregroundSession: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.allowsCellularAccess = true
+        configuration.httpMaximumConnectionsPerHost = 6
+        configuration.timeoutIntervalForRequest = 30
+        let queue = OperationQueue()
+        queue.name = "com.example.SniffBrowser.file-download-foreground-delegate"
         queue.maxConcurrentOperationCount = 1
         return URLSession(configuration: configuration, delegate: self, delegateQueue: queue)
     }()
@@ -121,8 +133,20 @@ final class BackgroundFileDownloadService: NSObject {
         }
     }
 
+    func startInForeground(taskID: UUID, request: URLRequest) {
+        let task = foregroundSession.downloadTask(with: request)
+        task.taskDescription = taskID.uuidString
+        lock.withLock {
+            foregroundSystemTasks[taskID] = task
+        }
+        task.resume()
+        Task { @MainActor [weak self] in
+            self?.delegate?.fileDownloadDidStart(taskID: taskID)
+        }
+    }
+
     func pause(taskID: UUID) {
-        guard let task = lock.withLock({ systemTasks[taskID] }) else { return }
+        guard let task = lock.withLock({ systemTasks[taskID] ?? foregroundSystemTasks[taskID] }) else { return }
         lock.withLock { suppressedCompletionIDs.insert(taskID) }
         task.cancel(byProducingResumeData: { [weak self] data in
             guard let self else { return }
@@ -131,6 +155,7 @@ final class BackgroundFileDownloadService: NSObject {
             }
             self.lock.withLock {
                 self.systemTasks[taskID] = nil
+                self.foregroundSystemTasks[taskID] = nil
             }
             Task { @MainActor [weak self] in
                 self?.delegate?.fileDownloadDidPause(
@@ -160,7 +185,9 @@ final class BackgroundFileDownloadService: NSObject {
         let task = lock.withLock { () -> URLSessionDownloadTask? in
             suppressedCompletionIDs.insert(taskID)
             originalRequests[taskID] = nil
-            return systemTasks.removeValue(forKey: taskID)
+            let bg = systemTasks.removeValue(forKey: taskID)
+            let fg = foregroundSystemTasks.removeValue(forKey: taskID)
+            return bg ?? fg
         }
         task?.cancel()
         Task { @MainActor [weak self] in
@@ -285,6 +312,7 @@ extension BackgroundFileDownloadService: URLSessionDownloadDelegate {
             lock.withLock {
                 finishedIDs.insert(id)
                 systemTasks[id] = nil
+                foregroundSystemTasks[id] = nil
                 originalRequests[id] = nil
             }
             Task { @MainActor [weak self] in
@@ -294,6 +322,7 @@ extension BackgroundFileDownloadService: URLSessionDownloadDelegate {
             lock.withLock {
                 finishedIDs.insert(id)
                 systemTasks[id] = nil
+                foregroundSystemTasks[id] = nil
                 originalRequests[id] = nil
             }
             Task { @MainActor [weak self] in
@@ -381,15 +410,35 @@ extension BackgroundFileDownloadService: URLSessionTaskDelegate {
         didCompleteWithError error: Error?
     ) {
         guard let id = taskID(for: task) else { return }
+        var isForeground = false
         let suppress = lock.withLock { () -> Bool in
             if finishedIDs.remove(id) != nil { return true }
             if suppressedCompletionIDs.remove(id) != nil { return true }
-            systemTasks[id] = nil
+            isForeground = foregroundSystemTasks[id] != nil
+            if !isForeground { systemTasks[id] = nil }
             return false
         }
         guard !suppress else { return }
-        guard let error else { return }
+        guard let error else {
+            lock.withLock {
+                systemTasks[id] = nil
+                foregroundSystemTasks[id] = nil
+            }
+            return
+        }
+
+        // 后台会话偶尔会因系统转传输服务/网络状态失败，而前台会话能成功。
+        // 对可恢复错误做一次前台回退，避免把其实可下载的文件误报为失败。
+        if !isForeground,
+           FileDownloadTransportPolicy.shouldRetryInForeground(error),
+           let request = lock.withLock({ originalRequests[id] }) {
+            startInForeground(taskID: id, request: request)
+            return
+        }
+
         lock.withLock {
+            systemTasks[id] = nil
+            foregroundSystemTasks[id] = nil
             originalRequests[id] = nil
         }
         Task { @MainActor [weak self] in

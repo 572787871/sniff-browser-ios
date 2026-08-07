@@ -859,8 +859,14 @@ enum DownloadErrorMapper {
             case .networkConnectionLost: return "下载连接中断，已保留可恢复的数据。"
             case .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
                 return "无法连接资源服务器，请返回网页重新识别后重试。"
+            case .dataNotAllowed: return "当前网络不允许下载，请检查蜂窝网络设置。"
+            case .badServerResponse: return "服务器返回了无法识别的响应，请稍后重试。"
+            case .cannotDecodeContentData, .cannotDecodeRawData, .cannotParseResponse:
+                return "下载数据异常，资源可能已损坏或格式不兼容。"
+            case .secureConnectionFailed:
+                return "安全连接失败，请检查网络环境后重试。"
             case .cancelled: return "下载已取消。"
-            default: return "下载失败，请检查网络后重试。"
+            default: return "下载失败（错误代码 \(urlError.code.rawValue)），请检查网络后重试。"
             }
         }
         return "下载失败，请稍后重试。"
