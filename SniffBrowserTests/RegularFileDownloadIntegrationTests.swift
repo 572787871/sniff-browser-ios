@@ -100,7 +100,6 @@ final class RegularFileDownloadIntegrationTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: stored.fileURL.path))
         XCTAssertEqual(stored.fileURL.pathExtension, "md")
     }
-}
 
     func testGoogleHostedPNGDownloadStoresCorrectly() async throws {
         let (data, response) = try await download(
