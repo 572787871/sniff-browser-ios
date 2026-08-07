@@ -18,6 +18,7 @@ final class AppCoordinator: NSObject, BrowserRouting {
     self.window = window
     navigationController = UINavigationController()
     super.init()
+    navigationController.delegate = self
     favoriteChangeObserver = favoriteService.observeChanges { [weak self] in
       Task { @MainActor in
         self?.refreshUserCenterCounts()
@@ -251,6 +252,27 @@ final class AppCoordinator: NSObject, BrowserRouting {
       sheet.preferredCornerRadius = AppRadius.sheet
     }
     navigationController.present(navigation, animated: true)
+  }
+}
+
+extension AppCoordinator: UINavigationControllerDelegate {
+  func navigationController(
+    _ navigationController: UINavigationController,
+    willShow viewController: UIViewController,
+    animated: Bool
+  ) {
+    let shouldHide = viewController === browserViewController
+    // 在交互式转场中直接调用 setNavigationBarHidden 会打断右滑返回手势。
+    // 改为等转场完成后才切换导航栏状态，避免中途调用。
+    if let coordinator = viewController.transitionCoordinator {
+      coordinator.animate(alongsideTransition: nil) { context in
+        if !context.isCancelled {
+          navigationController.setNavigationBarHidden(shouldHide, animated: animated)
+        }
+      }
+    } else {
+      navigationController.setNavigationBarHidden(shouldHide, animated: animated)
+    }
   }
 }
 
