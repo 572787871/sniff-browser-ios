@@ -18,7 +18,6 @@ final class AppCoordinator: NSObject, BrowserRouting {
     self.window = window
     navigationController = UINavigationController()
     super.init()
-    navigationController.delegate = self
     favoriteChangeObserver = favoriteService.observeChanges { [weak self] in
       Task { @MainActor in
         self?.refreshUserCenterCounts()
@@ -255,15 +254,4 @@ final class AppCoordinator: NSObject, BrowserRouting {
   }
 }
 
-extension AppCoordinator: UINavigationControllerDelegate {
-  func navigationController(
-    _ navigationController: UINavigationController,
-    willShow viewController: UIViewController,
-    animated: Bool
-  ) {
-    navigationController.setNavigationBarHidden(
-      viewController === browserViewController,
-      animated: animated
-    )
-  }
-}
+

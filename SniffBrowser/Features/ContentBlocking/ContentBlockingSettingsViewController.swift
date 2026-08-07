@@ -36,6 +36,16 @@ final class ContentBlockingSettingsViewController: BaseViewController {
         tableView.reloadData()
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        navigationController?.interactivePopGestureRecognizer?.delegate = self
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        navigationController?.interactivePopGestureRecognizer?.delegate = nil
+    }
+
     private func configureTableView() {
         tableView.backgroundColor = .clear
         tableView.separatorStyle = .none
@@ -84,8 +94,6 @@ final class ContentBlockingSettingsViewController: BaseViewController {
         )
         backButton.accessibilityLabel = "返回"
         navigationItem.leftBarButtonItem = UIBarButtonItem(customView: backButton)
-        // 隐藏系统返回按钮后保留边缘右滑返回手势。
-        navigationController?.interactivePopGestureRecognizer?.delegate = self
     }
 
     private func observeChanges() {

@@ -16,6 +16,10 @@ protocol BrowserRouting: AnyObject {
 
 @MainActor
 final class BrowserViewController: UIViewController {
+  /// 浏览器是根页面，导航栏始终隐藏。通过 per-controller 声明（而非在
+  /// navigationController(_:willShow:) 里切换）避免打断边缘右滑返回手势。
+  override var prefersNavigationBarHidden: Bool { true }
+
   weak var router: BrowserRouting?
 
   let viewModel: BrowserViewModel
