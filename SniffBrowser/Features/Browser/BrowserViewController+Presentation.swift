@@ -283,10 +283,10 @@ extension BrowserViewController {
       }
     }
     if let sheet = controller.sheetPresentationController {
-      sheet.detents = [.medium()]
+      sheet.detents = [.medium(), .large()]
       sheet.prefersGrabberVisible = true
       sheet.preferredCornerRadius = AppRadius.sheet
-      sheet.prefersScrollingExpandsWhenScrolledToEdge = false
+      sheet.prefersScrollingExpandsWhenScrolledToEdge = true
     }
     present(controller, animated: true)
   }
