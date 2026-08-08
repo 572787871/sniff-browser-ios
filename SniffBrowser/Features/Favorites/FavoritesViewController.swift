@@ -85,9 +85,24 @@ final class FavoritesViewController: BaseViewController {
 
     private func configureTable() {
         tableView.backgroundColor = .clear
+        tableView.separatorStyle = .singleLine
+        tableView.separatorColor = AppColors.separator
+        tableView.separatorInset = UIEdgeInsets(
+            top: 0,
+            left: AppSpacing.sm + AppMetrics.primaryButtonHeight + AppSpacing.sm,
+            bottom: 0,
+            right: AppSpacing.sm
+        )
+        tableView.sectionHeaderTopPadding = 0
         tableView.keyboardDismissMode = .onDrag
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 88
+        tableView.contentInset = UIEdgeInsets(
+            top: 0,
+            left: 0,
+            bottom: AppSpacing.xl,
+            right: 0
+        )
         tableView.register(
             FavoriteCell.self,
             forCellReuseIdentifier: FavoriteCell.reuseIdentifier
