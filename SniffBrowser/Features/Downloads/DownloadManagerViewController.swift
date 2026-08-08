@@ -100,12 +100,12 @@ final class DownloadManagerViewController: BaseViewController {
         } else {
             let oldByID = Dictionary(uniqueKeysWithValues: oldTasks.map { ($0.id, $0) })
             for indexPath in tableView.indexPathsForVisibleRows ?? [] {
-                guard nextTasks.indices.contains(indexPath.section),
-                      let oldTask = oldByID[nextTasks[indexPath.section].id],
-                      oldTask != nextTasks[indexPath.section],
+                guard nextTasks.indices.contains(indexPath.row),
+                      let oldTask = oldByID[nextTasks[indexPath.row].id],
+                      oldTask != nextTasks[indexPath.row],
                       let cell = tableView.cellForRow(at: indexPath) as? DownloadTaskCell
                 else { continue }
-                let task = nextTasks[indexPath.section]
+                let task = nextTasks[indexPath.row]
                 cell.configure(
                     task: task,
                     fileURL: task.state == .completed ? manager?.fileURL(for: task.id) : nil,
@@ -142,10 +142,23 @@ final class DownloadManagerViewController: BaseViewController {
 
     private func configureTable() {
         tableView.backgroundColor = .clear
-        tableView.separatorStyle = .none
+        tableView.separatorStyle = .singleLine
+        tableView.separatorColor = AppColors.separator
+        tableView.separatorInset = UIEdgeInsets(
+            top: 0,
+            left: AppSpacing.sm + AppMetrics.primaryButtonHeight + AppSpacing.sm,
+            bottom: 0,
+            right: AppSpacing.sm
+        )
         tableView.sectionHeaderTopPadding = 0
         tableView.rowHeight = UITableView.automaticDimension
-        tableView.estimatedRowHeight = 118
+        tableView.estimatedRowHeight = 80
+        tableView.contentInset = UIEdgeInsets(
+            top: AppSpacing.xs,
+            left: 0,
+            bottom: AppSpacing.xl,
+            right: 0
+        )
         tableView.register(
             DownloadTaskCell.self,
             forCellReuseIdentifier: DownloadTaskCell.reuseIdentifier
@@ -381,25 +394,25 @@ final class DownloadManagerViewController: BaseViewController {
 
 extension DownloadManagerViewController: UITableViewDataSource, UITableViewDelegate {
     func numberOfSections(in tableView: UITableView) -> Int {
-        displayedTasks.count
+        1
     }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        1
+        displayedTasks.count
     }
 
     func tableView(
         _ tableView: UITableView,
         heightForHeaderInSection section: Int
     ) -> CGFloat {
-        5
+        0
     }
 
     func tableView(
         _ tableView: UITableView,
         heightForFooterInSection section: Int
     ) -> CGFloat {
-        5
+        0
     }
 
     func tableView(
@@ -412,7 +425,7 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
         ) as? DownloadTaskCell else {
             return UITableViewCell()
         }
-        let task = displayedTasks[indexPath.section]
+        let task = displayedTasks[indexPath.row]
         cell.configure(
             task: task,
             fileURL: task.state == .completed ? manager?.fileURL(for: task.id) : nil,
@@ -423,7 +436,7 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        let task = displayedTasks[indexPath.section]
+        let task = displayedTasks[indexPath.row]
         guard task.state == .completed,
               let url = manager?.fileURL(for: task.id)
         else { return }
@@ -457,7 +470,7 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
         _ tableView: UITableView,
         trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
     ) -> UISwipeActionsConfiguration? {
-        let task = displayedTasks[indexPath.section]
+        let task = displayedTasks[indexPath.row]
         var actions: [UIContextualAction] = []
 
         switch task.state {
@@ -568,6 +581,7 @@ private final class DownloadTaskCell: UITableViewCell {
     private let sizeLabel = UILabel()
     private let progressView = UIProgressView(progressViewStyle: .default)
     private let indeterminateIndicator = UIActivityIndicatorView(style: .medium)
+    private let statusBadgeView = UIImageView()
     private var thumbnailToken: FileThumbnailToken?
     private var posterToken: ResourceThumbnailToken?
     private var representedTaskID: UUID?
@@ -671,6 +685,12 @@ private final class DownloadTaskCell: UITableViewCell {
             progressView.progressTintColor = AppColors.accent
             indeterminateIndicator.stopAnimating()
             accessibilityValue = "\(Int(progress * 100))%"
+        } else if task.state == .failed {
+            progressView.isHidden = false
+            progressView.progress = Float(task.progress ?? 1)
+            progressView.progressTintColor = AppColors.danger
+            indeterminateIndicator.stopAnimating()
+            accessibilityValue = "下载失败"
         } else if task.state == .waiting || task.state.isInProgress {
             // Show indeterminate progress bar for tasks in progress without known size
             progressView.isHidden = false
@@ -683,6 +703,8 @@ private final class DownloadTaskCell: UITableViewCell {
             indeterminateIndicator.stopAnimating()
             accessibilityValue = task.state.localizedTitle
         }
+
+        configureStatusBadge(for: task)
 
         if !hasArtwork {
             switch task.state {
@@ -802,11 +824,43 @@ private final class DownloadTaskCell: UITableViewCell {
         }
     }
 
+    private func configureStatusBadge(for task: DownloadTaskModel) {
+        let symbol: String
+        let tint: UIColor
+        switch task.state {
+        case .completed:
+            symbol = "checkmark.circle.fill"
+            tint = AppColors.success
+        case .failed:
+            symbol = "exclamationmark.circle.fill"
+            tint = AppColors.danger
+        case .cancelled:
+            symbol = "xmark.circle"
+            tint = AppColors.secondaryText
+        case .paused:
+            symbol = "play.circle.fill"
+            tint = AppColors.warning
+        case .waiting, .preparing, .downloading, .retrying, .finalizing:
+            symbol = "pause.circle.fill"
+            tint = AppColors.accent
+        }
+        statusBadgeView.image = UIImage(
+            systemName: symbol,
+            withConfiguration: UIImage.SymbolConfiguration(
+                pointSize: 22,
+                weight: .medium
+            )
+        )
+        statusBadgeView.tintColor = tint
+        statusBadgeView.accessibilityLabel = task.state.localizedTitle
+    }
+
     private func configureView() {
+        selectionStyle = .none
+
         var background = UIBackgroundConfiguration.listGroupedCell()
         background.backgroundColor = AppColors.surface
         backgroundConfiguration = background
-        selectionStyle = .none
 
         iconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 24)
         iconView.tintColor = AppColors.accent
@@ -835,6 +889,10 @@ private final class DownloadTaskCell: UITableViewCell {
         indeterminateIndicator.color = AppColors.accent
         indeterminateIndicator.hidesWhenStopped = true
 
+        statusBadgeView.contentMode = .scaleAspectFit
+        statusBadgeView.isAccessibilityElement = true
+        statusBadgeView.translatesAutoresizingMaskIntoConstraints = false
+
         let statusRow = UIStackView(
             arrangedSubviews: [indeterminateIndicator, statusLabel, sizeLabel]
         )
@@ -845,7 +903,9 @@ private final class DownloadTaskCell: UITableViewCell {
         details.axis = .vertical
         details.spacing = 8
 
-        let stack = UIStackView(arrangedSubviews: [iconView, details])
+        let stack = UIStackView(
+            arrangedSubviews: [iconView, details, statusBadgeView]
+        )
         stack.axis = .horizontal
         stack.alignment = .center
         stack.spacing = 12
@@ -853,10 +913,10 @@ private final class DownloadTaskCell: UITableViewCell {
         contentView.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 14),
-            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
-            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
-            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -14),
+            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: AppSpacing.sm),
+            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -AppSpacing.sm),
+            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
 
             iconView.widthAnchor.constraint(
                 equalToConstant: AppMetrics.primaryButtonHeight
@@ -864,6 +924,8 @@ private final class DownloadTaskCell: UITableViewCell {
             iconView.heightAnchor.constraint(
                 equalToConstant: AppMetrics.primaryButtonHeight
             ),
+            statusBadgeView.widthAnchor.constraint(equalToConstant: 44),
+            statusBadgeView.heightAnchor.constraint(equalToConstant: 44),
         ])
     }
 }
