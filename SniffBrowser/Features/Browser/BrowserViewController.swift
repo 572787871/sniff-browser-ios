@@ -161,7 +161,13 @@ final class BrowserViewController: UIViewController {
 
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
+    updateBrowserTopSafeArea()
     updateActiveWebViewInsets()
+  }
+
+  override func viewSafeAreaInsetsDidChange() {
+    super.viewSafeAreaInsetsDidChange()
+    updateBrowserTopSafeArea()
   }
 
   override var preferredStatusBarStyle: UIStatusBarStyle {
@@ -308,6 +314,26 @@ final class BrowserViewController: UIViewController {
     dismissEditingGesture.cancelsTouchesInView = false
     dismissEditingGesture.delegate = self
     contentView.addGestureRecognizer(dismissEditingGesture)
+  }
+
+  /// The browser stays behind the persistent, transparent navigation bar.
+  /// UINavigationController includes that bar in this controller's top safe
+  /// area, so remove only the bar's height to keep the browser geometry the
+  /// same as it was when the bar was hidden. Pushed pages keep their normal
+  /// safe-area behavior because this adjustment belongs to the root browser.
+  private func updateBrowserTopSafeArea() {
+    guard let navigationController else { return }
+    let navigationBarHeight = navigationController.isNavigationBarHidden
+      ? 0
+      : navigationController.navigationBar.bounds.height
+    let desiredTopInset = -max(0, navigationBarHeight)
+    guard abs(additionalSafeAreaInsets.top - desiredTopInset) > 0.5 else {
+      return
+    }
+
+    var insets = additionalSafeAreaInsets
+    insets.top = desiredTopInset
+    additionalSafeAreaInsets = insets
   }
 
   private func configureActions() {
