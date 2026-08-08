@@ -83,8 +83,8 @@ final class AppCoordinator: NSObject, BrowserRouting {
   }
 
   func returnToBrowser() {
+    navigationController.setNavigationBarHidden(true, animated: false)
     navigationController.popToRootViewController(animated: true)
-    navigationController.setNavigationBarHidden(true, animated: true)
   }
 
   func showFavorites() {
@@ -227,6 +227,7 @@ final class AppCoordinator: NSObject, BrowserRouting {
   }
 
   private func push(_ controller: UIViewController) {
+    navigationController.setNavigationBarHidden(false, animated: false)
     navigationController.pushViewController(controller, animated: true)
   }
 
@@ -261,16 +262,12 @@ extension AppCoordinator: UINavigationControllerDelegate {
     animated: Bool
   ) {
     let shouldHide = viewController === browserViewController
-    // 在交互式转场中直接调用 setNavigationBarHidden 会打断右滑返回手势。
-    // 改为等转场完成后才切换导航栏状态，避免中途调用。
     if let coordinator = viewController.transitionCoordinator {
-      coordinator.animate(alongsideTransition: nil) { context in
-        if !context.isCancelled {
-          navigationController.setNavigationBarHidden(shouldHide, animated: animated)
-        }
-      }
+      coordinator.animate(alongsideTransition: { _ in
+        navigationController.setNavigationBarHidden(shouldHide, animated: false)
+      })
     } else {
-      navigationController.setNavigationBarHidden(shouldHide, animated: animated)
+      navigationController.setNavigationBarHidden(shouldHide, animated: false)
     }
   }
 }
