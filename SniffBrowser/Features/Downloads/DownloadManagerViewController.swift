@@ -144,14 +144,7 @@ final class DownloadManagerViewController: BaseViewController {
 
     private func configureTable() {
         tableView.backgroundColor = .clear
-        tableView.separatorStyle = .singleLine
-        tableView.separatorColor = AppColors.separator
-        tableView.separatorInset = UIEdgeInsets(
-            top: 0,
-            left: AppSpacing.sm + AppMetrics.primaryButtonHeight + AppSpacing.sm,
-            bottom: 0,
-            right: AppSpacing.sm
-        )
+        tableView.separatorStyle = .none
         tableView.sectionHeaderTopPadding = 0
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 80
@@ -587,6 +580,8 @@ private final class DownloadTaskCell: UITableViewCell {
     private let sizeLabel = UILabel()
     private let progressView = UIProgressView(progressViewStyle: .default)
     private let indeterminateIndicator = UIActivityIndicatorView(style: .medium)
+    private let containerView = UIView()
+    private let dividerView = UIView()
     private var thumbnailToken: FileThumbnailToken?
     private var posterToken: ResourceThumbnailToken?
     private var representedTaskID: UUID?
@@ -734,6 +729,7 @@ private final class DownloadTaskCell: UITableViewCell {
     func setGroupPosition(isFirst: Bool, isLast: Bool) {
         isFirstInGroup = isFirst
         isLastInGroup = isLast
+        dividerView.isHidden = isLast
         updateGroupMask()
     }
 
@@ -754,7 +750,7 @@ private final class DownloadTaskCell: UITableViewCell {
         )
         let mask = CAShapeLayer()
         mask.path = path.cgPath
-        contentView.layer.mask = mask
+        containerView.layer.mask = mask
     }
 
     private static func durationText(_ seconds: TimeInterval) -> String {
@@ -858,13 +854,18 @@ private final class DownloadTaskCell: UITableViewCell {
 
     private func configureView() {
         selectionStyle = .none
+        backgroundColor = .clear
+        contentView.backgroundColor = .clear
 
-        backgroundColor = AppColors.surface
-        contentView.backgroundColor = AppColors.surface
+        containerView.translatesAutoresizingMaskIntoConstraints = false
+        containerView.backgroundColor = AppColors.surface
+        containerView.isUserInteractionEnabled = true
+        contentView.addSubview(containerView)
 
-        var background = UIBackgroundConfiguration.listGroupedCell()
-        background.backgroundColor = AppColors.surface
-        backgroundConfiguration = background
+        dividerView.translatesAutoresizingMaskIntoConstraints = false
+        dividerView.backgroundColor = AppColors.separator
+        dividerView.isHidden = true
+        containerView.addSubview(dividerView)
 
         iconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 24)
         iconView.tintColor = AppColors.accent
@@ -908,13 +909,35 @@ private final class DownloadTaskCell: UITableViewCell {
         stack.alignment = .center
         stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(stack)
+        containerView.addSubview(stack)
 
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
-            stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: AppSpacing.sm),
-            stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -AppSpacing.sm),
-            stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12),
+            containerView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            containerView.leadingAnchor.constraint(
+                equalTo: contentView.leadingAnchor,
+                constant: AppSpacing.md
+            ),
+            containerView.trailingAnchor.constraint(
+                equalTo: contentView.trailingAnchor,
+                constant: -AppSpacing.md
+            ),
+            containerView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
+            dividerView.leadingAnchor.constraint(
+                equalTo: containerView.leadingAnchor,
+                constant: 60
+            ),
+            dividerView.trailingAnchor.constraint(
+                equalTo: containerView.trailingAnchor,
+                constant: -AppSpacing.sm
+            ),
+            dividerView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor),
+            dividerView.heightAnchor.constraint(equalToConstant: 0.5),
+
+            stack.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 12),
+            stack.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: AppSpacing.sm),
+            stack.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -AppSpacing.sm),
+            stack.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -12),
 
             iconView.widthAnchor.constraint(
                 equalToConstant: AppMetrics.primaryButtonHeight
