@@ -297,7 +297,7 @@ extension AppCoordinator: UINavigationControllerDelegate {
     } else {
       appearance.configureWithOpaqueBackground()
       appearance.backgroundColor = AppColors.background
-      appearance.shadowColor = AppColors.separator
+      appearance.shadowColor = .clear
       appearance.titleTextAttributes = [
         .foregroundColor: AppColors.primaryText,
         .font: AppTypography.headline,
@@ -344,6 +344,14 @@ private final class PlainHorizontalNavigationAnimator: NSObject,
     let width = container.bounds.width
     let reduceMotion = UIAccessibility.isReduceMotionEnabled
     let duration = transitionDuration(using: transitionContext)
+    let navigationBar = transitionContext
+      .viewController(forKey: .from)?
+      .navigationController?
+      .navigationBar
+
+    clearTransitionShadow(on: fromView)
+    clearTransitionShadow(on: toView)
+    clearTransitionShadow(on: navigationBar)
 
     switch operation {
     case .push:
@@ -353,6 +361,9 @@ private final class PlainHorizontalNavigationAnimator: NSObject,
         ? .identity
         : CGAffineTransform(translationX: width, y: 0)
       toView.alpha = reduceMotion ? 0 : 1
+      navigationBar?.transform = reduceMotion
+        ? .identity
+        : CGAffineTransform(translationX: width, y: 0)
 
       UIView.animate(
         withDuration: duration,
@@ -363,10 +374,12 @@ private final class PlainHorizontalNavigationAnimator: NSObject,
           if reduceMotion {
             toView.alpha = 1
           }
+          navigationBar?.transform = .identity
         },
         completion: { _ in
           toView.transform = .identity
           toView.alpha = 1
+          navigationBar?.transform = .identity
           transitionContext.completeTransition(
             !transitionContext.transitionWasCancelled
           )
@@ -379,6 +392,7 @@ private final class PlainHorizontalNavigationAnimator: NSObject,
       fromView.alpha = 1
       toView.transform = .identity
       toView.alpha = reduceMotion ? 0 : 1
+      navigationBar?.transform = .identity
 
       UIView.animate(
         withDuration: duration,
@@ -393,6 +407,10 @@ private final class PlainHorizontalNavigationAnimator: NSObject,
               translationX: width,
               y: 0
             )
+            navigationBar?.transform = CGAffineTransform(
+              translationX: width,
+              y: 0
+            )
           }
         },
         completion: { _ in
@@ -401,12 +419,22 @@ private final class PlainHorizontalNavigationAnimator: NSObject,
           fromView.alpha = 1
           toView.transform = .identity
           toView.alpha = 1
+          navigationBar?.transform = .identity
           transitionContext.completeTransition(completed)
         }
       )
     default:
       transitionContext.completeTransition(false)
     }
+  }
+
+  private func clearTransitionShadow(on view: UIView?) {
+    guard let view else { return }
+    view.layer.shadowColor = UIColor.clear.cgColor
+    view.layer.shadowOpacity = 0
+    view.layer.shadowRadius = 0
+    view.layer.shadowOffset = .zero
+    view.layer.shadowPath = nil
   }
 }
 
