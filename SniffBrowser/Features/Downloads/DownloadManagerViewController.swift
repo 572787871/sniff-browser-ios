@@ -154,7 +154,7 @@ final class DownloadManagerViewController: BaseViewController {
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 80
         tableView.contentInset = UIEdgeInsets(
-            top: AppSpacing.xs,
+            top: 0,
             left: 0,
             bottom: AppSpacing.xl,
             right: 0
@@ -173,7 +173,7 @@ final class DownloadManagerViewController: BaseViewController {
         tableView.refreshControl = refreshControl
 
         NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: scopeControl.bottomAnchor, constant: 8),
+            tableView.topAnchor.constraint(equalTo: scopeControl.bottomAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
@@ -581,7 +581,6 @@ private final class DownloadTaskCell: UITableViewCell {
     private let sizeLabel = UILabel()
     private let progressView = UIProgressView(progressViewStyle: .default)
     private let indeterminateIndicator = UIActivityIndicatorView(style: .medium)
-    private let statusBadgeView = UIImageView()
     private var thumbnailToken: FileThumbnailToken?
     private var posterToken: ResourceThumbnailToken?
     private var representedTaskID: UUID?
@@ -704,7 +703,6 @@ private final class DownloadTaskCell: UITableViewCell {
             accessibilityValue = task.state.localizedTitle
         }
 
-        configureStatusBadge(for: task)
 
         if !hasArtwork {
             switch task.state {
@@ -824,37 +822,6 @@ private final class DownloadTaskCell: UITableViewCell {
         }
     }
 
-    private func configureStatusBadge(for task: DownloadTaskModel) {
-        let symbol: String
-        let tint: UIColor
-        switch task.state {
-        case .completed:
-            symbol = "checkmark.circle.fill"
-            tint = AppColors.success
-        case .failed:
-            symbol = "exclamationmark.circle.fill"
-            tint = AppColors.danger
-        case .cancelled:
-            symbol = "xmark.circle"
-            tint = AppColors.secondaryText
-        case .paused:
-            symbol = "play.circle.fill"
-            tint = AppColors.warning
-        case .waiting, .preparing, .downloading, .retrying, .finalizing:
-            symbol = "pause.circle.fill"
-            tint = AppColors.accent
-        }
-        statusBadgeView.image = UIImage(
-            systemName: symbol,
-            withConfiguration: UIImage.SymbolConfiguration(
-                pointSize: 22,
-                weight: .medium
-            )
-        )
-        statusBadgeView.tintColor = tint
-        statusBadgeView.accessibilityLabel = task.state.localizedTitle
-    }
-
     private func configureView() {
         selectionStyle = .none
 
@@ -889,10 +856,6 @@ private final class DownloadTaskCell: UITableViewCell {
         indeterminateIndicator.color = AppColors.accent
         indeterminateIndicator.hidesWhenStopped = true
 
-        statusBadgeView.contentMode = .scaleAspectFit
-        statusBadgeView.isAccessibilityElement = true
-        statusBadgeView.translatesAutoresizingMaskIntoConstraints = false
-
         let statusRow = UIStackView(
             arrangedSubviews: [indeterminateIndicator, statusLabel, sizeLabel]
         )
@@ -903,9 +866,7 @@ private final class DownloadTaskCell: UITableViewCell {
         details.axis = .vertical
         details.spacing = 8
 
-        let stack = UIStackView(
-            arrangedSubviews: [iconView, details, statusBadgeView]
-        )
+        let stack = UIStackView(arrangedSubviews: [iconView, details])
         stack.axis = .horizontal
         stack.alignment = .center
         stack.spacing = 12
@@ -924,8 +885,6 @@ private final class DownloadTaskCell: UITableViewCell {
             iconView.heightAnchor.constraint(
                 equalToConstant: AppMetrics.primaryButtonHeight
             ),
-            statusBadgeView.widthAnchor.constraint(equalToConstant: 44),
-            statusBadgeView.heightAnchor.constraint(equalToConstant: 44),
         ])
     }
 }
