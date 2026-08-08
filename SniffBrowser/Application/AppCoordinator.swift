@@ -258,6 +258,15 @@ final class AppCoordinator: NSObject, BrowserRouting {
 extension AppCoordinator: UINavigationControllerDelegate {
   func navigationController(
     _ navigationController: UINavigationController,
+    animationControllerFor operation: UINavigationController.Operation,
+    from fromVC: UIViewController,
+    to toVC: UIViewController
+  ) -> UIViewControllerAnimatedTransitioning? {
+    NavigationTransitionAnimator(operation: operation)
+  }
+
+  func navigationController(
+    _ navigationController: UINavigationController,
     willShow viewController: UIViewController,
     animated: Bool
   ) {
@@ -275,5 +284,4 @@ extension AppCoordinator: UINavigationControllerDelegate {
     }
   }
 }
-
 
