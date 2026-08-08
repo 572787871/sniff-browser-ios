@@ -57,7 +57,6 @@ final class AppCoordinator: NSObject, BrowserRouting {
     browser.router = self
     browserViewController = browser
     navigationController.setViewControllers([browser], animated: false)
-    navigationController.setNavigationBarHidden(true, animated: false)
     window.rootViewController = navigationController
     window.makeKeyAndVisible()
     Task { [downloadCenter] in
@@ -83,7 +82,6 @@ final class AppCoordinator: NSObject, BrowserRouting {
   }
 
   func returnToBrowser() {
-    navigationController.setNavigationBarHidden(true, animated: false)
     navigationController.popToRootViewController(animated: true)
   }
 
@@ -227,7 +225,6 @@ final class AppCoordinator: NSObject, BrowserRouting {
   }
 
   private func push(_ controller: UIViewController) {
-    navigationController.setNavigationBarHidden(false, animated: false)
     navigationController.pushViewController(controller, animated: true)
   }
 
@@ -261,13 +258,26 @@ extension AppCoordinator: UINavigationControllerDelegate {
     willShow viewController: UIViewController,
     animated: Bool
   ) {
-    let shouldHide = viewController === browserViewController
-    if let coordinator = viewController.transitionCoordinator {
-      coordinator.animate(alongsideTransition: { _ in
-        navigationController.setNavigationBarHidden(shouldHide, animated: false)
-      })
+    let isBrowser = viewController === browserViewController
+    let appearance = UINavigationBarAppearance()
+    if isBrowser {
+      appearance.configureWithTransparentBackground()
+      appearance.shadowColor = .clear
     } else {
-      navigationController.setNavigationBarHidden(shouldHide, animated: false)
+      appearance.configureWithOpaqueBackground()
+      appearance.backgroundColor = AppColors.background
+      appearance.shadowColor = AppColors.separator
+      appearance.titleTextAttributes = [
+        .foregroundColor: AppColors.primaryText,
+        .font: AppTypography.headline,
+      ]
+      appearance.largeTitleTextAttributes = [
+        .foregroundColor: AppColors.primaryText,
+        .font: AppTypography.largeTitle,
+      ]
     }
+    navigationController.navigationBar.standardAppearance = appearance
+    navigationController.navigationBar.compactAppearance = appearance
+    navigationController.navigationBar.scrollEdgeAppearance = appearance
   }
 }
