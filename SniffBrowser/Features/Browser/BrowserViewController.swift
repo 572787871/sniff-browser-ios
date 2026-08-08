@@ -51,6 +51,7 @@ final class BrowserViewController: UIViewController {
   private var activeResourceObservationToken: UUID?
   private var searchHistoryItems: [HistoryItem] = []
   private var isSearchHistoryVisible = false
+  private var isSearchSuggestionsPinned = false
   private var quickLinksHeightConstraint: NSLayoutConstraint?
 
   var activeTab: BrowserTab? {
@@ -414,7 +415,8 @@ final class BrowserViewController: UIViewController {
     )
     searchHistoryTableView.rowHeight = 72
     searchHistoryTableView.estimatedRowHeight = 72
-    searchHistoryTableView.keyboardDismissMode = .interactive
+    searchHistoryTableView.keyboardDismissMode = .none
+    searchHistoryTableView.alwaysBounceVertical = true
     searchHistoryTableView.showsVerticalScrollIndicator = false
     searchHistoryTableView.register(
       BrowserSearchHistoryCell.self,
@@ -437,16 +439,18 @@ final class BrowserViewController: UIViewController {
   }
 
   private func updateBrowserChromeVisibility() {
-    let shouldShowAddressBar = !isShowingNewTab || addressBar.isEditing
+    let shouldShowAddressBar =
+      !isShowingNewTab || addressBar.isEditing || isSearchSuggestionsPinned
     addressBar.isHidden = !shouldShowAddressBar
     topChromeBackgroundView.isHidden = !shouldShowAddressBar
 
-    if addressBar.isEditing {
+    if addressBar.isEditing || isSearchSuggestionsPinned {
       if !isSearchHistoryVisible {
         showSearchHistory()
       } else {
         searchHistoryTableView.isHidden = false
-        quickLinksScrollView.isHidden = false
+        quickLinksScrollView.isHidden =
+          quickLinksHeightConstraint?.constant == 0
       }
     } else {
       hideSearchHistory()
@@ -462,6 +466,7 @@ final class BrowserViewController: UIViewController {
 
   private func hideSearchHistory() {
     isSearchHistoryVisible = false
+    isSearchSuggestionsPinned = false
     searchHistoryTableView.isHidden = true
     quickLinksScrollView.isHidden = true
     quickLinksHeightConstraint?.constant = 0
@@ -963,7 +968,11 @@ final class BrowserViewController: UIViewController {
   }
 
   @objc private func contentTapped() {
+    isSearchSuggestionsPinned = false
     view.endEditing(true)
+    if !addressBar.isEditing {
+      updateBrowserChromeVisibility()
+    }
   }
 
   @objc private func refreshControlChanged(_ sender: UIRefreshControl) {
@@ -993,6 +1002,10 @@ extension BrowserViewController: AddressBarDelegate {
     activeWebView?.stopLoading()
   }
 
+  func addressBarDidRequestDismissSearch(_ addressBar: AddressBarView) {
+    isSearchSuggestionsPinned = false
+  }
+
   func addressBarDidBeginEditing(_ addressBar: AddressBarView) {
     chromeScrollController.reset()
     applyChromeState(.expanded, animated: true)
@@ -1001,6 +1014,12 @@ extension BrowserViewController: AddressBarDelegate {
 
   func addressBarDidEndEditing(_ addressBar: AddressBarView) {
     chromeScrollController.reset()
+    if isSearchSuggestionsPinned {
+      searchHistoryTableView.isHidden = false
+      quickLinksScrollView.isHidden =
+        quickLinksHeightConstraint?.constant == 0
+      return
+    }
     updateBrowserChromeVisibility()
   }
 }
@@ -1021,6 +1040,19 @@ extension BrowserViewController: NewTabViewDelegate {
 }
 
 extension BrowserViewController: UITableViewDataSource, UITableViewDelegate {
+  func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    guard scrollView === searchHistoryTableView,
+          addressBar.isEditing
+    else {
+      return
+    }
+
+    let velocity = scrollView.panGestureRecognizer.velocity(in: scrollView)
+    guard velocity.y < 0 else { return }
+    isSearchSuggestionsPinned = true
+    addressBar.endEditing(true)
+  }
+
   func tableView(
     _ tableView: UITableView,
     numberOfRowsInSection section: Int

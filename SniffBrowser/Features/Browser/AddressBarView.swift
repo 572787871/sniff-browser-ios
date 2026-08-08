@@ -13,6 +13,7 @@ protocol AddressBarDelegate: AnyObject {
   func addressBar(_ addressBar: AddressBarView, didChangeText text: String)
   func addressBarDidRequestReload(_ addressBar: AddressBarView)
   func addressBarDidRequestStop(_ addressBar: AddressBarView)
+  func addressBarDidRequestDismissSearch(_ addressBar: AddressBarView)
   func addressBarDidBeginEditing(_ addressBar: AddressBarView)
   func addressBarDidEndEditing(_ addressBar: AddressBarView)
 }
@@ -378,6 +379,7 @@ final class AddressBarView: UIView {
       return
     }
     if textField.isFirstResponder {
+      delegate?.addressBarDidRequestDismissSearch(self)
       textField.resignFirstResponder()
       return
     }
