@@ -101,3 +101,38 @@ final class NavigationTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         ).cgPath
     }
 }
+
+/// 交互式右滑返回：驱动自定义转场的百分比进度（跟手、可取消）。
+@MainActor
+final class NavigationPopInteraction: UIPercentDrivenInteractiveTransition {
+    weak var navigationController: UINavigationController?
+
+    private(set) var isInteracting = false
+
+    func handleGesture(_ gesture: UIScreenEdgePanGestureRecognizer) {
+        guard let view = gesture.view else { return }
+        switch gesture.state {
+        case .began:
+            guard navigationController?.viewControllers.count ?? 0 > 1 else {
+                isInteracting = false
+                return
+            }
+            isInteracting = true
+            navigationController?.popViewController(animated: true)
+        case .changed:
+            let translation = gesture.translation(in: view)
+            let progress = min(1, max(0, translation.x / view.bounds.width))
+            update(progress)
+        case .ended, .cancelled, .failed:
+            isInteracting = false
+            let translation = gesture.translation(in: view)
+            let velocity = gesture.velocity(in: view)
+            let shouldFinish = velocity.x > 600
+                || translation.x / view.bounds.width > 0.4
+            shouldFinish ? finish() : cancel()
+        default:
+            isInteracting = false
+            cancel()
+        }
+    }
+}

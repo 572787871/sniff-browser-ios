@@ -13,12 +13,22 @@ final class AppCoordinator: NSObject, BrowserRouting {
   private var favoriteChangeObserver: NSObjectProtocol?
   private var historyChangeObserver: NSObjectProtocol?
   private var downloadChangeObserver: NSObjectProtocol?
+  private let popInteraction = NavigationPopInteraction()
+  private let popGesture = UIScreenEdgePanGestureRecognizer()
 
   init(window: UIWindow) {
     self.window = window
     navigationController = UINavigationController()
     super.init()
     navigationController.delegate = self
+    navigationController.interactivePopGestureRecognizer?.isEnabled = false
+    popInteraction.navigationController = navigationController
+    popGesture.edges = .left
+    popGesture.addTarget(
+      self,
+      action: #selector(handlePopGesture(_:))
+    )
+    navigationController.view.addGestureRecognizer(popGesture)
     favoriteChangeObserver = favoriteService.observeChanges { [weak self] in
       Task { @MainActor in
         self?.refreshUserCenterCounts()
@@ -227,7 +237,7 @@ final class AppCoordinator: NSObject, BrowserRouting {
   }
 
   private func push(_ controller: UIViewController) {
-    navigationController.setNavigationBarHidden(false, animated: true)
+    navigationController.setNavigationBarHidden(false, animated: false)
     navigationController.pushViewController(controller, animated: true)
   }
 
@@ -256,6 +266,18 @@ final class AppCoordinator: NSObject, BrowserRouting {
 }
 
 extension AppCoordinator: UINavigationControllerDelegate {
+  @objc
+  private func handlePopGesture(_ gesture: UIScreenEdgePanGestureRecognizer) {
+    popInteraction.handleGesture(gesture)
+  }
+
+  func navigationController(
+    _ navigationController: UINavigationController,
+    interactionControllerFor animationController: UIViewControllerAnimatedTransitioning
+  ) -> UIViewControllerInteractiveTransitioning? {
+    popInteraction.isInteracting ? popInteraction : nil
+  }
+
   func navigationController(
     _ navigationController: UINavigationController,
     animationControllerFor operation: UINavigationController.Operation,
@@ -271,17 +293,17 @@ extension AppCoordinator: UINavigationControllerDelegate {
     animated: Bool
   ) {
     let shouldHide = viewController === browserViewController
-    // 在交互式转场中直接调用 setNavigationBarHidden 会打断右滑返回手势。
-    // 改为等转场完成后才切换导航栏状态，避免中途调用。
     if let coordinator = viewController.transitionCoordinator {
-      coordinator.animate(alongsideTransition: nil) { context in
+      coordinator.animate(alongsideTransition: { _ in
+        navigationController.setNavigationBarHidden(shouldHide, animated: false)
+      })
+      coordinator.notifyWhenInteractionEnds { [weak navigationController] context in
         if !context.isCancelled {
-          navigationController.setNavigationBarHidden(shouldHide, animated: animated)
+          navigationController?.setNavigationBarHidden(shouldHide, animated: false)
         }
       }
     } else {
-      navigationController.setNavigationBarHidden(shouldHide, animated: animated)
+      navigationController.setNavigationBarHidden(shouldHide, animated: false)
     }
   }
 }
-
