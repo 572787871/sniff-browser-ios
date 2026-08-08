@@ -38,6 +38,7 @@ final class NavigationTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         case .push:
             container.addSubview(toView)
             toView.frame = transitionContext.finalFrame(for: toViewController)
+            applySlideShadow(to: toView)
             toView.alpha = reduceMotion ? 0 : 1
             toView.transform = reduceMotion
                 ? .identity
@@ -51,6 +52,7 @@ final class NavigationTransitionAnimator: NSObject, UIViewControllerAnimatedTran
                     toView.alpha = 1
                 },
                 completion: { _ in
+                    toView.layer.shadowOpacity = 0
                     transitionContext.completeTransition(
                         !transitionContext.transitionWasCancelled
                     )
@@ -60,6 +62,7 @@ final class NavigationTransitionAnimator: NSObject, UIViewControllerAnimatedTran
             container.insertSubview(toView, belowSubview: fromView)
             toView.frame = transitionContext.finalFrame(for: toViewController)
             toView.alpha = 1
+            applySlideShadow(to: fromView)
             fromView.alpha = reduceMotion ? 0 : 1
             UIView.animate(
                 withDuration: duration,
@@ -72,6 +75,7 @@ final class NavigationTransitionAnimator: NSObject, UIViewControllerAnimatedTran
                     fromView.alpha = reduceMotion ? 0 : 1
                 },
                 completion: { _ in
+                    fromView.layer.shadowOpacity = 0
                     if transitionContext.transitionWasCancelled {
                         fromView.transform = .identity
                         fromView.alpha = 1
@@ -84,5 +88,16 @@ final class NavigationTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         default:
             transitionContext.completeTransition(false)
         }
+    }
+
+    private func applySlideShadow(to view: UIView) {
+        view.layer.shadowColor = UIColor.black.cgColor
+        view.layer.shadowOpacity = 0.14
+        view.layer.shadowRadius = 6
+        view.layer.shadowOffset = CGSize(width: -4, height: 0)
+        view.layer.shadowPath = UIBezierPath(
+            roundedRect: view.bounds,
+            cornerRadius: 0
+        ).cgPath
     }
 }
