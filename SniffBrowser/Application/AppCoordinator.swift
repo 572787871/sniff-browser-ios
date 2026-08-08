@@ -13,12 +13,22 @@ final class AppCoordinator: NSObject, BrowserRouting {
   private var favoriteChangeObserver: NSObjectProtocol?
   private var historyChangeObserver: NSObjectProtocol?
   private var downloadChangeObserver: NSObjectProtocol?
+  private let popInteraction = NavigationPopInteraction()
+  private let popGesture = UIScreenEdgePanGestureRecognizer()
 
   init(window: UIWindow) {
     self.window = window
     navigationController = UINavigationController()
     super.init()
     navigationController.delegate = self
+    navigationController.interactivePopGestureRecognizer?.isEnabled = false
+    popInteraction.navigationController = navigationController
+    popGesture.edges = .left
+    popGesture.addTarget(
+      self,
+      action: #selector(handlePopGesture(_:))
+    )
+    navigationController.view.addGestureRecognizer(popGesture)
     favoriteChangeObserver = favoriteService.observeChanges { [weak self] in
       Task { @MainActor in
         self?.refreshUserCenterCounts()
@@ -253,6 +263,27 @@ final class AppCoordinator: NSObject, BrowserRouting {
 }
 
 extension AppCoordinator: UINavigationControllerDelegate {
+  @objc
+  private func handlePopGesture(_ gesture: UIScreenEdgePanGestureRecognizer) {
+    popInteraction.handleGesture(gesture)
+  }
+
+  func navigationController(
+    _ navigationController: UINavigationController,
+    interactionControllerFor animationController: UIViewControllerAnimatedTransitioning
+  ) -> UIViewControllerInteractiveTransitioning? {
+    popInteraction.isInteracting ? popInteraction : nil
+  }
+
+  func navigationController(
+    _ navigationController: UINavigationController,
+    animationControllerFor operation: UINavigationController.Operation,
+    from fromVC: UIViewController,
+    to toVC: UIViewController
+  ) -> UIViewControllerAnimatedTransitioning? {
+    PlainHorizontalNavigationAnimator(operation: operation)
+  }
+
   func navigationController(
     _ navigationController: UINavigationController,
     willShow viewController: UIViewController,
@@ -279,5 +310,138 @@ extension AppCoordinator: UINavigationControllerDelegate {
     navigationController.navigationBar.standardAppearance = appearance
     navigationController.navigationBar.compactAppearance = appearance
     navigationController.navigationBar.scrollEdgeAppearance = appearance
+  }
+}
+
+/// A full-width push/pop transition with no parallax, fade, scale, or shadow.
+private final class PlainHorizontalNavigationAnimator: NSObject,
+  UIViewControllerAnimatedTransitioning {
+  private let operation: UINavigationController.Operation
+
+  init(operation: UINavigationController.Operation) {
+    self.operation = operation
+    super.init()
+  }
+
+  func transitionDuration(
+    using transitionContext: UIViewControllerContextTransitioning?
+  ) -> TimeInterval {
+    UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.28
+  }
+
+  func animateTransition(
+    using transitionContext: UIViewControllerContextTransitioning
+  ) {
+    guard let fromView = transitionContext.view(forKey: .from),
+          let toView = transitionContext.view(forKey: .to),
+          let toViewController = transitionContext.viewController(forKey: .to)
+    else {
+      transitionContext.completeTransition(false)
+      return
+    }
+
+    let container = transitionContext.containerView
+    let width = container.bounds.width
+    let reduceMotion = UIAccessibility.isReduceMotionEnabled
+    let duration = transitionDuration(using: transitionContext)
+
+    switch operation {
+    case .push:
+      container.addSubview(toView)
+      toView.frame = transitionContext.finalFrame(for: toViewController)
+      toView.transform = reduceMotion
+        ? .identity
+        : CGAffineTransform(translationX: width, y: 0)
+      toView.alpha = reduceMotion ? 0 : 1
+
+      UIView.animate(
+        withDuration: duration,
+        delay: 0,
+        options: [.curveEaseOut, .allowUserInteraction],
+        animations: {
+          toView.transform = .identity
+          if reduceMotion {
+            toView.alpha = 1
+          }
+        },
+        completion: { _ in
+          toView.transform = .identity
+          toView.alpha = 1
+          transitionContext.completeTransition(
+            !transitionContext.transitionWasCancelled
+          )
+        }
+      )
+    case .pop:
+      container.insertSubview(toView, belowSubview: fromView)
+      toView.frame = transitionContext.finalFrame(for: toViewController)
+      fromView.transform = .identity
+      fromView.alpha = 1
+      toView.transform = .identity
+      toView.alpha = reduceMotion ? 0 : 1
+
+      UIView.animate(
+        withDuration: duration,
+        delay: 0,
+        options: [.curveEaseOut, .allowUserInteraction],
+        animations: {
+          if reduceMotion {
+            fromView.alpha = 0
+            toView.alpha = 1
+          } else {
+            fromView.transform = CGAffineTransform(
+              translationX: width,
+              y: 0
+            )
+          }
+        },
+        completion: { _ in
+          let completed = !transitionContext.transitionWasCancelled
+          fromView.transform = .identity
+          fromView.alpha = 1
+          toView.transform = .identity
+          toView.alpha = 1
+          transitionContext.completeTransition(completed)
+        }
+      )
+    default:
+      transitionContext.completeTransition(false)
+    }
+  }
+}
+
+/// Drives the same plain horizontal pop transition from the screen edge.
+@MainActor
+private final class NavigationPopInteraction: UIPercentDrivenInteractiveTransition {
+  weak var navigationController: UINavigationController?
+
+  private(set) var isInteracting = false
+
+  func handleGesture(_ gesture: UIScreenEdgePanGestureRecognizer) {
+    guard let view = gesture.view else { return }
+
+    switch gesture.state {
+    case .began:
+      guard navigationController?.viewControllers.count ?? 0 > 1 else {
+        isInteracting = false
+        return
+      }
+      isInteracting = true
+      navigationController?.popViewController(animated: true)
+    case .changed:
+      let translation = gesture.translation(in: view)
+      let progress = min(1, max(0, translation.x / view.bounds.width))
+      update(progress)
+    case .ended, .cancelled, .failed:
+      isInteracting = false
+      let translation = gesture.translation(in: view)
+      let velocity = gesture.velocity(in: view)
+      let shouldFinish = velocity.x > 600
+        || translation.x / view.bounds.width > 0.4
+      shouldFinish ? finish() : cancel()
+    default:
+      isInteracting = false
+      cancel()
+    }
   }
 }
