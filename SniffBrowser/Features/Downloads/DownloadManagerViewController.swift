@@ -47,7 +47,7 @@ final class DownloadManagerViewController: BaseViewController {
     private var navigationMenuTasksHash: Int = 0
 
     private let scopeControl = UISegmentedControl(items: Scope.allCases.map(\.title))
-    private let tableView = UITableView(frame: .zero, style: .insetGrouped)
+    private let tableView = UITableView(frame: .zero, style: .plain)
     private let emptyState = EmptyStateView(
         configuration: .init(
             symbolName: "arrow.down.circle",
@@ -134,7 +134,9 @@ final class DownloadManagerViewController: BaseViewController {
         contentView.addSubview(scopeControl)
 
         NSLayoutConstraint.activate([
-            scopeControl.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            scopeControl.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor
+            ),
             scopeControl.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
             scopeControl.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor)
         ])
@@ -185,7 +187,7 @@ final class DownloadManagerViewController: BaseViewController {
         contentView.addSubview(emptyState)
 
         NSLayoutConstraint.activate([
-            emptyState.topAnchor.constraint(equalTo: scopeControl.bottomAnchor, constant: AppSpacing.xs),
+            emptyState.topAnchor.constraint(equalTo: scopeControl.bottomAnchor),
             emptyState.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             emptyState.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             emptyState.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
@@ -431,6 +433,10 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
             fileURL: task.state == .completed ? manager?.fileURL(for: task.id) : nil,
             localThumbnailURL: manager?.thumbnailFileURL(for: task.id)
         )
+        cell.setGroupPosition(
+            isFirst: indexPath.row == 0,
+            isLast: indexPath.row == displayedTasks.count - 1
+        )
         return cell
     }
 
@@ -587,6 +593,8 @@ private final class DownloadTaskCell: UITableViewCell {
     private var representedThumbnailURL: URL?
     private var representedFileURL: URL?
     private var hasArtwork = false
+    private var isFirstInGroup = false
+    private var isLastInGroup = false
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -723,6 +731,32 @@ private final class DownloadTaskCell: UITableViewCell {
         accessibilityLabel = "\(task.fileName)，\(task.state.localizedTitle)，\(sizeLabel.text ?? "")"
     }
 
+    func setGroupPosition(isFirst: Bool, isLast: Bool) {
+        isFirstInGroup = isFirst
+        isLastInGroup = isLast
+        updateGroupMask()
+    }
+
+    private func updateGroupMask() {
+        let bounds = contentView.bounds
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        var corners: UIRectCorner = []
+        if isFirstInGroup {
+            corners.formUnion([.topLeft, .topRight])
+        }
+        if isLastInGroup {
+            corners.formUnion([.bottomLeft, .bottomRight])
+        }
+        let path = UIBezierPath(
+            roundedRect: bounds,
+            byRoundingCorners: corners,
+            cornerRadii: CGSize(width: AppRadius.control, height: AppRadius.control)
+        )
+        let mask = CAShapeLayer()
+        mask.path = path.cgPath
+        contentView.layer.mask = mask
+    }
+
     private static func durationText(_ seconds: TimeInterval) -> String {
         let total = Int(seconds.rounded())
         let hours = total / 3600
@@ -825,6 +859,9 @@ private final class DownloadTaskCell: UITableViewCell {
     private func configureView() {
         selectionStyle = .none
 
+        backgroundColor = AppColors.surface
+        contentView.backgroundColor = AppColors.surface
+
         var background = UIBackgroundConfiguration.listGroupedCell()
         background.backgroundColor = AppColors.surface
         backgroundConfiguration = background
@@ -886,5 +923,10 @@ private final class DownloadTaskCell: UITableViewCell {
                 equalToConstant: AppMetrics.primaryButtonHeight
             ),
         ])
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        updateGroupMask()
     }
 }

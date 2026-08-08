@@ -149,14 +149,16 @@ final class FileManagerViewController: BaseViewController {
         contentView.addSubview(emptyState)
 
         NSLayoutConstraint.activate([
-            categoryControl.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            categoryControl.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor
+            ),
             categoryControl.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
             categoryControl.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
-            tableView.topAnchor.constraint(equalTo: categoryControl.bottomAnchor, constant: 8),
+            tableView.topAnchor.constraint(equalTo: categoryControl.bottomAnchor),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            emptyState.topAnchor.constraint(equalTo: categoryControl.bottomAnchor, constant: 8),
+            emptyState.topAnchor.constraint(equalTo: categoryControl.bottomAnchor),
             emptyState.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             emptyState.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             emptyState.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
