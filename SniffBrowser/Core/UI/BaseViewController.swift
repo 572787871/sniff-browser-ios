@@ -9,7 +9,6 @@ class BaseViewController: UIViewController {
     private let initialTitle: String?
     private let prefersLargeTitle: Bool
     private weak var presentedStateView: UIView?
-    private var hasAnimatedEntrance = false
 
     init(title: String? = nil, prefersLargeTitle: Bool = true) {
         initialTitle = title
@@ -26,26 +25,6 @@ class BaseViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         configureBaseAppearance()
-    }
-
-    /// 页面进入时统一使用“淡入 + 轻微上移”动画（Reduce Motion 下跳过）。
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        guard !hasAnimatedEntrance else { return }
-        hasAnimatedEntrance = true
-        guard !UIAccessibility.isReduceMotionEnabled else { return }
-
-        contentView.alpha = 0
-        contentView.transform = CGAffineTransform(translationX: 0, y: 14)
-        UIView.animate(
-            withDuration: 0.3,
-            delay: 0,
-            options: [.curveEaseOut, .allowUserInteraction],
-            animations: { [weak self] in
-                self?.contentView.alpha = 1
-                self?.contentView.transform = .identity
-            }
-        )
     }
 
     /// 以全页方式展示统一的 Loading、Empty 或 Error 状态。

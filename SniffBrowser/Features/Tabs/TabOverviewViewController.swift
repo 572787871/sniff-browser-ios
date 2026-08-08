@@ -514,13 +514,8 @@ final class TabOverviewViewController: BaseViewController {
             ]
             navigationController?.navigationBar.tintColor = AppColors.privateBrowsingAccent
         } else {
-            navAppearance.configureWithDefaultBackground()
-            navAppearance.backgroundEffect = UIAccessibility.isReduceTransparencyEnabled
-                ? nil
-                : UIBlurEffect(style: .systemChromeMaterial)
-            navAppearance.backgroundColor = UIAccessibility.isReduceTransparencyEnabled
-                ? AppColors.chromeFallback
-                : AppColors.elevatedSurface
+            navAppearance.configureWithOpaqueBackground()
+            navAppearance.backgroundColor = AppColors.background
             navAppearance.shadowColor = AppColors.separator
             navAppearance.titleTextAttributes = [
                 .foregroundColor: AppColors.primaryText,

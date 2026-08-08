@@ -20,13 +20,8 @@ enum AppAppearance {
 
     private static func applyNavigationAppearance() {
         let navigationAppearance = UINavigationBarAppearance()
-        navigationAppearance.configureWithDefaultBackground()
-        navigationAppearance.backgroundEffect = UIAccessibility.isReduceTransparencyEnabled
-            ? nil
-            : UIBlurEffect(style: .systemChromeMaterial)
-        navigationAppearance.backgroundColor = UIAccessibility.isReduceTransparencyEnabled
-            ? AppColors.chromeFallback
-            : AppColors.elevatedSurface
+        navigationAppearance.configureWithOpaqueBackground()
+        navigationAppearance.backgroundColor = AppColors.background
         navigationAppearance.shadowColor = AppColors.separator
         navigationAppearance.titleTextAttributes = [
             .foregroundColor: AppColors.primaryText,
