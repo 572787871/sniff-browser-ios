@@ -33,6 +33,8 @@ final class BrowserViewController: UIViewController {
   let topChromeBackgroundView = UIView()
   let newTabView = NewTabView()
   let errorView = BrowserErrorView()
+  private let searchHistoryTableView = UITableView(frame: .zero, style: .plain)
+  private let searchHistoryEmptyLabel = UILabel()
   lazy var externalURLHandler = ExternalURLHandler(presenter: self)
 
   var observations: [NSKeyValueObservation] = []
@@ -45,6 +47,8 @@ final class BrowserViewController: UIViewController {
   var blockedElementCounterHandler: BlockedElementCounterHandler?
   private var lifecycleObservers: [NSObjectProtocol] = []
   private var activeResourceObservationToken: UUID?
+  private var searchHistoryItems: [HistoryItem] = []
+  private var isSearchHistoryVisible = false
 
   var activeTab: BrowserTab? {
     tabManager.selectedTab
@@ -126,6 +130,7 @@ final class BrowserViewController: UIViewController {
     super.viewWillAppear(animated)
     // 设置页修改新标签页选项后，回到浏览器时立即生效。
     newTabView.refreshContentPreferences()
+    updateBrowserChromeVisibility()
   }
 
   private func observeContentBlockerChanges() {
@@ -252,7 +257,13 @@ final class BrowserViewController: UIViewController {
     topChromeBackgroundView.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(topChromeBackgroundView)
     view.addSubview(addressBar)
+    configureSearchHistoryView()
+    view.addSubview(searchHistoryTableView)
     view.addSubview(toolbar)
+
+    addressBar.isHidden = true
+    topChromeBackgroundView.isHidden = true
+    searchHistoryTableView.isHidden = true
 
     NSLayoutConstraint.activate([
       contentView.topAnchor.constraint(
@@ -293,6 +304,21 @@ final class BrowserViewController: UIViewController {
         constant: -AppSpacing.md
       ),
 
+      searchHistoryTableView.topAnchor.constraint(
+        equalTo: addressBar.bottomAnchor,
+        constant: AppSpacing.xxs
+      ),
+      searchHistoryTableView.leadingAnchor.constraint(
+        equalTo: view.leadingAnchor
+      ),
+      searchHistoryTableView.trailingAnchor.constraint(
+        equalTo: view.trailingAnchor
+      ),
+      searchHistoryTableView.bottomAnchor.constraint(
+        equalTo: toolbar.topAnchor,
+        constant: -AppSpacing.xs
+      ),
+
       toolbar.leadingAnchor.constraint(
         equalTo: view.leadingAnchor,
         constant: AppSpacing.md
@@ -314,6 +340,97 @@ final class BrowserViewController: UIViewController {
     dismissEditingGesture.cancelsTouchesInView = false
     dismissEditingGesture.delegate = self
     contentView.addGestureRecognizer(dismissEditingGesture)
+  }
+
+  private func configureSearchHistoryView() {
+    searchHistoryTableView.translatesAutoresizingMaskIntoConstraints = false
+    searchHistoryTableView.backgroundColor = AppColors.background
+    searchHistoryTableView.separatorColor = AppColors.separator
+    searchHistoryTableView.separatorInset = UIEdgeInsets(
+      top: 0,
+      left: 72,
+      bottom: 0,
+      right: AppSpacing.lg
+    )
+    searchHistoryTableView.rowHeight = 72
+    searchHistoryTableView.estimatedRowHeight = 72
+    searchHistoryTableView.keyboardDismissMode = .interactive
+    searchHistoryTableView.showsVerticalScrollIndicator = false
+    searchHistoryTableView.register(
+      BrowserSearchHistoryCell.self,
+      forCellReuseIdentifier: BrowserSearchHistoryCell.reuseIdentifier
+    )
+    searchHistoryTableView.dataSource = self
+    searchHistoryTableView.delegate = self
+    searchHistoryTableView.accessibilityIdentifier = "browser.searchHistory"
+
+    searchHistoryEmptyLabel.textAlignment = .center
+    searchHistoryEmptyLabel.numberOfLines = 0
+    searchHistoryEmptyLabel.textColor = AppColors.secondaryText
+    searchHistoryEmptyLabel.font = AppTypography.body
+    searchHistoryEmptyLabel.adjustsFontForContentSizeCategory = true
+    searchHistoryTableView.backgroundView = searchHistoryEmptyLabel
+  }
+
+  private var isShowingNewTab: Bool {
+    !newTabView.isHidden && errorView.isHidden
+  }
+
+  private func updateBrowserChromeVisibility() {
+    let shouldShowAddressBar = !isShowingNewTab || addressBar.isEditing
+    addressBar.isHidden = !shouldShowAddressBar
+    topChromeBackgroundView.isHidden = !shouldShowAddressBar
+
+    if isShowingNewTab && addressBar.isEditing {
+      if !isSearchHistoryVisible {
+        showSearchHistory()
+      } else {
+        searchHistoryTableView.isHidden = false
+      }
+    } else if !isShowingNewTab || !addressBar.isEditing {
+      hideSearchHistory()
+    }
+  }
+
+  private func showSearchHistory() {
+    guard isShowingNewTab else { return }
+    isSearchHistoryVisible = true
+    reloadSearchHistory(matching: "")
+    searchHistoryTableView.isHidden = false
+  }
+
+  private func hideSearchHistory() {
+    isSearchHistoryVisible = false
+    searchHistoryTableView.isHidden = true
+  }
+
+  private func reloadSearchHistory(matching query: String) {
+    let allEntries = activeTab?.isPrivate == true
+      ? []
+      : ((try? historyService.allEntries()) ?? [])
+    let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    let matchingEntries: [HistoryItem]
+    if normalizedQuery.isEmpty {
+      matchingEntries = allEntries
+    } else {
+      matchingEntries = allEntries.filter { item in
+        item.title.localizedCaseInsensitiveContains(normalizedQuery)
+          || item.host.localizedCaseInsensitiveContains(normalizedQuery)
+          || item.url.absoluteString.localizedCaseInsensitiveContains(normalizedQuery)
+      }
+    }
+
+    searchHistoryItems = Array(matchingEntries.prefix(12))
+    if activeTab?.isPrivate == true {
+      searchHistoryEmptyLabel.text = "无痕模式不显示历史记录"
+    } else {
+      searchHistoryEmptyLabel.text = normalizedQuery.isEmpty
+        ? "暂无历史记录"
+        : "没有匹配的历史记录"
+    }
+    searchHistoryEmptyLabel.isHidden = !searchHistoryItems.isEmpty
+    searchHistoryTableView.reloadData()
+    searchHistoryTableView.isHidden = !isSearchHistoryVisible
   }
 
   /// The browser stays behind the persistent, transparent navigation bar.
@@ -463,6 +580,9 @@ final class BrowserViewController: UIViewController {
 
     bindActiveWebView(webView)
     newTabView.setPrivateMode(tab.isPrivate)
+    searchHistoryTableView.overrideUserInterfaceStyle = tab.isPrivate
+      ? .dark
+      : .unspecified
     applyChromeState(.expanded, animated: false)
     chromeScrollController.reset()
 
@@ -480,6 +600,7 @@ final class BrowserViewController: UIViewController {
       tabCount: tabManager.count
     )
     synchronizeActiveState()
+    updateBrowserChromeVisibility()
     view.setNeedsLayout()
   }
 
@@ -566,6 +687,7 @@ final class BrowserViewController: UIViewController {
       canGoForward: state.canGoForward,
       tabCount: tabManager.count
     )
+    updateBrowserChromeVisibility()
   }
 
   func applyPageTheme(
@@ -630,6 +752,8 @@ final class BrowserViewController: UIViewController {
     errorView.isHidden = true
     newTabView.isHidden = true
     webView.isHidden = false
+    hideSearchHistory()
+    updateBrowserChromeVisibility()
     applyChromeState(.expanded, animated: true)
     webView.load(URLRequest(url: url))
   }
@@ -703,6 +827,11 @@ extension BrowserViewController: AddressBarDelegate {
     navigate(to: text)
   }
 
+  func addressBar(_ addressBar: AddressBarView, didChangeText text: String) {
+    guard isSearchHistoryVisible else { return }
+    reloadSearchHistory(matching: text)
+  }
+
   func addressBarDidRequestReload(_ addressBar: AddressBarView) {
     if activeWebView?.isHidden != false {
       addressBar.beginEditing()
@@ -718,10 +847,14 @@ extension BrowserViewController: AddressBarDelegate {
   func addressBarDidBeginEditing(_ addressBar: AddressBarView) {
     chromeScrollController.reset()
     applyChromeState(.expanded, animated: true)
+    if isShowingNewTab {
+      showSearchHistory()
+    }
   }
 
   func addressBarDidEndEditing(_ addressBar: AddressBarView) {
     chromeScrollController.reset()
+    updateBrowserChromeVisibility()
   }
 }
 
@@ -729,10 +862,53 @@ extension BrowserViewController: NewTabViewDelegate {
   func newTabViewDidBeginEditing(_ view: NewTabView) {
     chromeScrollController.reset()
     applyChromeState(.expanded, animated: true)
+    guard view === newTabView, isShowingNewTab else { return }
+    addressBar.isHidden = false
+    topChromeBackgroundView.isHidden = false
+    addressBar.beginEditing()
   }
 
   func newTabView(_ view: NewTabView, didSubmit text: String) {
     navigate(to: text)
+  }
+}
+
+extension BrowserViewController: UITableViewDataSource, UITableViewDelegate {
+  func tableView(
+    _ tableView: UITableView,
+    numberOfRowsInSection section: Int
+  ) -> Int {
+    guard tableView === searchHistoryTableView else { return 0 }
+    return searchHistoryItems.count
+  }
+
+  func tableView(
+    _ tableView: UITableView,
+    cellForRowAt indexPath: IndexPath
+  ) -> UITableViewCell {
+    guard tableView === searchHistoryTableView,
+          let cell = tableView.dequeueReusableCell(
+            withIdentifier: BrowserSearchHistoryCell.reuseIdentifier,
+            for: indexPath
+          ) as? BrowserSearchHistoryCell,
+          searchHistoryItems.indices.contains(indexPath.row)
+    else {
+      return UITableViewCell()
+    }
+    cell.configure(with: searchHistoryItems[indexPath.row])
+    return cell
+  }
+
+  func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+    guard tableView === searchHistoryTableView,
+          searchHistoryItems.indices.contains(indexPath.row)
+    else {
+      return
+    }
+    let item = searchHistoryItems[indexPath.row]
+    tableView.deselectRow(at: indexPath, animated: true)
+    addressBar.setInput(item.url.absoluteString)
+    addressBar.submitInput()
   }
 }
 
@@ -791,5 +967,119 @@ extension BrowserViewController: BrowserToolbarDelegate {
     case .more:
       presentMoreMenu()
     }
+  }
+}
+
+private final class BrowserSearchHistoryCell: UITableViewCell {
+  static let reuseIdentifier = "BrowserSearchHistoryCell"
+
+  private let iconView = UIImageView(
+    image: UIImage(systemName: "clock.arrow.circlepath")
+  )
+  private let titleLabel = UILabel()
+  private let hostLabel = UILabel()
+  private let arrowView = UIImageView(
+    image: UIImage(systemName: "arrow.up.left")
+  )
+
+  override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+    super.init(style: style, reuseIdentifier: reuseIdentifier)
+    configure()
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    configure()
+  }
+
+  func configure(with item: HistoryItem) {
+    titleLabel.text = item.title
+    hostLabel.text = item.host
+    accessibilityLabel = "\(item.title)，\(item.host)"
+  }
+
+  private func configure() {
+    selectionStyle = .default
+    backgroundColor = .clear
+    selectedBackgroundView = UIView()
+    selectedBackgroundView?.backgroundColor = AppColors.accentFill
+
+    iconView.translatesAutoresizingMaskIntoConstraints = false
+    iconView.tintColor = AppColors.secondaryText
+    iconView.contentMode = .scaleAspectFit
+    iconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+      pointSize: 25,
+      weight: .regular
+    )
+    contentView.addSubview(iconView)
+
+    AppTypography.configure(titleLabel, style: .body)
+    titleLabel.textColor = AppColors.primaryText
+    titleLabel.numberOfLines = 1
+    titleLabel.lineBreakMode = .byTruncatingTail
+    titleLabel.translatesAutoresizingMaskIntoConstraints = false
+    contentView.addSubview(titleLabel)
+
+    AppTypography.configure(hostLabel, style: .subheadline)
+    hostLabel.textColor = AppColors.secondaryText
+    hostLabel.numberOfLines = 1
+    hostLabel.lineBreakMode = .byTruncatingMiddle
+    hostLabel.translatesAutoresizingMaskIntoConstraints = false
+    contentView.addSubview(hostLabel)
+
+    arrowView.translatesAutoresizingMaskIntoConstraints = false
+    arrowView.tintColor = AppColors.accent
+    arrowView.contentMode = .scaleAspectFit
+    arrowView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+      pointSize: 22,
+      weight: .medium
+    )
+    contentView.addSubview(arrowView)
+
+    NSLayoutConstraint.activate([
+      iconView.leadingAnchor.constraint(
+        equalTo: contentView.leadingAnchor,
+        constant: AppSpacing.xl
+      ),
+      iconView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+      iconView.widthAnchor.constraint(equalToConstant: 28),
+      iconView.heightAnchor.constraint(equalToConstant: 28),
+
+      titleLabel.leadingAnchor.constraint(
+        equalTo: iconView.trailingAnchor,
+        constant: AppSpacing.lg
+      ),
+      titleLabel.trailingAnchor.constraint(
+        equalTo: arrowView.leadingAnchor,
+        constant: -AppSpacing.sm
+      ),
+      titleLabel.topAnchor.constraint(
+        equalTo: contentView.topAnchor,
+        constant: AppSpacing.sm
+      ),
+
+      hostLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+      hostLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
+      hostLabel.topAnchor.constraint(
+        equalTo: titleLabel.bottomAnchor,
+        constant: AppSpacing.xxs
+      ),
+      hostLabel.bottomAnchor.constraint(
+        equalTo: contentView.bottomAnchor,
+        constant: -AppSpacing.sm
+      ),
+
+      arrowView.trailingAnchor.constraint(
+        equalTo: contentView.trailingAnchor,
+        constant: -AppSpacing.xl
+      ),
+      arrowView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+      arrowView.widthAnchor.constraint(equalToConstant: 28),
+      arrowView.heightAnchor.constraint(equalToConstant: 28),
+      contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 72),
+    ])
+
+    isAccessibilityElement = true
+    accessibilityTraits = .button
   }
 }

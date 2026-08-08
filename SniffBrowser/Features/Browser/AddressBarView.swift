@@ -10,6 +10,7 @@ struct AddressBarState: Equatable {
 @MainActor
 protocol AddressBarDelegate: AnyObject {
   func addressBar(_ addressBar: AddressBarView, didSubmit text: String)
+  func addressBar(_ addressBar: AddressBarView, didChangeText text: String)
   func addressBarDidRequestReload(_ addressBar: AddressBarView)
   func addressBarDidRequestStop(_ addressBar: AddressBarView)
   func addressBarDidBeginEditing(_ addressBar: AddressBarView)
@@ -82,6 +83,16 @@ final class AddressBarView: UIView {
   func beginEditing() {
     setCompact(false, animated: false)
     textField.becomeFirstResponder()
+  }
+
+  func setInput(_ input: String) {
+    textField.text = input
+    updateTrailingButton()
+  }
+
+  func submitInput() {
+    delegate?.addressBar(self, didSubmit: textField.text ?? "")
+    textField.resignFirstResponder()
   }
 
   func applyPageTheme(
@@ -337,23 +348,33 @@ final class AddressBarView: UIView {
   private func updateTrailingButton() {
     let isEditingWithText = textField.isFirstResponder
       && textField.text?.isEmpty == false
+    let isHomeSearch = state.url == nil && textField.isFirstResponder
     let symbol = isEditingWithText
       ? "xmark.circle.fill"
-      : (state.isLoading ? "xmark" : "arrow.clockwise")
+      : (isHomeSearch ? "xmark" : (state.isLoading ? "xmark" : "arrow.clockwise"))
     trailingButton.setImage(UIImage(systemName: symbol), for: .normal)
     trailingButton.accessibilityLabel = isEditingWithText
       ? "清除"
-      : (state.isLoading ? "停止载入" : "重新载入")
+      : (isHomeSearch ? "关闭搜索" : (state.isLoading ? "停止载入" : "重新载入"))
   }
 
   @objc private func textDidChange() {
     updateTrailingButton()
+    delegate?.addressBar(
+      self,
+      didChangeText: textField.text ?? ""
+    )
   }
 
   @objc private func trailingButtonPressed() {
     if textField.isFirstResponder, textField.text?.isEmpty == false {
       textField.text = ""
       updateTrailingButton()
+      delegate?.addressBar(self, didChangeText: "")
+      return
+    }
+    if state.url == nil, textField.isFirstResponder {
+      textField.resignFirstResponder()
       return
     }
     state.isLoading
@@ -382,8 +403,7 @@ extension AddressBarView: UITextFieldDelegate {
   }
 
   func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-    delegate?.addressBar(self, didSubmit: textField.text ?? "")
-    textField.resignFirstResponder()
+    submitInput()
     return true
   }
 }

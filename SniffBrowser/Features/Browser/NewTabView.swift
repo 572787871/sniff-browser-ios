@@ -9,6 +9,8 @@ protocol NewTabViewDelegate: AnyObject {
 final class NewTabView: UIView {
   weak var delegate: NewTabViewDelegate?
 
+  private let logoContainer = UIView()
+  private let logoView = NewTabLogoView()
   private let titleLabel = UILabel()
   private let privacyBadge = UILabel()
   private let welcomeLabel = UILabel()
@@ -41,7 +43,7 @@ final class NewTabView: UIView {
   }
 
   func focusSearch() {
-    textField.becomeFirstResponder()
+    delegate?.newTabViewDidBeginEditing(self)
   }
 
   func setPrivateMode(_ isPrivate: Bool) {
@@ -56,6 +58,7 @@ final class NewTabView: UIView {
       ? "无痕标签不会保存到浏览历史，下载和主动收藏的内容仍会保留。"
       : "从一次安静、专注的浏览开始"
     refreshContentPreferences()
+    logoView.setPrivateMode(isPrivate)
     accessibilityLabel = isPrivate
       ? "无痕浏览。无痕模式不会让你在网络上匿名。"
       : nil
@@ -84,6 +87,11 @@ final class NewTabView: UIView {
       .required,
       for: .horizontal
     )
+
+    logoContainer.translatesAutoresizingMaskIntoConstraints = false
+    logoView.translatesAutoresizingMaskIntoConstraints = false
+    logoView.accessibilityLabel = "嗅探浏览器图标"
+    logoContainer.addSubview(logoView)
 
     welcomeLabel.translatesAutoresizingMaskIntoConstraints = false
     welcomeLabel.text = "从一次安静、专注的浏览开始"
@@ -178,26 +186,24 @@ final class NewTabView: UIView {
     contentStack.axis = .vertical
     contentStack.alignment = .fill
     contentStack.spacing = AppSpacing.xs
+    contentStack.addArrangedSubview(logoContainer)
+    contentStack.setCustomSpacing(AppSpacing.sm, after: logoContainer)
     contentStack.addArrangedSubview(titleLabel)
+    contentStack.setCustomSpacing(AppSpacing.lg, after: titleLabel)
     privacyBadge.isHidden = true
     contentStack.addArrangedSubview(privacyBadge)
     contentStack.setCustomSpacing(AppSpacing.xxs, after: privacyBadge)
+    contentStack.addArrangedSubview(searchMaterial)
+    contentStack.setCustomSpacing(AppSpacing.lg, after: searchMaterial)
     contentStack.addArrangedSubview(welcomeLabel)
     contentStack.setCustomSpacing(AppSpacing.sm, after: welcomeLabel)
     contentStack.addArrangedSubview(dateLabel)
-    contentStack.setCustomSpacing(AppSpacing.xl, after: dateLabel)
-    contentStack.addArrangedSubview(searchMaterial)
     contentContainer.addSubview(contentStack)
 
     searchMaterial.contentView.addSubview(searchImageView)
     searchMaterial.contentView.addSubview(textField)
     searchMaterial.contentView.addSubview(submitButton)
 
-    let centerConstraint = contentStack.centerYAnchor.constraint(
-      equalTo: contentContainer.centerYAnchor,
-      constant: -AppSpacing.xxl
-    )
-    centerConstraint.priority = .defaultHigh
     let viewportHeightConstraint = contentContainer.heightAnchor.constraint(
       equalTo: scrollView.frameLayoutGuide.heightAnchor
     )
@@ -228,10 +234,9 @@ final class NewTabView: UIView {
       ),
       viewportHeightConstraint,
 
-      centerConstraint,
       contentStack.topAnchor.constraint(
-        greaterThanOrEqualTo: contentContainer.topAnchor,
-        constant: AppSpacing.xl
+        equalTo: contentContainer.topAnchor,
+        constant: AppSpacing.xxl
       ),
       contentStack.bottomAnchor.constraint(
         lessThanOrEqualTo: contentContainer.bottomAnchor,
@@ -245,6 +250,12 @@ final class NewTabView: UIView {
         equalTo: contentContainer.trailingAnchor,
         constant: -AppSpacing.xl
       ),
+
+      logoContainer.heightAnchor.constraint(equalToConstant: 72),
+      logoView.centerXAnchor.constraint(equalTo: logoContainer.centerXAnchor),
+      logoView.centerYAnchor.constraint(equalTo: logoContainer.centerYAnchor),
+      logoView.widthAnchor.constraint(equalToConstant: 72),
+      logoView.heightAnchor.constraint(equalTo: logoView.widthAnchor),
 
       searchMaterial.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
       searchImageView.leadingAnchor.constraint(
@@ -355,9 +366,13 @@ final class NewTabView: UIView {
 }
 
 extension NewTabView: UITextFieldDelegate {
+  func textFieldShouldBeginEditing(_ textField: UITextField) -> Bool {
+    delegate?.newTabViewDidBeginEditing(self)
+    return false
+  }
+
   func textFieldDidBeginEditing(_ textField: UITextField) {
     updateSubmitButton()
-    delegate?.newTabViewDidBeginEditing(self)
   }
 
   func textFieldDidEndEditing(_ textField: UITextField) {
@@ -367,5 +382,61 @@ extension NewTabView: UITextFieldDelegate {
   func textFieldShouldReturn(_ textField: UITextField) -> Bool {
     submit()
     return true
+  }
+}
+
+private final class NewTabLogoView: UIView {
+  private let symbolView = UIImageView(
+    image: UIImage(
+      systemName: "dot.radiowaves.left.and.right",
+      withConfiguration: UIImage.SymbolConfiguration(
+        pointSize: 32,
+        weight: .medium
+      )
+    )
+  )
+  private var isPrivateMode = false
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    configure()
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    configure()
+  }
+
+  func setPrivateMode(_ isPrivate: Bool) {
+    isPrivateMode = isPrivate
+    updateColors()
+  }
+
+  private func configure() {
+    layer.cornerRadius = 22
+    layer.cornerCurve = .continuous
+    clipsToBounds = true
+    isAccessibilityElement = true
+    accessibilityTraits = .image
+
+    symbolView.translatesAutoresizingMaskIntoConstraints = false
+    symbolView.contentMode = .scaleAspectFit
+    addSubview(symbolView)
+    NSLayoutConstraint.activate([
+      symbolView.centerXAnchor.constraint(equalTo: centerXAnchor),
+      symbolView.centerYAnchor.constraint(equalTo: centerYAnchor),
+      symbolView.widthAnchor.constraint(equalToConstant: 44),
+      symbolView.heightAnchor.constraint(equalToConstant: 44),
+    ])
+    updateColors()
+  }
+
+  private func updateColors() {
+    backgroundColor = isPrivateMode
+      ? AppColors.privateBrowsingSurface
+      : AppColors.accent
+    symbolView.tintColor = isPrivateMode
+      ? AppColors.privateBrowsingAccent
+      : .white
   }
 }
