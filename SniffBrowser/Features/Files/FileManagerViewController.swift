@@ -137,8 +137,23 @@ final class FileManagerViewController: BaseViewController {
         contentView.addSubview(categoryControl)
 
         tableView.backgroundColor = .clear
-        tableView.separatorStyle = .none
-        tableView.rowHeight = 104
+        tableView.separatorStyle = .singleLine
+        tableView.separatorColor = AppColors.separator
+        tableView.separatorInset = UIEdgeInsets(
+            top: 0,
+            left: AppSpacing.sm + AppMetrics.primaryButtonHeight + AppSpacing.sm,
+            bottom: 0,
+            right: AppSpacing.sm
+        )
+        tableView.sectionHeaderTopPadding = 0
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 80
+        tableView.contentInset = UIEdgeInsets(
+            top: 0,
+            left: 0,
+            bottom: AppSpacing.xl,
+            right: 0
+        )
         tableView.dataSource = self
         tableView.delegate = self
         tableView.register(FileLibraryCell.self, forCellReuseIdentifier: FileLibraryCell.reuseID)
@@ -150,7 +165,8 @@ final class FileManagerViewController: BaseViewController {
 
         NSLayoutConstraint.activate([
             categoryControl.topAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.topAnchor
+                equalTo: view.safeAreaLayoutGuide.topAnchor,
+                constant: 8
             ),
             categoryControl.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
             categoryControl.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
@@ -158,7 +174,10 @@ final class FileManagerViewController: BaseViewController {
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            emptyState.topAnchor.constraint(equalTo: categoryControl.bottomAnchor),
+            emptyState.topAnchor.constraint(
+                equalTo: categoryControl.bottomAnchor,
+                constant: AppSpacing.xs
+            ),
             emptyState.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             emptyState.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             emptyState.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
@@ -468,10 +487,10 @@ private final class FileLibraryCell: UITableViewCell {
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         selectionStyle = .none
-        backgroundColor = .clear
-        contentView.backgroundColor = AppColors.surface
-        contentView.layer.cornerRadius = AppRadius.card
-        contentView.layer.cornerCurve = .continuous
+
+        var background = UIBackgroundConfiguration.listGroupedCell()
+        background.backgroundColor = AppColors.surface
+        backgroundConfiguration = background
 
         thumbnailView.contentMode = .scaleAspectFill
         thumbnailView.clipsToBounds = true
@@ -492,13 +511,34 @@ private final class FileLibraryCell: UITableViewCell {
         contentView.addSubview(thumbnailView)
         contentView.addSubview(labels)
         NSLayoutConstraint.activate([
-            thumbnailView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
+            thumbnailView.leadingAnchor.constraint(
+                equalTo: contentView.leadingAnchor,
+                constant: AppSpacing.sm
+            ),
             thumbnailView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            thumbnailView.widthAnchor.constraint(equalToConstant: 72),
-            thumbnailView.heightAnchor.constraint(equalToConstant: 64),
-            labels.leadingAnchor.constraint(equalTo: thumbnailView.trailingAnchor, constant: 12),
-            labels.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
-            labels.centerYAnchor.constraint(equalTo: contentView.centerYAnchor)
+            thumbnailView.widthAnchor.constraint(
+                equalToConstant: AppMetrics.primaryButtonHeight
+            ),
+            thumbnailView.heightAnchor.constraint(
+                equalToConstant: AppMetrics.primaryButtonHeight
+            ),
+            labels.leadingAnchor.constraint(
+                equalTo: thumbnailView.trailingAnchor,
+                constant: AppSpacing.sm
+            ),
+            labels.trailingAnchor.constraint(
+                equalTo: contentView.trailingAnchor,
+                constant: -AppSpacing.sm
+            ),
+            labels.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            labels.topAnchor.constraint(
+                greaterThanOrEqualTo: contentView.topAnchor,
+                constant: AppSpacing.xs
+            ),
+            labels.bottomAnchor.constraint(
+                lessThanOrEqualTo: contentView.bottomAnchor,
+                constant: -AppSpacing.xs
+            ),
         ])
     }
 
