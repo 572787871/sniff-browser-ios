@@ -22,7 +22,8 @@ final class NavigationTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         using transitionContext: UIViewControllerContextTransitioning
     ) {
         guard let fromView = transitionContext.view(forKey: .from),
-              let toView = transitionContext.view(forKey: .to)
+              let toView = transitionContext.view(forKey: .to),
+              let toViewController = transitionContext.viewController(forKey: .to)
         else {
             transitionContext.completeTransition(false)
             return
@@ -36,7 +37,7 @@ final class NavigationTransitionAnimator: NSObject, UIViewControllerAnimatedTran
         switch operation {
         case .push:
             container.addSubview(toView)
-            toView.frame = transitionContext.finalFrame(for: toView)
+            toView.frame = transitionContext.finalFrame(for: toViewController)
             toView.alpha = reduceMotion ? 0 : 1
             toView.transform = reduceMotion
                 ? .identity
@@ -57,7 +58,7 @@ final class NavigationTransitionAnimator: NSObject, UIViewControllerAnimatedTran
             )
         case .pop:
             container.insertSubview(toView, belowSubview: fromView)
-            toView.frame = transitionContext.finalFrame(for: toView)
+            toView.frame = transitionContext.finalFrame(for: toViewController)
             toView.alpha = 1
             fromView.alpha = reduceMotion ? 0 : 1
             UIView.animate(
