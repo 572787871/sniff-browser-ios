@@ -25,7 +25,6 @@ final class ContentBlockingSettingsViewController: BaseViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        configureNavigationItems()
         configureTableView()
         observeChanges()
         ContentBlockerService.shared.loadIfNeeded()
@@ -73,27 +72,6 @@ final class ContentBlockingSettingsViewController: BaseViewController {
             tableView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
-    }
-
-    /// 顶部导航：左侧圆形返回按钮、居中标题（参考图：右上无按钮）。
-    private func configureNavigationItems() {
-        navigationItem.hidesBackButton = true
-        let backButton = UIButton(type: .custom)
-        backButton.setImage(
-            UIImage(named: "back_button")?.withRenderingMode(.alwaysOriginal),
-            for: .normal
-        )
-        backButton.imageView?.contentMode = .scaleAspectFit
-        backButton.clipsToBounds = false
-        backButton.frame = CGRect(x: 0, y: 0, width: 42, height: 42)
-        backButton.addAction(
-            UIAction { [weak self] _ in
-                self?.navigationController?.popViewController(animated: true)
-            },
-            for: .touchUpInside
-        )
-        backButton.accessibilityLabel = "返回"
-        navigationItem.leftBarButtonItem = UIBarButtonItem(customView: backButton)
     }
 
     private func observeChanges() {
