@@ -33,6 +33,8 @@ final class BrowserViewController: UIViewController {
   let topChromeBackgroundView = UIView()
   let newTabView = NewTabView()
   let errorView = BrowserErrorView()
+  private let quickLinksScrollView = UIScrollView()
+  private let quickLinksStack = UIStackView()
   private let searchHistoryTableView = UITableView(frame: .zero, style: .plain)
   private let searchHistoryEmptyLabel = UILabel()
   lazy var externalURLHandler = ExternalURLHandler(presenter: self)
@@ -49,6 +51,7 @@ final class BrowserViewController: UIViewController {
   private var activeResourceObservationToken: UUID?
   private var searchHistoryItems: [HistoryItem] = []
   private var isSearchHistoryVisible = false
+  private var quickLinksHeightConstraint: NSLayoutConstraint?
 
   var activeTab: BrowserTab? {
     tabManager.selectedTab
@@ -257,12 +260,15 @@ final class BrowserViewController: UIViewController {
     topChromeBackgroundView.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(topChromeBackgroundView)
     view.addSubview(addressBar)
+    configureQuickLinksView()
+    view.addSubview(quickLinksScrollView)
     configureSearchHistoryView()
     view.addSubview(searchHistoryTableView)
     view.addSubview(toolbar)
 
     addressBar.isHidden = true
     topChromeBackgroundView.isHidden = true
+    quickLinksScrollView.isHidden = true
     searchHistoryTableView.isHidden = true
 
     NSLayoutConstraint.activate([
@@ -304,8 +310,19 @@ final class BrowserViewController: UIViewController {
         constant: -AppSpacing.md
       ),
 
-      searchHistoryTableView.topAnchor.constraint(
+      quickLinksScrollView.topAnchor.constraint(
         equalTo: addressBar.bottomAnchor,
+        constant: AppSpacing.xxs
+      ),
+      quickLinksScrollView.leadingAnchor.constraint(
+        equalTo: view.leadingAnchor
+      ),
+      quickLinksScrollView.trailingAnchor.constraint(
+        equalTo: view.trailingAnchor
+      ),
+
+      searchHistoryTableView.topAnchor.constraint(
+        equalTo: quickLinksScrollView.bottomAnchor,
         constant: AppSpacing.xxs
       ),
       searchHistoryTableView.leadingAnchor.constraint(
@@ -340,6 +357,49 @@ final class BrowserViewController: UIViewController {
     dismissEditingGesture.cancelsTouchesInView = false
     dismissEditingGesture.delegate = self
     contentView.addGestureRecognizer(dismissEditingGesture)
+  }
+
+  private func configureQuickLinksView() {
+    quickLinksScrollView.translatesAutoresizingMaskIntoConstraints = false
+    quickLinksScrollView.backgroundColor = AppColors.background
+    quickLinksScrollView.showsHorizontalScrollIndicator = false
+    quickLinksScrollView.alwaysBounceHorizontal = true
+    quickLinksScrollView.directionalLayoutMargins = NSDirectionalEdgeInsets(
+      top: AppSpacing.xs,
+      leading: AppSpacing.md,
+      bottom: AppSpacing.xs,
+      trailing: AppSpacing.md
+    )
+
+    quickLinksStack.translatesAutoresizingMaskIntoConstraints = false
+    quickLinksStack.axis = .horizontal
+    quickLinksStack.alignment = .fill
+    quickLinksStack.spacing = AppSpacing.sm
+    quickLinksScrollView.addSubview(quickLinksStack)
+
+    let heightConstraint = quickLinksScrollView.heightAnchor
+      .constraint(equalToConstant: 0)
+    quickLinksHeightConstraint = heightConstraint
+    NSLayoutConstraint.activate([
+      quickLinksStack.topAnchor.constraint(
+        equalTo: quickLinksScrollView.contentLayoutGuide.topAnchor,
+        constant: AppSpacing.xs
+      ),
+      quickLinksStack.leadingAnchor.constraint(
+        equalTo: quickLinksScrollView.contentLayoutGuide.leadingAnchor,
+        constant: AppSpacing.md
+      ),
+      quickLinksStack.trailingAnchor.constraint(
+        equalTo: quickLinksScrollView.contentLayoutGuide.trailingAnchor,
+        constant: -AppSpacing.md
+      ),
+      quickLinksStack.bottomAnchor.constraint(
+        equalTo: quickLinksScrollView.contentLayoutGuide.bottomAnchor,
+        constant: -AppSpacing.xs
+      ),
+      quickLinksStack.heightAnchor.constraint(equalToConstant: 76),
+      heightConstraint,
+    ])
   }
 
   private func configureSearchHistoryView() {
@@ -381,27 +441,30 @@ final class BrowserViewController: UIViewController {
     addressBar.isHidden = !shouldShowAddressBar
     topChromeBackgroundView.isHidden = !shouldShowAddressBar
 
-    if isShowingNewTab && addressBar.isEditing {
+    if addressBar.isEditing {
       if !isSearchHistoryVisible {
         showSearchHistory()
       } else {
         searchHistoryTableView.isHidden = false
+        quickLinksScrollView.isHidden = false
       }
-    } else if !isShowingNewTab || !addressBar.isEditing {
+    } else {
       hideSearchHistory()
     }
   }
 
   private func showSearchHistory() {
-    guard isShowingNewTab else { return }
     isSearchHistoryVisible = true
     reloadSearchHistory(matching: "")
+    reloadQuickLinks()
     searchHistoryTableView.isHidden = false
   }
 
   private func hideSearchHistory() {
     isSearchHistoryVisible = false
     searchHistoryTableView.isHidden = true
+    quickLinksScrollView.isHidden = true
+    quickLinksHeightConstraint?.constant = 0
   }
 
   private func reloadSearchHistory(matching query: String) {
@@ -431,6 +494,92 @@ final class BrowserViewController: UIViewController {
     searchHistoryEmptyLabel.isHidden = !searchHistoryItems.isEmpty
     searchHistoryTableView.reloadData()
     searchHistoryTableView.isHidden = !isSearchHistoryVisible
+  }
+
+  private func reloadQuickLinks() {
+    quickLinksStack.arrangedSubviews.forEach { view in
+      quickLinksStack.removeArrangedSubview(view)
+      view.removeFromSuperview()
+    }
+
+    var links: [BrowserQuickLink] = []
+    var seenURLs = Set<URL>()
+    let favorites = (try? favoriteService.allFavorites()) ?? []
+    for favorite in favorites where seenURLs.insert(favorite.url).inserted {
+      links.append(
+        BrowserQuickLink(
+          title: favorite.title,
+          subtitle: favorite.host,
+          url: favorite.url,
+          symbolName: "star.fill"
+        )
+      )
+    }
+
+    if activeTab?.isPrivate != true {
+      let history = (try? historyService.allEntries()) ?? []
+      for item in history where seenURLs.insert(item.url).inserted {
+        links.append(
+          BrowserQuickLink(
+            title: item.title,
+            subtitle: item.host,
+            url: item.url,
+            symbolName: "clock.arrow.circlepath"
+          )
+        )
+      }
+    }
+
+    let visibleLinks = Array(links.prefix(8))
+    visibleLinks.forEach { link in
+      let button = makeQuickLinkButton(link)
+      quickLinksStack.addArrangedSubview(button)
+    }
+
+    let hasLinks = !visibleLinks.isEmpty
+    quickLinksHeightConstraint?.constant = hasLinks ? 92 : 0
+    quickLinksScrollView.isHidden = !hasLinks
+  }
+
+  private func makeQuickLinkButton(_ link: BrowserQuickLink) -> UIButton {
+    var configuration = UIButton.Configuration.tinted()
+    configuration.image = UIImage(systemName: link.symbolName)
+    configuration.title = link.title
+    configuration.subtitle = link.subtitle
+    configuration.imagePlacement = .top
+    configuration.imagePadding = AppSpacing.xxs
+    configuration.cornerStyle = .medium
+    configuration.baseForegroundColor = AppColors.primaryText
+    configuration.baseBackgroundColor = AppColors.surface
+    configuration.contentInsets = NSDirectionalEdgeInsets(
+      top: AppSpacing.xs,
+      leading: AppSpacing.sm,
+      bottom: AppSpacing.xs,
+      trailing: AppSpacing.sm
+    )
+
+    let button = UIButton(configuration: configuration)
+    button.translatesAutoresizingMaskIntoConstraints = false
+    button.titleLabel?.numberOfLines = 2
+    button.titleLabel?.lineBreakMode = .byTruncatingTail
+    button.accessibilityLabel = "\(link.title)，\(link.subtitle)"
+    button.accessibilityHint = "打开快捷网页"
+    button.addAction(
+      UIAction { [weak self] _ in
+        self?.openQuickLink(link)
+      },
+      for: .touchUpInside
+    )
+    NSLayoutConstraint.activate([
+      button.widthAnchor.constraint(equalToConstant: 104),
+      button.heightAnchor.constraint(equalToConstant: 76),
+    ])
+    return button
+  }
+
+  private func openQuickLink(_ link: BrowserQuickLink) {
+    addressBar.setInput(link.url.absoluteString)
+    addressBar.submitInput()
   }
 
   /// The browser stays behind the persistent, transparent navigation bar.
@@ -847,9 +996,7 @@ extension BrowserViewController: AddressBarDelegate {
   func addressBarDidBeginEditing(_ addressBar: AddressBarView) {
     chromeScrollController.reset()
     applyChromeState(.expanded, animated: true)
-    if isShowingNewTab {
-      showSearchHistory()
-    }
+    showSearchHistory()
   }
 
   func addressBarDidEndEditing(_ addressBar: AddressBarView) {
@@ -1082,4 +1229,11 @@ private final class BrowserSearchHistoryCell: UITableViewCell {
     isAccessibilityElement = true
     accessibilityTraits = .button
   }
+}
+
+private struct BrowserQuickLink {
+  let title: String
+  let subtitle: String
+  let url: URL
+  let symbolName: String
 }

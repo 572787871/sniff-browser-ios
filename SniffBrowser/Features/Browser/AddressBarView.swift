@@ -320,7 +320,11 @@ final class AddressBarView: UIView {
   private func updateSecurityIcon(for url: URL?) {
     let symbol: String
     let color: UIColor
-    if isPrivateMode {
+    if textField.isFirstResponder, !isPrivateMode {
+      symbol = "plus"
+      color = pageThemeForegroundStyle?.color ?? AppColors.accent
+      securityImageView.accessibilityLabel = "正在编辑地址与搜索"
+    } else if isPrivateMode {
       symbol = "eye.slash.fill"
       color = AppColors.privateBrowsingAccent
       securityImageView.accessibilityLabel = "无痕浏览模式"
@@ -346,16 +350,16 @@ final class AddressBarView: UIView {
   }
 
   private func updateTrailingButton() {
+    let isEditing = textField.isFirstResponder
     let isEditingWithText = textField.isFirstResponder
       && textField.text?.isEmpty == false
-    let isHomeSearch = state.url == nil && textField.isFirstResponder
     let symbol = isEditingWithText
       ? "xmark.circle.fill"
-      : (isHomeSearch ? "xmark" : (state.isLoading ? "xmark" : "arrow.clockwise"))
+      : (isEditing ? "xmark" : (state.isLoading ? "xmark" : "arrow.clockwise"))
     trailingButton.setImage(UIImage(systemName: symbol), for: .normal)
     trailingButton.accessibilityLabel = isEditingWithText
       ? "清除"
-      : (isHomeSearch ? "关闭搜索" : (state.isLoading ? "停止载入" : "重新载入"))
+      : (isEditing ? "关闭搜索" : (state.isLoading ? "停止载入" : "重新载入"))
   }
 
   @objc private func textDidChange() {
@@ -373,7 +377,7 @@ final class AddressBarView: UIView {
       delegate?.addressBar(self, didChangeText: "")
       return
     }
-    if state.url == nil, textField.isFirstResponder {
+    if textField.isFirstResponder {
       textField.resignFirstResponder()
       return
     }
@@ -389,6 +393,7 @@ extension AddressBarView: UITextFieldDelegate {
     state.isEditing = true
     textField.text = state.url?.absoluteString
     textField.textAlignment = .left
+    updateSecurityIcon(for: state.url)
     updateTrailingButton()
     DispatchQueue.main.async { textField.selectAll(nil) }
     delegate?.addressBarDidBeginEditing(self)
@@ -398,6 +403,7 @@ extension AddressBarView: UITextFieldDelegate {
     state.isEditing = false
     textField.text = displayText(for: state.url)
     textField.textAlignment = state.url == nil ? .center : .left
+    updateSecurityIcon(for: state.url)
     updateTrailingButton()
     delegate?.addressBarDidEndEditing(self)
   }
