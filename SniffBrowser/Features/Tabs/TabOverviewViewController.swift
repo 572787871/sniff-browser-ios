@@ -504,14 +504,18 @@ final class TabOverviewViewController: BaseViewController {
             modeControl.setTitleTextAttributes(
                 [
                     .font: AppTypography.subheadline,
-                    .foregroundColor: UIColor.white.withAlphaComponent(0.62)
+                    .foregroundColor: AppColors.secondaryText.resolvedColor(
+                        with: UITraitCollection(userInterfaceStyle: .dark)
+                    )
                 ],
                 for: .normal
             )
             modeControl.setTitleTextAttributes(
                 [
                     .font: AppTypography.subheadline,
-                    .foregroundColor: UIColor.white
+                    .foregroundColor: AppColors.primaryText.resolvedColor(
+                        with: UITraitCollection(userInterfaceStyle: .dark)
+                    )
                 ],
                 for: .selected
             )
@@ -540,11 +544,15 @@ final class TabOverviewViewController: BaseViewController {
             navAppearance.backgroundColor = AppColors.privateBrowsingBackground
             navAppearance.shadowColor = .clear
             navAppearance.titleTextAttributes = [
-                .foregroundColor: UIColor.white.withAlphaComponent(0.88),
+                .foregroundColor: AppColors.primaryText.resolvedColor(
+                    with: UITraitCollection(userInterfaceStyle: .dark)
+                ),
                 .font: AppTypography.headline
             ]
             navAppearance.largeTitleTextAttributes = [
-                .foregroundColor: UIColor.white.withAlphaComponent(0.88),
+                .foregroundColor: AppColors.primaryText.resolvedColor(
+                    with: UITraitCollection(userInterfaceStyle: .dark)
+                ),
                 .font: AppTypography.largeTitle
             ]
             navigationController?.navigationBar.tintColor = AppColors.privateBrowsingAccent

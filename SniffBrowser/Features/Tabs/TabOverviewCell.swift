@@ -7,7 +7,7 @@ final class TabOverviewCell: UICollectionViewCell {
     var onClose: (() -> Void)?
 
     private static let selectedBorderColor = UIColor { traits in
-        UIColor.systemBlue
+        AppColors.accent
             .resolvedColor(with: traits)
             .withAlphaComponent(traits.userInterfaceStyle == .dark ? 0.42 : 0.28)
     }
@@ -72,6 +72,9 @@ final class TabOverviewCell: UICollectionViewCell {
         titleLabel.text = item.displayTitle
         domainLabel.text = item.displayDomain
         previewImageView.image = item.thumbnail
+        placeholderImageView.image = item.url == nil
+            ? AppIconography.scanApertureImage(pointSize: 26, weight: 2)
+            : UIImage(systemName: "globe.americas.fill")
         placeholderImageView.isHidden = item.thumbnail != nil
         displaysSelection = item.isSelected
         displaysPrivateMode = item.isPrivate
@@ -107,25 +110,28 @@ final class TabOverviewCell: UICollectionViewCell {
             ? AppColors.privateBrowsingSurface
             : AppColors.surface
         previewContainer.backgroundColor = displaysPrivateMode
-            ? UIColor(
-                red: 0.10,
-                green: 0.105,
-                blue: 0.125,
-                alpha: 1
-            )
+            ? AppColors.privateBrowsingBackground
             : AppColors.tertiarySurface
         titleLabel.textColor = displaysPrivateMode
-            ? UIColor.white.withAlphaComponent(0.96)
+            ? AppColors.primaryText.resolvedColor(
+                with: UITraitCollection(userInterfaceStyle: .dark)
+            )
             : AppColors.primaryText
         domainLabel.textColor = displaysPrivateMode
-            ? UIColor.white.withAlphaComponent(0.58)
+            ? AppColors.secondaryText.resolvedColor(
+                with: UITraitCollection(userInterfaceStyle: .dark)
+            )
             : AppColors.secondaryText
         placeholderImageView.tintColor = displaysPrivateMode
-            ? UIColor.white.withAlphaComponent(0.42)
+            ? AppColors.tertiaryText.resolvedColor(
+                with: UITraitCollection(userInterfaceStyle: .dark)
+            )
             : AppColors.tertiaryText
         closeButton.configuration?.baseForegroundColor = displaysPrivateMode
-            ? UIColor.white.withAlphaComponent(0.78)
-            : UIColor.secondaryLabel
+            ? AppColors.secondaryText.resolvedColor(
+                with: UITraitCollection(userInterfaceStyle: .dark)
+            )
+            : AppColors.secondaryText
         selectedBadge.tintColor = displaysPrivateMode
             ? AppColors.privateBrowsingAccent
             : AppColors.accent
@@ -181,7 +187,7 @@ final class TabOverviewCell: UICollectionViewCell {
                 weight: .medium
             )
         )
-        closeConfiguration.baseForegroundColor = UIColor.secondaryLabel
+        closeConfiguration.baseForegroundColor = AppColors.secondaryText
         closeConfiguration.contentInsets = .zero
         closeButton.configuration = closeConfiguration
         closeButton.backgroundColor = .clear
@@ -312,8 +318,8 @@ final class TabOverviewCell: UICollectionViewCell {
     @objc
     private func closeButtonTouchDown() {
         let pressColor: UIColor = displaysPrivateMode
-            ? UIColor.white.withAlphaComponent(0.15)
-            : UIColor.systemGray5.withAlphaComponent(0.5)
+            ? AppColors.privateBrowsingAccent.withAlphaComponent(0.15)
+            : AppColors.accentFill
         closeButton.backgroundColor = pressColor
         UIView.animate(
             withDuration: 0.12,

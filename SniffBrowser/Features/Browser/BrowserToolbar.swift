@@ -21,13 +21,13 @@ final class BrowserToolbar: UIView {
   weak var toolbarDelegate: BrowserToolbarDelegate?
 
   private let materialView = AppMaterialView(
-    style: .systemUltraThinMaterial,
+    style: .systemThinMaterial,
     fallbackColor: AppColors.chromeFallback
   )
   private let backButton = BrowserChromeButton(symbol: "chevron.backward")
   private let forwardButton = BrowserChromeButton(symbol: "chevron.forward")
   private let sniffButton = BrowserChromeButton(
-    symbol: "dot.radiowaves.left.and.right"
+    symbol: "circle"
   )
   private let tabsButton = BrowserChromeButton(symbol: "square")
   private let moreButton = BrowserChromeButton(symbol: "ellipsis")
@@ -97,6 +97,7 @@ final class BrowserToolbar: UIView {
         ? AppColors.privateBrowsingAccent
         : AppColors.accent
     }
+    updateSniffButtonBackground()
   }
 
   func setPrivateMode(_ isPrivate: Bool) {
@@ -132,8 +133,8 @@ final class BrowserToolbar: UIView {
     translatesAutoresizingMaskIntoConstraints = false
     materialView.translatesAutoresizingMaskIntoConstraints = false
     materialView.layer.cornerCurve = .continuous
-    materialView.layer.cornerRadius = 20
-    materialView.layer.borderWidth = 0.75
+    materialView.layer.cornerRadius = AppRadius.card
+    materialView.layer.borderWidth = 1
     materialView.clipsToBounds = true
     addSubview(materialView)
     AppShadow.browserChrome.apply(to: self)
@@ -168,6 +169,17 @@ final class BrowserToolbar: UIView {
         for: .touchUpInside
       )
     }
+    sniffButton.setImage(
+      AppIconography.scanApertureImage(
+        pointSize: AppMetrics.toolbarIconSize,
+        weight: 1.8
+      ),
+      for: .normal
+    )
+    sniffButton.backgroundColor = AppColors.accentFill
+    sniffButton.layer.cornerRadius = AppMetrics.minimumTapSize / 2
+    sniffButton.layer.cornerCurve = .continuous
+    sniffButton.clipsToBounds = true
     sniffButton.tintColor = AppColors.accent
 
     tabCountLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -252,13 +264,17 @@ final class BrowserToolbar: UIView {
   private func updateResolvedColors() {
     materialView.layer.borderColor = (
       isPrivateMode
-        ? UIColor.white.withAlphaComponent(0.16)
+        ? AppColors.privateBrowsingAccent.withAlphaComponent(0.20)
         : AppColors.browserChromeBorder.resolvedColor(with: traitCollection)
     ).cgColor
     materialView.contentView.backgroundColor = isPrivateMode
       ? AppColors.privateBrowsingSurface.withAlphaComponent(0.68)
       : AppColors.browserChromeTint
-    let primary = isPrivateMode ? UIColor.white : AppColors.primaryText
+    let primary = isPrivateMode
+      ? AppColors.primaryText.resolvedColor(
+        with: UITraitCollection(userInterfaceStyle: .dark)
+      )
+      : AppColors.primaryText
     [backButton, forwardButton, tabsButton, moreButton].forEach {
       $0.tintColor = primary
     }
@@ -276,7 +292,26 @@ final class BrowserToolbar: UIView {
     scanIndicator.color = isPrivateMode
       ? AppColors.privateBrowsingAccent
       : AppColors.accent
+    resourceBadgeLabel.backgroundColor = isPrivateMode
+      ? AppColors.privateBrowsingAccent
+      : AppColors.accent
+    updateSniffButtonBackground()
     layer.shadowColor = UIColor.black.cgColor
+  }
+
+  private func updateSniffButtonBackground() {
+    switch snifferActivationState {
+    case .disabled, .stopping:
+      sniffButton.backgroundColor = isPrivateMode
+        ? AppColors.privateBrowsingSurface
+        : AppColors.secondarySurface
+    case .failed:
+      sniffButton.backgroundColor = AppColors.danger.withAlphaComponent(0.12)
+    case .starting, .active:
+      sniffButton.backgroundColor = isPrivateMode
+        ? AppColors.privateBrowsingAccent.withAlphaComponent(0.18)
+        : AppColors.accentFill
+    }
   }
 }
 

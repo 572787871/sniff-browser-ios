@@ -8,6 +8,7 @@ enum AppAppearance {
     /// 在 App 启动时调用一次，统一系统导航组件的基础外观。
     static func configure() {
         applyNavigationAppearance()
+        applyControlAppearance()
         guard transparencyObserver == nil else { return }
         transparencyObserver = NotificationCenter.default.addObserver(
             forName: UIAccessibility.reduceTransparencyStatusDidChangeNotification,
@@ -42,6 +43,25 @@ enum AppAppearance {
         UIRefreshControl.appearance().tintColor = AppColors.secondaryText
     }
 
+    private static func applyControlAppearance() {
+        UISwitch.appearance().onTintColor = AppColors.accent
+        UISegmentedControl.appearance().selectedSegmentTintColor = AppColors.accentFill
+        UISegmentedControl.appearance().setTitleTextAttributes(
+            [.foregroundColor: AppColors.secondaryText],
+            for: .normal
+        )
+        UISegmentedControl.appearance().setTitleTextAttributes(
+            [.foregroundColor: AppColors.primaryText],
+            for: .selected
+        )
+        UISearchBar.appearance().tintColor = AppColors.accent
+        UITextField.appearance().tintColor = AppColors.accent
+        UIProgressView.appearance().progressTintColor = AppColors.accent
+        UIProgressView.appearance().trackTintColor = AppColors.progressTrack
+        UIPageControl.appearance().currentPageIndicatorTintColor = AppColors.accent
+        UIPageControl.appearance().pageIndicatorTintColor = AppColors.tertiarySurface
+    }
+
     /// 统一处理 Reduce Motion。减少动态效果时使用短淡入淡出，不产生位移或弹性。
     static func animate(
         duration: TimeInterval = standardAnimationDuration,
@@ -68,6 +88,47 @@ enum AppAppearance {
             animations: animations,
             completion: completion
         )
+    }
+}
+
+/// 品牌图形集中在代码中生成，避免把页面图标锁死在单一分辨率位图里。
+@MainActor
+enum AppIconography {
+    static func scanApertureImage(
+        pointSize: CGFloat,
+        weight: CGFloat = 2.2
+    ) -> UIImage {
+        let size = CGSize(width: pointSize, height: pointSize)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let image = renderer.image { context in
+            let cgContext = context.cgContext
+            cgContext.setStrokeColor(UIColor.black.cgColor)
+            cgContext.setFillColor(UIColor.black.cgColor)
+            cgContext.setLineWidth(weight)
+            cgContext.setLineCap(.round)
+
+            let center = CGPoint(x: pointSize * 0.43, y: pointSize * 0.5)
+            for radius in [pointSize * 0.17, pointSize * 0.29, pointSize * 0.41] {
+                cgContext.addArc(
+                    center: center,
+                    radius: radius,
+                    startAngle: -0.58 * CGFloat.pi,
+                    endAngle: 0.58 * CGFloat.pi,
+                    clockwise: false
+                )
+                cgContext.strokePath()
+            }
+
+            let dotRadius = max(1.6, pointSize * 0.075)
+            let dotCenter = CGPoint(x: pointSize * 0.44, y: pointSize * 0.5)
+            cgContext.fillEllipse(in: CGRect(
+                x: dotCenter.x - dotRadius,
+                y: dotCenter.y - dotRadius,
+                width: dotRadius * 2,
+                height: dotRadius * 2
+            ))
+        }
+        return image.withRenderingMode(.alwaysTemplate)
     }
 }
 

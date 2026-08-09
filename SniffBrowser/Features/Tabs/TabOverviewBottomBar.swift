@@ -173,7 +173,9 @@ final class TabOverviewBottomBar: UIView {
             ? AppColors.privateBrowsingAccent
             : AppColors.accent
         tabCountLabel.textColor = isPrivate
-            ? UIColor.white.withAlphaComponent(0.88)
+            ? AppColors.primaryText.resolvedColor(
+                with: UITraitCollection(userInterfaceStyle: .dark)
+            )
             : AppColors.primaryText
         newTabButton.accessibilityLabel = mode.isPrivate
             ? "新建无痕标签页"
@@ -184,7 +186,7 @@ final class TabOverviewBottomBar: UIView {
     private func updateResolvedColors() {
         materialView.layer.borderColor = (
             mode.isPrivate
-                ? UIColor.white.withAlphaComponent(0.14)
+                ? AppColors.privateBrowsingAccent.withAlphaComponent(0.20)
                 : AppColors.separator.resolvedColor(with: traitCollection)
         ).cgColor
     }

@@ -22,7 +22,7 @@ final class AddressBarView: UIView {
   weak var delegate: AddressBarDelegate?
 
   private let materialView = AppMaterialView(
-    style: .systemUltraThinMaterial,
+    style: .systemThinMaterial,
     fallbackColor: AppColors.chromeFallback
   )
   private let securityImageView = UIImageView()
@@ -156,7 +156,7 @@ final class AddressBarView: UIView {
     materialView.layer.cornerRadius = AppRadius.input
     materialView.layer.cornerCurve = .continuous
     materialView.clipsToBounds = true
-    materialView.layer.borderWidth = 0.75
+    materialView.layer.borderWidth = 1
     addSubview(materialView)
     AppShadow.browserChrome.apply(to: self)
 
@@ -293,7 +293,9 @@ final class AddressBarView: UIView {
 
   private func updateResolvedColors() {
     let foreground = isPrivateMode
-      ? UIColor.white
+      ? AppColors.primaryText.resolvedColor(
+        with: UITraitCollection(userInterfaceStyle: .dark)
+      )
       : pageThemeForegroundStyle?.color
     let borderColor = foreground?.withAlphaComponent(
       UIAccessibility.isDarkerSystemColorsEnabled ? 0.28 : 0.16
@@ -322,8 +324,10 @@ final class AddressBarView: UIView {
         attributes: [.foregroundColor: foreground.withAlphaComponent(0.58)]
       )
     } else {
-      textField.attributedPlaceholder = nil
-      textField.placeholder = "搜索或输入网址"
+      textField.attributedPlaceholder = NSAttributedString(
+        string: "搜索或输入网址",
+        attributes: [.foregroundColor: AppColors.placeholderText]
+      )
     }
     layer.shadowColor = UIColor.black.cgColor
   }

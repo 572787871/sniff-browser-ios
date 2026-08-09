@@ -184,13 +184,13 @@ extension SettingsViewController: UITableViewDataSource, UITableViewDelegate {
         case .searchEngine, .newTabBehavior, .appearance:
             return AppColors.accent
         case .contentBlocking, .websitePermissions:
-            return .systemIndigo
+            return AppColors.accent
         case .clearBrowsingData:
             return AppColors.danger
         case .downloadPreferences, .storage:
-            return .systemGreen
+            return AppColors.accent
         case .privacyPolicy, .terms, .openSourceLicenses, .about:
-            return .systemGray
+            return AppColors.secondaryText
         }
     }
 
@@ -445,7 +445,10 @@ final class GlassSummaryCell: UITableViewCell {
 
         materialView.layer.cornerRadius = AppRadius.control
         materialView.layer.cornerCurve = .continuous
+        materialView.layer.borderWidth = AppMetrics.separatorHeight
+        materialView.layer.borderColor = AppColors.separator.cgColor
         materialView.clipsToBounds = true
+        materialView.contentView.backgroundColor = AppColors.surface.withAlphaComponent(0.90)
         materialView.isUserInteractionEnabled = false
         materialView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(materialView)

@@ -26,6 +26,32 @@ final class DesignSystemTests: XCTestCase {
     XCTAssertEqual(alpha(of: dark), 0.88, accuracy: 0.01)
   }
 
+  func testPaperSignalAccentUsesWarmHue() {
+    let accent = AppColors.accent.resolvedColor(
+      with: UITraitCollection(userInterfaceStyle: .light)
+    )
+    var red: CGFloat = 0
+    var green: CGFloat = 0
+    var blue: CGFloat = 0
+    var alpha: CGFloat = 0
+
+    XCTAssertTrue(
+      accent.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+    )
+    XCTAssertGreaterThan(red, green)
+    XCTAssertGreaterThan(green, blue)
+    XCTAssertEqual(alpha, 1, accuracy: 0.01)
+  }
+
+  @MainActor
+  func testScanApertureBrandImageRendersAtRequestedSize() {
+    let image = AppIconography.scanApertureImage(pointSize: 24)
+
+    XCTAssertEqual(image.size.width, 24, accuracy: 0.01)
+    XCTAssertEqual(image.size.height, 24, accuracy: 0.01)
+    XCTAssertEqual(image.renderingMode, .alwaysTemplate)
+  }
+
   func testSpacingUsesFourPointBaseline() {
     let values = [
       AppSpacing.xxs,

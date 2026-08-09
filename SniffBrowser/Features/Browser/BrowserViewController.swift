@@ -1052,6 +1052,19 @@ extension BrowserViewController: NewTabViewDelegate {
   func newTabView(_ view: NewTabView, didSubmit text: String) {
     navigate(to: text)
   }
+
+  func newTabView(_ view: NewTabView, didSelect action: NewTabQuickAction) {
+    switch action {
+    case .downloads:
+      router?.showDownloads()
+    case .files:
+      router?.showFiles()
+    case .favorites:
+      router?.showFavorites()
+    case .history:
+      router?.showHistory()
+    }
+  }
 }
 
 extension BrowserViewController: UITableViewDataSource, UITableViewDelegate {

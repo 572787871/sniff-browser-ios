@@ -146,7 +146,7 @@ final class ResourceSnifferViewController: BaseViewController {
             return .init(
                 symbolName: activationState == .failed
                     ? "exclamationmark.arrow.triangle.2.circlepath"
-                    : "dot.radiowaves.left.and.right",
+                    : "viewfinder",
                 title: activationState == .failed ? "无法开启资源嗅探" : "资源嗅探已停止",
                 message: errorMessage ?? "开启后仅识别当前标签页；其他标签不会受到影响。",
                 actionTitle: "开启资源嗅探",
@@ -157,7 +157,7 @@ final class ResourceSnifferViewController: BaseViewController {
         return .init(
             symbolName: isFailed
                 ? "exclamationmark.arrow.triangle.2.circlepath"
-                : "dot.radiowaves.left.and.right",
+                : "viewfinder",
             title: isFailed ? "资源扫描失败" : "暂未发现资源",
             message: isFailed
                 ? (errorMessage ?? "请确认网页已完成加载后重新扫描。")
@@ -408,7 +408,7 @@ final class ResourceSnifferViewController: BaseViewController {
                 ? "\(filter.title) \(count)"
                 : filter.title
             button.configuration?.baseForegroundColor =
-                filter == selectedFilter ? .white : AppColors.primaryText
+                filter == selectedFilter ? AppColors.accentContent : AppColors.primaryText
             button.configuration?.baseBackgroundColor =
                 filter == selectedFilter
                 ? AppColors.accent
@@ -796,7 +796,7 @@ private final class ResourcePageSummaryView: UIView {
 
     private let iconContainer = UIView()
     private let iconView = UIImageView(
-        image: UIImage(systemName: "globe.asia.australia.fill")
+        image: AppIconography.scanApertureImage(pointSize: 22, weight: 1.8)
     )
     private let titleLabel = UILabel()
     private let domainLabel = UILabel()
@@ -853,6 +853,8 @@ private final class ResourcePageSummaryView: UIView {
         backgroundColor = AppColors.surface
         layer.cornerRadius = AppRadius.card
         layer.cornerCurve = .continuous
+        layer.borderWidth = AppMetrics.separatorHeight
+        layer.borderColor = AppColors.separator.cgColor
         layoutMargins = UIEdgeInsets(top: 14, left: 16, bottom: 14, right: 12)
 
         iconContainer.translatesAutoresizingMaskIntoConstraints = false

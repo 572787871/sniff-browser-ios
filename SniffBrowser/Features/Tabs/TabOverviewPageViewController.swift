@@ -193,7 +193,9 @@ final class TabOverviewPageViewController: UIViewController {
 
         privacyNoticeLabel.translatesAutoresizingMaskIntoConstraints = false
         AppTypography.configure(privacyNoticeLabel, style: .caption1)
-        privacyNoticeLabel.textColor = UIColor.white.withAlphaComponent(0.78)
+        privacyNoticeLabel.textColor = AppColors.secondaryText.resolvedColor(
+            with: UITraitCollection(userInterfaceStyle: .dark)
+        )
         privacyNoticeLabel.numberOfLines = 2
         privacyNoticeLabel.text =
             "无痕标签不会保存到浏览历史，下载和主动收藏的内容仍会保留。"

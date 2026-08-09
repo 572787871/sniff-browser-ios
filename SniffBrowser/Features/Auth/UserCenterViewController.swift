@@ -305,7 +305,10 @@ private final class UserProfileHeaderView: UIView {
 
         cardView.layer.cornerRadius = AppRadius.card
         cardView.layer.cornerCurve = .continuous
+        cardView.layer.borderWidth = AppMetrics.separatorHeight
+        cardView.layer.borderColor = AppColors.separator.cgColor
         cardView.clipsToBounds = true
+        cardView.contentView.backgroundColor = AppColors.surface.withAlphaComponent(0.90)
         cardView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(cardView)
 
@@ -476,6 +479,8 @@ private final class UserSummaryCard: UIControl {
         backgroundColor = AppColors.tertiarySurface
         layer.cornerRadius = AppRadius.control
         layer.cornerCurve = .continuous
+        layer.borderWidth = AppMetrics.separatorHeight
+        layer.borderColor = AppColors.separator.cgColor
         isAccessibilityElement = true
         accessibilityLabel = "\(titleLabel.text ?? "")，\(valueLabel.text ?? "0")"
         accessibilityTraits = .button

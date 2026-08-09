@@ -105,9 +105,9 @@ final class ResourceListCell: UITableViewCell {
         metadataLabel.text = metadata.joined(separator: " · ")
         domainLabel.text = resource.canonicalURL.host
             ?? resource.sourcePageURL?.host
-        typeIconView.image = UIImage(
-            systemName: symbolName(for: resource.resourceType)
-        )
+        typeIconView.image = resource.resourceType == .hls
+            ? AppIconography.scanApertureImage(pointSize: 23, weight: 1.9)
+            : UIImage(systemName: symbolName(for: resource.resourceType))
         typeIconView.backgroundColor = AppColors.accentFill
         let thumbnailURL = resource.resourceType == .image
             ? resource.canonicalURL
@@ -232,6 +232,8 @@ final class ResourceListCell: UITableViewCell {
         cardView.backgroundColor = AppColors.surface
         cardView.layer.cornerRadius = AppRadius.card
         cardView.layer.cornerCurve = .continuous
+        cardView.layer.borderWidth = AppMetrics.separatorHeight
+        cardView.layer.borderColor = AppColors.separator.cgColor
         cardView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(cardView)
 
@@ -335,7 +337,7 @@ final class ResourceListCell: UITableViewCell {
         switch type {
         case .video: return "film"
         case .audio: return "waveform"
-        case .hls: return "dot.radiowaves.left.and.right"
+        case .hls: return "viewfinder"
         case .image: return "photo"
         case .document: return "doc.text"
         case .subtitle: return "captions.bubble"
