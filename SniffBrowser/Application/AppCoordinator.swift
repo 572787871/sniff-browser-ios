@@ -67,6 +67,7 @@ final class AppCoordinator: NSObject, BrowserRouting {
     browser.router = self
     browserViewController = browser
     navigationController.setViewControllers([browser], animated: false)
+    navigationController.navigationBar.isUserInteractionEnabled = false
     window.rootViewController = navigationController
     window.makeKeyAndVisible()
     Task { [downloadCenter] in
@@ -307,6 +308,9 @@ extension AppCoordinator: UINavigationControllerDelegate {
         .font: AppTypography.largeTitle,
       ]
     }
+    // 浏览器根页的地址栏会延伸到透明导航栏下方。导航栏没有按钮时必须
+    // 让触摸继续命中下面的地址栏/网页；进入独立页面后恢复导航栏交互。
+    navigationController.navigationBar.isUserInteractionEnabled = !isBrowser
     navigationController.navigationBar.standardAppearance = appearance
     navigationController.navigationBar.compactAppearance = appearance
     navigationController.navigationBar.scrollEdgeAppearance = appearance

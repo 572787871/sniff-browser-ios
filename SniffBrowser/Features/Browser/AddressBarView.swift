@@ -132,8 +132,10 @@ final class AddressBarView: UIView {
       )
       self.layer.shadowOpacity = compact ? 0.04 : AppShadow.floating.opacity
     }
-    securityImageView.isUserInteractionEnabled = !compact
-    trailingButton.isUserInteractionEnabled = !compact
+    // 收缩时图标只作为视觉元素隐藏；地址栏本身仍要保留可触摸区域，
+    // 点击收缩后的地址栏可以恢复编辑状态。
+    securityImageView.isUserInteractionEnabled = true
+    trailingButton.isUserInteractionEnabled = true
     guard animated else {
       changes()
       return
@@ -157,6 +159,14 @@ final class AddressBarView: UIView {
     materialView.layer.borderWidth = 0.5
     addSubview(materialView)
     AppShadow.floating.apply(to: self)
+
+    let editingGesture = UITapGestureRecognizer(
+      target: self,
+      action: #selector(addressBarTapped)
+    )
+    editingGesture.cancelsTouchesInView = false
+    editingGesture.delegate = self
+    addGestureRecognizer(editingGesture)
 
     securityImageView.translatesAutoresizingMaskIntoConstraints = false
     securityImageView.tintColor = AppColors.secondaryText
@@ -212,7 +222,7 @@ final class AddressBarView: UIView {
     materialView.contentView.addSubview(progressView)
 
     NSLayoutConstraint.activate([
-      heightAnchor.constraint(greaterThanOrEqualToConstant: AppMetrics.addressBarHeight),
+      heightAnchor.constraint(equalToConstant: AppMetrics.addressBarHeight),
       materialView.topAnchor.constraint(equalTo: topAnchor),
       materialView.leadingAnchor.constraint(equalTo: leadingAnchor),
       materialView.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -387,9 +397,28 @@ final class AddressBarView: UIView {
       ? delegate?.addressBarDidRequestStop(self)
       : delegate?.addressBarDidRequestReload(self)
   }
+
+  @objc private func addressBarTapped() {
+    guard !textField.isFirstResponder else { return }
+    beginEditing()
+  }
 }
 
-extension AddressBarView: UITextFieldDelegate {
+extension AddressBarView: UITextFieldDelegate, UIGestureRecognizerDelegate {
+  func gestureRecognizer(
+    _ gestureRecognizer: UIGestureRecognizer,
+    shouldReceive touch: UITouch
+  ) -> Bool {
+    var candidate: UIView? = touch.view
+    while let view = candidate, view !== self {
+      if view is UIControl {
+        return false
+      }
+      candidate = view.superview
+    }
+    return true
+  }
+
   func textFieldDidBeginEditing(_ textField: UITextField) {
     setCompact(false, animated: false)
     state.isEditing = true

@@ -50,6 +50,7 @@ final class BrowserViewController: UIViewController {
   private var lifecycleObservers: [NSObjectProtocol] = []
   private var activeResourceObservationToken: UUID?
   private var searchHistoryItems: [HistoryItem] = []
+  private var searchHistoryQuery = ""
   private var isSearchHistoryVisible = false
   private var isSearchSuggestionsPinned = false
   private var quickLinksHeightConstraint: NSLayoutConstraint?
@@ -467,6 +468,7 @@ final class BrowserViewController: UIViewController {
   private func hideSearchHistory() {
     isSearchHistoryVisible = false
     isSearchSuggestionsPinned = false
+    searchHistoryQuery = ""
     searchHistoryTableView.isHidden = true
     quickLinksScrollView.isHidden = true
     quickLinksHeightConstraint?.constant = 0
@@ -987,6 +989,7 @@ extension BrowserViewController: AddressBarDelegate {
 
   func addressBar(_ addressBar: AddressBarView, didChangeText text: String) {
     guard isSearchHistoryVisible else { return }
+    searchHistoryQuery = text
     reloadSearchHistory(matching: text)
   }
 
@@ -1009,6 +1012,7 @@ extension BrowserViewController: AddressBarDelegate {
   func addressBarDidBeginEditing(_ addressBar: AddressBarView) {
     chromeScrollController.reset()
     applyChromeState(.expanded, animated: true)
+    searchHistoryQuery = ""
     showSearchHistory()
   }
 
@@ -1089,6 +1093,47 @@ extension BrowserViewController: UITableViewDataSource, UITableViewDelegate {
     addressBar.setInput(item.url.absoluteString)
     addressBar.submitInput()
   }
+
+  func tableView(
+    _ tableView: UITableView,
+    trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+  ) -> UISwipeActionsConfiguration? {
+    guard tableView === searchHistoryTableView,
+          searchHistoryItems.indices.contains(indexPath.row)
+    else {
+      return nil
+    }
+
+    let item = searchHistoryItems[indexPath.row]
+    let deleteAction = UIContextualAction(
+      style: .destructive,
+      title: "删除"
+    ) { [weak self] _, _, completion in
+      guard let self else {
+        completion(false)
+        return
+      }
+
+      do {
+        guard try self.historyService.removeEntry(id: item.id) != nil else {
+          completion(false)
+          return
+        }
+        self.reloadSearchHistory(matching: self.searchHistoryQuery)
+        self.reloadQuickLinks()
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        completion(true)
+      } catch {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        completion(false)
+      }
+    }
+    deleteAction.image = UIImage(systemName: "trash")
+
+    let configuration = UISwipeActionsConfiguration(actions: [deleteAction])
+    configuration.performsFirstActionWithFullSwipe = false
+    return configuration
+  }
 }
 
 extension BrowserViewController: UIGestureRecognizerDelegate {
@@ -1099,6 +1144,9 @@ extension BrowserViewController: UIGestureRecognizerDelegate {
     var candidate: UIView? = touch.view
     while let view = candidate, view !== contentView {
       if view is UIControl || view is UITextField {
+        return false
+      }
+      if view is WKWebView {
         return false
       }
       candidate = view.superview
