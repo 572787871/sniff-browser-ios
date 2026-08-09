@@ -259,7 +259,7 @@ final class TabOverviewViewController: BaseViewController {
     }
 
     private func configureBackground() {
-        privacyTintView.backgroundColor = AppColors.privateBrowsingBackground
+        privacyTintView.backgroundColor = AppColors.background
         privacyTintView.isUserInteractionEnabled = false
         privacyTintView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(privacyTintView)
@@ -497,88 +497,43 @@ final class TabOverviewViewController: BaseViewController {
         let mode = pagingState.selectedMode
         modeControl.selectedSegmentIndex = mode.rawValue
         bottomBar.mode = mode
-        if mode.isPrivate {
-            modeControl.backgroundColor = AppColors.privateBrowsingSurface
-            modeControl.selectedSegmentTintColor =
-                AppColors.privateBrowsingAccent.withAlphaComponent(0.28)
-            modeControl.setTitleTextAttributes(
-                [
-                    .font: AppTypography.subheadline,
-                    .foregroundColor: AppColors.secondaryText.resolvedColor(
-                        with: UITraitCollection(userInterfaceStyle: .dark)
-                    )
-                ],
-                for: .normal
-            )
-            modeControl.setTitleTextAttributes(
-                [
-                    .font: AppTypography.subheadline,
-                    .foregroundColor: AppColors.primaryText.resolvedColor(
-                        with: UITraitCollection(userInterfaceStyle: .dark)
-                    )
-                ],
-                for: .selected
-            )
-        } else {
-            modeControl.backgroundColor = nil
-            modeControl.selectedSegmentTintColor = AppColors.elevatedSurface
-            modeControl.setTitleTextAttributes(
-                [
-                    .font: AppTypography.subheadline,
-                    .foregroundColor: AppColors.secondaryText
-                ],
-                for: .normal
-            )
-            modeControl.setTitleTextAttributes(
-                [
-                    .font: AppTypography.subheadline,
-                    .foregroundColor: AppColors.primaryText
-                ],
-                for: .selected
-            )
-        }
-        // Update navigation bar appearance to match mode
+        modeControl.backgroundColor = nil
+        modeControl.selectedSegmentTintColor = AppColors.elevatedSurface
+        modeControl.setTitleTextAttributes(
+            [
+                .font: AppTypography.subheadline,
+                .foregroundColor: AppColors.secondaryText
+            ],
+            for: .normal
+        )
+        modeControl.setTitleTextAttributes(
+            [
+                .font: AppTypography.subheadline,
+                .foregroundColor: AppColors.primaryText
+            ],
+            for: .selected
+        )
+
         let navAppearance = UINavigationBarAppearance()
-        if mode.isPrivate {
-            navAppearance.configureWithOpaqueBackground()
-            navAppearance.backgroundColor = AppColors.privateBrowsingBackground
-            navAppearance.shadowColor = .clear
-            navAppearance.titleTextAttributes = [
-                .foregroundColor: AppColors.primaryText.resolvedColor(
-                    with: UITraitCollection(userInterfaceStyle: .dark)
-                ),
-                .font: AppTypography.headline
-            ]
-            navAppearance.largeTitleTextAttributes = [
-                .foregroundColor: AppColors.primaryText.resolvedColor(
-                    with: UITraitCollection(userInterfaceStyle: .dark)
-                ),
-                .font: AppTypography.largeTitle
-            ]
-            navigationController?.navigationBar.tintColor = AppColors.privateBrowsingAccent
-        } else {
-            navAppearance.configureWithOpaqueBackground()
-            navAppearance.backgroundColor = AppColors.background
-            navAppearance.shadowColor = AppColors.separator
-            navAppearance.titleTextAttributes = [
-                .foregroundColor: AppColors.primaryText,
-                .font: AppTypography.headline
-            ]
-            navAppearance.largeTitleTextAttributes = [
-                .foregroundColor: AppColors.primaryText,
-                .font: AppTypography.largeTitle
-            ]
-            navigationController?.navigationBar.tintColor = AppColors.accent
-        }
+        navAppearance.configureWithOpaqueBackground()
+        navAppearance.backgroundColor = AppColors.background
+        navAppearance.shadowColor = AppColors.separator
+        navAppearance.titleTextAttributes = [
+            .foregroundColor: AppColors.primaryText,
+            .font: AppTypography.headline
+        ]
+        navAppearance.largeTitleTextAttributes = [
+            .foregroundColor: AppColors.primaryText,
+            .font: AppTypography.largeTitle
+        ]
+        navigationController?.navigationBar.tintColor = AppColors.accent
         navigationController?.navigationBar.standardAppearance = navAppearance
         navigationController?.navigationBar.compactAppearance = navAppearance
         navigationController?.navigationBar.scrollEdgeAppearance = navAppearance
         updateBottomBarTabCount()
         let changes = {
-            self.privacyTintView.alpha = mode.isPrivate ? 1 : 0
-            self.contentView.backgroundColor = mode.isPrivate
-                ? AppColors.privateBrowsingBackground
-                : .clear
+            self.privacyTintView.alpha = 0
+            self.contentView.backgroundColor = .clear
         }
         if animated {
             AppAppearance.animate(animations: changes)

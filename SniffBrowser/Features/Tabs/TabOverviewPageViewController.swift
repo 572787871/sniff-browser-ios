@@ -125,10 +125,8 @@ final class TabOverviewPageViewController: UIViewController {
     }
 
     private func configureView() {
-        overrideUserInterfaceStyle = mode.isPrivate ? .dark : .unspecified
-        view.backgroundColor = mode.isPrivate
-            ? AppColors.privateBrowsingBackground
-            : .clear
+        overrideUserInterfaceStyle = .unspecified
+        view.backgroundColor = .clear
         view.clipsToBounds = true
 
         collectionView.backgroundColor = .clear
@@ -177,14 +175,13 @@ final class TabOverviewPageViewController: UIViewController {
 
     private func configurePrivacyNotice() {
         privacyNoticeView.translatesAutoresizingMaskIntoConstraints = false
-        privacyNoticeView.backgroundColor =
-            AppColors.privateBrowsingSurface.withAlphaComponent(0.82)
+        privacyNoticeView.backgroundColor = AppColors.surface
         privacyNoticeView.layer.cornerRadius = AppRadius.control
         privacyNoticeView.layer.cornerCurve = .continuous
         view.addSubview(privacyNoticeView)
 
         privacyNoticeIcon.translatesAutoresizingMaskIntoConstraints = false
-        privacyNoticeIcon.tintColor = AppColors.privateBrowsingAccent
+        privacyNoticeIcon.tintColor = AppColors.accent
         privacyNoticeIcon.contentMode = .scaleAspectFit
         privacyNoticeIcon.preferredSymbolConfiguration =
             UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)
@@ -193,9 +190,7 @@ final class TabOverviewPageViewController: UIViewController {
 
         privacyNoticeLabel.translatesAutoresizingMaskIntoConstraints = false
         AppTypography.configure(privacyNoticeLabel, style: .caption1)
-        privacyNoticeLabel.textColor = AppColors.secondaryText.resolvedColor(
-            with: UITraitCollection(userInterfaceStyle: .dark)
-        )
+        privacyNoticeLabel.textColor = AppColors.secondaryText
         privacyNoticeLabel.numberOfLines = 2
         privacyNoticeLabel.text =
             "无痕标签不会保存到浏览历史，下载和主动收藏的内容仍会保留。"

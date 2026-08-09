@@ -158,25 +158,12 @@ final class TabOverviewBottomBar: UIView {
     }
 
     private func updateMode() {
-        let isPrivate = mode.isPrivate
-        overrideUserInterfaceStyle = isPrivate ? .dark : .unspecified
-        materialView.contentView.backgroundColor = isPrivate
-            ? AppColors.privateBrowsingSurface.withAlphaComponent(0.72)
-            : .clear
-        newTabButton.configuration?.baseForegroundColor = isPrivate
-            ? AppColors.privateBrowsingAccent
-            : AppColors.accent
-        newTabButton.configuration?.baseBackgroundColor = isPrivate
-            ? AppColors.privateBrowsingAccent.withAlphaComponent(0.18)
-            : AppColors.accentFill
-        doneButton.configuration?.baseForegroundColor = isPrivate
-            ? AppColors.privateBrowsingAccent
-            : AppColors.accent
-        tabCountLabel.textColor = isPrivate
-            ? AppColors.primaryText.resolvedColor(
-                with: UITraitCollection(userInterfaceStyle: .dark)
-            )
-            : AppColors.primaryText
+        overrideUserInterfaceStyle = .unspecified
+        materialView.contentView.backgroundColor = .clear
+        newTabButton.configuration?.baseForegroundColor = AppColors.accent
+        newTabButton.configuration?.baseBackgroundColor = AppColors.accentFill
+        doneButton.configuration?.baseForegroundColor = AppColors.accent
+        tabCountLabel.textColor = AppColors.primaryText
         newTabButton.accessibilityLabel = mode.isPrivate
             ? "新建无痕标签页"
             : "新建普通标签页"
@@ -184,11 +171,9 @@ final class TabOverviewBottomBar: UIView {
     }
 
     private func updateResolvedColors() {
-        materialView.layer.borderColor = (
-            mode.isPrivate
-                ? AppColors.privateBrowsingAccent.withAlphaComponent(0.20)
-                : AppColors.separator.resolvedColor(with: traitCollection)
-        ).cgColor
+        materialView.layer.borderColor = AppColors.separator
+            .resolvedColor(with: traitCollection)
+            .cgColor
     }
 
     private func registerForEnvironmentChanges() {

@@ -142,13 +142,19 @@ final class NewTabView: UIView {
     welcomeLabel.numberOfLines = 3
     welcomeLabel.adjustsFontForContentSizeCategory = true
     welcomeLabel.accessibilityIdentifier = "newTab.description"
+    welcomeLabel.setContentCompressionResistancePriority(.required, for: .vertical)
 
     headerContainer.addSubview(logoContainer)
     headerContainer.addSubview(titleLabel)
     headerContainer.addSubview(welcomeLabel)
 
+    let preferredHeaderHeight = headerContainer.heightAnchor.constraint(
+      equalToConstant: 88
+    )
+    preferredHeaderHeight.priority = UILayoutPriority(999)
     NSLayoutConstraint.activate([
       headerContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 88),
+      preferredHeaderHeight,
       logoContainer.leadingAnchor.constraint(equalTo: headerContainer.leadingAnchor),
       logoContainer.topAnchor.constraint(equalTo: headerContainer.topAnchor),
       logoContainer.widthAnchor.constraint(equalToConstant: 56),

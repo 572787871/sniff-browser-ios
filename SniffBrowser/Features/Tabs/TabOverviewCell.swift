@@ -24,7 +24,6 @@ final class TabOverviewCell: UICollectionViewCell {
     private let titleLabel = UILabel()
     private let domainLabel = UILabel()
     private var displaysSelection = false
-    private var displaysPrivateMode = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -60,7 +59,6 @@ final class TabOverviewCell: UICollectionViewCell {
         onClose = nil
         previewImageView.image = nil
         displaysSelection = false
-        displaysPrivateMode = false
         previewContainer.alpha = 1
         contentView.alpha = 1
         contentView.transform = .identity
@@ -77,7 +75,6 @@ final class TabOverviewCell: UICollectionViewCell {
             : UIImage(systemName: "globe.americas.fill")
         placeholderImageView.isHidden = item.thumbnail != nil
         displaysSelection = item.isSelected
-        displaysPrivateMode = item.isPrivate
         selectedBadge.isHidden = !item.isSelected
         updateResolvedColors()
 
@@ -106,51 +103,22 @@ final class TabOverviewCell: UICollectionViewCell {
     }
 
     func updateResolvedColors() {
-        contentView.backgroundColor = displaysPrivateMode
-            ? AppColors.privateBrowsingSurface
-            : AppColors.surface
-        previewContainer.backgroundColor = displaysPrivateMode
-            ? AppColors.privateBrowsingBackground
-            : AppColors.tertiarySurface
-        titleLabel.textColor = displaysPrivateMode
-            ? AppColors.primaryText.resolvedColor(
-                with: UITraitCollection(userInterfaceStyle: .dark)
-            )
-            : AppColors.primaryText
-        domainLabel.textColor = displaysPrivateMode
-            ? AppColors.secondaryText.resolvedColor(
-                with: UITraitCollection(userInterfaceStyle: .dark)
-            )
-            : AppColors.secondaryText
-        placeholderImageView.tintColor = displaysPrivateMode
-            ? AppColors.tertiaryText.resolvedColor(
-                with: UITraitCollection(userInterfaceStyle: .dark)
-            )
-            : AppColors.tertiaryText
-        closeButton.configuration?.baseForegroundColor = displaysPrivateMode
-            ? AppColors.secondaryText.resolvedColor(
-                with: UITraitCollection(userInterfaceStyle: .dark)
-            )
-            : AppColors.secondaryText
-        selectedBadge.tintColor = displaysPrivateMode
-            ? AppColors.privateBrowsingAccent
-            : AppColors.accent
-        selectedBadge.backgroundColor = displaysPrivateMode
-            ? AppColors.privateBrowsingSurface
-            : AppColors.surface
+        contentView.backgroundColor = AppColors.surface
+        previewContainer.backgroundColor = AppColors.tertiarySurface
+        titleLabel.textColor = AppColors.primaryText
+        domainLabel.textColor = AppColors.secondaryText
+        placeholderImageView.tintColor = AppColors.tertiaryText
+        closeButton.configuration?.baseForegroundColor = AppColors.secondaryText
+        selectedBadge.tintColor = AppColors.accent
+        selectedBadge.backgroundColor = AppColors.surface
         contentView.layer.borderWidth = displaysSelection
             ? 1
             : AppMetrics.separatorHeight
-        if displaysSelection, displaysPrivateMode {
-            contentView.layer.borderColor =
-                AppColors.privateBrowsingAccent.withAlphaComponent(0.48).cgColor
-        } else {
-            contentView.layer.borderColor = (
-                displaysSelection ? Self.selectedBorderColor : AppColors.separator
-            )
-            .resolvedColor(with: traitCollection)
-            .cgColor
-        }
+        contentView.layer.borderColor = (
+            displaysSelection ? Self.selectedBorderColor : AppColors.separator
+        )
+        .resolvedColor(with: traitCollection)
+        .cgColor
     }
 
     private func configureView() {
@@ -317,10 +285,7 @@ final class TabOverviewCell: UICollectionViewCell {
 
     @objc
     private func closeButtonTouchDown() {
-        let pressColor: UIColor = displaysPrivateMode
-            ? AppColors.privateBrowsingAccent.withAlphaComponent(0.15)
-            : AppColors.accentFill
-        closeButton.backgroundColor = pressColor
+        closeButton.backgroundColor = AppColors.accentFill
         UIView.animate(
             withDuration: 0.12,
             delay: 0,

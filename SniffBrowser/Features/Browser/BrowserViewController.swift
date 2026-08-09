@@ -37,6 +37,7 @@ final class BrowserViewController: UIViewController {
   let topChromeBackgroundView = UIView()
   let newTabView = NewTabView()
   let errorView = BrowserErrorView()
+  private let searchOverlayBackgroundView = UIView()
   private let quickLinksScrollView = UIScrollView()
   private let quickLinksStack = UIStackView()
   private let searchHistoryTableView = UITableView(frame: .zero, style: .plain)
@@ -267,6 +268,10 @@ final class BrowserViewController: UIViewController {
     topChromeBackgroundView.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(topChromeBackgroundView)
     view.addSubview(addressBar)
+    searchOverlayBackgroundView.backgroundColor = AppColors.browserCanvas
+    searchOverlayBackgroundView.isUserInteractionEnabled = false
+    searchOverlayBackgroundView.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(searchOverlayBackgroundView)
     configureQuickLinksView()
     view.addSubview(quickLinksScrollView)
     configureSearchHistoryView()
@@ -275,6 +280,7 @@ final class BrowserViewController: UIViewController {
 
     addressBar.isHidden = true
     topChromeBackgroundView.isHidden = true
+    searchOverlayBackgroundView.isHidden = true
     quickLinksScrollView.isHidden = true
     searchHistoryTableView.isHidden = true
 
@@ -314,6 +320,19 @@ final class BrowserViewController: UIViewController {
       addressBar.trailingAnchor.constraint(
         equalTo: view.trailingAnchor,
         constant: -AppSpacing.md
+      ),
+
+      searchOverlayBackgroundView.topAnchor.constraint(
+        equalTo: addressBar.bottomAnchor
+      ),
+      searchOverlayBackgroundView.leadingAnchor.constraint(
+        equalTo: view.leadingAnchor
+      ),
+      searchOverlayBackgroundView.trailingAnchor.constraint(
+        equalTo: view.trailingAnchor
+      ),
+      searchOverlayBackgroundView.bottomAnchor.constraint(
+        equalTo: view.bottomAnchor
       ),
 
       quickLinksScrollView.topAnchor.constraint(
@@ -442,6 +461,10 @@ final class BrowserViewController: UIViewController {
     !newTabView.isHidden && errorView.isHidden
   }
 
+  private var isSearchOverlayActive: Bool {
+    isSearchHistoryVisible || isSearchSuggestionsPinned
+  }
+
   private func updateBrowserChromeVisibility() {
     let shouldShowAddressBar =
       !isShowingNewTab || addressBar.isEditing || isSearchSuggestionsPinned
@@ -468,6 +491,8 @@ final class BrowserViewController: UIViewController {
   ) {
     searchSuggestionContext = context
     isSearchHistoryVisible = true
+    searchOverlayBackgroundView.isHidden = false
+    applyPageTheme(activeTab?.pageThemeColor, animated: false)
     let initialQuery = BrowserSearchSuggestionPolicy.initialHistoryQuery(
       for: context,
       title: viewModel.state.title,
@@ -484,9 +509,11 @@ final class BrowserViewController: UIViewController {
     isSearchHistoryVisible = false
     isSearchSuggestionsPinned = false
     searchHistoryQuery = ""
+    searchOverlayBackgroundView.isHidden = true
     searchHistoryTableView.isHidden = true
     quickLinksScrollView.isHidden = true
     quickLinksHeightConstraint?.constant = 0
+    applyPageTheme(activeTab?.pageThemeColor, animated: false)
   }
 
   private func reloadSearchHistory(matching query: String) {
@@ -670,6 +697,9 @@ final class BrowserViewController: UIViewController {
   func configureWebView(_ webView: WKWebView) {
     webView.navigationDelegate = self
     webView.uiDelegate = self
+    webView.backgroundColor = AppColors.background
+    webView.scrollView.backgroundColor = AppColors.background
+    webView.underPageBackgroundColor = AppColors.background
     webView.allowsBackForwardNavigationGestures = true
     webView.allowsLinkPreview = true
     webView.scrollView.keyboardDismissMode = .interactive
@@ -863,18 +893,23 @@ final class BrowserViewController: UIViewController {
     animated: Bool
   ) {
     let isPrivate = activeTab?.isPrivate == true
-    let foregroundStyle = color.map {
+    let detectedForegroundStyle = color.map {
       ContrastColorResolver.foregroundStyle(for: $0)
     }
+    let foregroundStyle = isSearchOverlayActive
+      ? nil
+      : detectedForegroundStyle
     pageChromeForegroundStyle = foregroundStyle
-    let resolvedBackground = color?.uiColor ?? AppColors.background
+    let resolvedBackground = isSearchOverlayActive
+      ? AppColors.browserCanvas
+      : (color?.uiColor ?? AppColors.background)
 
     let changes = {
       self.view.backgroundColor = resolvedBackground
       self.topChromeBackgroundView.backgroundColor = resolvedBackground
       self.addressBar.setPrivateMode(isPrivate)
       self.addressBar.applyPageTheme(
-        isPrivate ? nil : color,
+        isPrivate || self.isSearchOverlayActive ? nil : color,
         foregroundStyle: foregroundStyle
       )
       self.toolbar.setPrivateMode(false)
@@ -899,7 +934,7 @@ final class BrowserViewController: UIViewController {
     }
     tab.updatePageThemeColor(nil)
     if webView === activeWebView {
-      applyPageTheme(nil, animated: true)
+      applyPageTheme(nil, animated: false)
     }
   }
 
@@ -915,6 +950,8 @@ final class BrowserViewController: UIViewController {
     guard let tab = activeTab, let webView = tab.webView else { return }
     lastRequestedURLs[tab.id] = url
     lastFailedURLs[tab.id] = nil
+    resetPageTheme(for: webView)
+    view.endEditing(true)
     errorView.isHidden = true
     newTabView.isHidden = true
     webView.isHidden = false
