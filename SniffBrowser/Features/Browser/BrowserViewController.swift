@@ -325,8 +325,7 @@ final class BrowserViewController: UIViewController {
       ),
 
       searchHistoryTableView.topAnchor.constraint(
-        equalTo: quickLinksScrollView.bottomAnchor,
-        constant: AppSpacing.xxs
+        equalTo: quickLinksScrollView.bottomAnchor
       ),
       searchHistoryTableView.leadingAnchor.constraint(
         equalTo: view.leadingAnchor
