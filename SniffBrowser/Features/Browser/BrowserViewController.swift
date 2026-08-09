@@ -51,6 +51,7 @@ final class BrowserViewController: UIViewController {
   private var activeResourceObservationToken: UUID?
   private var searchHistoryItems: [HistoryItem] = []
   private var searchHistoryQuery = ""
+  private var searchSuggestionContext = BrowserSearchSuggestionContext.webPage
   private var isSearchHistoryVisible = false
   private var isSearchSuggestionsPinned = false
   private var quickLinksHeightConstraint: NSLayoutConstraint?
@@ -447,7 +448,9 @@ final class BrowserViewController: UIViewController {
 
     if addressBar.isEditing || isSearchSuggestionsPinned {
       if !isSearchHistoryVisible {
-        showSearchHistory()
+        showSearchHistory(
+          for: isShowingNewTab ? .newTab : .webPage
+        )
       } else {
         searchHistoryTableView.isHidden = false
         quickLinksScrollView.isHidden =
@@ -458,9 +461,18 @@ final class BrowserViewController: UIViewController {
     }
   }
 
-  private func showSearchHistory() {
+  private func showSearchHistory(
+    for context: BrowserSearchSuggestionContext
+  ) {
+    searchSuggestionContext = context
     isSearchHistoryVisible = true
-    reloadSearchHistory(matching: "")
+    let initialQuery = BrowserSearchSuggestionPolicy.initialHistoryQuery(
+      for: context,
+      title: viewModel.state.title,
+      url: viewModel.state.url ?? activeWebView?.url
+    )
+    searchHistoryQuery = initialQuery
+    reloadSearchHistory(matching: initialQuery)
     reloadQuickLinks()
     searchHistoryTableView.isHidden = false
   }
@@ -509,6 +521,14 @@ final class BrowserViewController: UIViewController {
       view.removeFromSuperview()
     }
 
+    guard BrowserSearchSuggestionPolicy.showsFavorites(
+      in: searchSuggestionContext
+    ) else {
+      quickLinksHeightConstraint?.constant = 0
+      quickLinksScrollView.isHidden = true
+      return
+    }
+
     var links: [BrowserQuickLink] = []
     var seenURLs = Set<URL>()
     let favorites = (try? favoriteService.allFavorites()) ?? []
@@ -523,20 +543,6 @@ final class BrowserViewController: UIViewController {
       )
     }
 
-    if activeTab?.isPrivate != true {
-      let history = (try? historyService.allEntries()) ?? []
-      for item in history where seenURLs.insert(item.url).inserted {
-        links.append(
-          BrowserQuickLink(
-            title: item.title,
-            subtitle: item.host,
-            url: item.url,
-            symbolName: "clock.arrow.circlepath"
-          )
-        )
-      }
-    }
-
     let visibleLinks = Array(links.prefix(8))
     visibleLinks.forEach { link in
       let button = makeQuickLinkButton(link)
@@ -546,6 +552,9 @@ final class BrowserViewController: UIViewController {
     let hasLinks = !visibleLinks.isEmpty
     quickLinksHeightConstraint?.constant = hasLinks ? 92 : 0
     quickLinksScrollView.isHidden = !hasLinks
+    if hasLinks {
+      quickLinksScrollView.setContentOffset(.zero, animated: false)
+    }
   }
 
   private func makeQuickLinkButton(_ link: BrowserQuickLink) -> UIButton {
@@ -553,9 +562,11 @@ final class BrowserViewController: UIViewController {
     configuration.image = UIImage(systemName: link.symbolName)
     configuration.title = link.title
     configuration.subtitle = link.subtitle
-    configuration.imagePlacement = .top
-    configuration.imagePadding = AppSpacing.xxs
+    configuration.imagePlacement = .leading
+    configuration.imagePadding = AppSpacing.xs
     configuration.cornerStyle = .medium
+    configuration.titleLineBreakMode = .byTruncatingTail
+    configuration.subtitleLineBreakMode = .byTruncatingMiddle
     configuration.baseForegroundColor = AppColors.primaryText
     configuration.baseBackgroundColor = AppColors.surface
     configuration.contentInsets = NSDirectionalEdgeInsets(
@@ -567,7 +578,7 @@ final class BrowserViewController: UIViewController {
 
     let button = UIButton(configuration: configuration)
     button.translatesAutoresizingMaskIntoConstraints = false
-    button.titleLabel?.numberOfLines = 2
+    button.titleLabel?.numberOfLines = 1
     button.titleLabel?.lineBreakMode = .byTruncatingTail
     button.accessibilityLabel = "\(link.title)，\(link.subtitle)"
     button.accessibilityHint = "打开快捷网页"
@@ -578,7 +589,7 @@ final class BrowserViewController: UIViewController {
       for: .touchUpInside
     )
     NSLayoutConstraint.activate([
-      button.widthAnchor.constraint(equalToConstant: 104),
+      button.widthAnchor.constraint(equalToConstant: 156),
       button.heightAnchor.constraint(equalToConstant: 76),
     ])
     return button
@@ -589,11 +600,9 @@ final class BrowserViewController: UIViewController {
     addressBar.submitInput()
   }
 
-  /// The browser stays behind the persistent, transparent navigation bar.
-  /// UINavigationController includes that bar in this controller's top safe
-  /// area, so remove only the bar's height to keep the browser geometry the
-  /// same as it was when the bar was hidden. Pushed pages keep their normal
-  /// safe-area behavior because this adjustment belongs to the root browser.
+  /// The root browser hides the system navigation bar so its own address bar
+  /// receives touches directly. Keep this fallback for transition frames where
+  /// UIKit may briefly report the navigation bar as visible.
   private func updateBrowserTopSafeArea() {
     guard let navigationController else { return }
     let navigationBarHeight = navigationController.isNavigationBarHidden
@@ -1012,8 +1021,9 @@ extension BrowserViewController: AddressBarDelegate {
   func addressBarDidBeginEditing(_ addressBar: AddressBarView) {
     chromeScrollController.reset()
     applyChromeState(.expanded, animated: true)
-    searchHistoryQuery = ""
-    showSearchHistory()
+    showSearchHistory(
+      for: isShowingNewTab ? .newTab : .webPage
+    )
   }
 
   func addressBarDidEndEditing(_ addressBar: AddressBarView) {

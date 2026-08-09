@@ -67,6 +67,7 @@ final class AppCoordinator: NSObject, BrowserRouting {
     browser.router = self
     browserViewController = browser
     navigationController.setViewControllers([browser], animated: false)
+    navigationController.setNavigationBarHidden(true, animated: false)
     navigationController.navigationBar.isUserInteractionEnabled = false
     window.rootViewController = navigationController
     window.makeKeyAndVisible()
@@ -291,6 +292,7 @@ extension AppCoordinator: UINavigationControllerDelegate {
     animated: Bool
   ) {
     let isBrowser = viewController === browserViewController
+    navigationController.setNavigationBarHidden(isBrowser, animated: false)
     let appearance = UINavigationBarAppearance()
     if isBrowser {
       appearance.configureWithTransparentBackground()
@@ -308,8 +310,8 @@ extension AppCoordinator: UINavigationControllerDelegate {
         .font: AppTypography.largeTitle,
       ]
     }
-    // 浏览器根页的地址栏会延伸到透明导航栏下方。导航栏没有按钮时必须
-    // 让触摸继续命中下面的地址栏/网页；进入独立页面后恢复导航栏交互。
+    // 根浏览器使用自己的地址栏并隐藏系统导航栏，避免透明导航栏覆盖其触摸区。
+    // 进入独立页面后恢复系统导航栏与交互。
     navigationController.navigationBar.isUserInteractionEnabled = !isBrowser
     navigationController.navigationBar.standardAppearance = appearance
     navigationController.navigationBar.compactAppearance = appearance
