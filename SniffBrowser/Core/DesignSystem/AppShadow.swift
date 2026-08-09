@@ -12,6 +12,13 @@ struct AppShadow {
         offset: CGSize(width: 0, height: 4)
     )
 
+    /// 地址栏与浏览器工具栏使用的更柔和、扩散更广的玻璃阴影。
+    static let browserChrome = AppShadow(
+        opacity: 0.12,
+        radius: 18,
+        offset: CGSize(width: 0, height: 5)
+    )
+
     static let sheet = AppShadow(
         opacity: 0.14,
         radius: 24,

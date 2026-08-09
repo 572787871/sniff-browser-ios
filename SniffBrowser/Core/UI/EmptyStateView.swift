@@ -76,7 +76,7 @@ final class EmptyStateView: UIView {
         var buttonConfiguration = UIButton.Configuration.filled()
         buttonConfiguration.title = configuration.actionTitle
         buttonConfiguration.baseBackgroundColor = AppColors.accent
-        buttonConfiguration.baseForegroundColor = .white
+        buttonConfiguration.baseForegroundColor = AppColors.accentContent
         buttonConfiguration.cornerStyle = .medium
         buttonConfiguration.contentInsets = NSDirectionalEdgeInsets(
             top: AppSpacing.sm,

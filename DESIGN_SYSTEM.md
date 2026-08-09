@@ -2,7 +2,7 @@
 
 ## 1. 整体视觉定位
 
-视觉目标是“安静、可信、精致”的原生 iOS 商业浏览器。网页始终是视觉主体；浏览器控件使用克制的浅灰材质、清晰层级和少量系统蓝。参考 Apple 平台设计语言，但不复制 Safari 的完整布局、品牌或图标组合。
+视觉目标是“安静、可信、精致”的原生 iOS 商业浏览器。网页始终是视觉主体；浏览器控件使用克制的冷调玻璃材质、清晰层级和少量蓝靛强调色。参考 Apple 平台设计语言，但不复制 Safari 的完整布局、品牌或图标组合。
 
 禁止功能宫格、资讯流、大面积纯白、粗重描边、廉价发光、游戏化视觉、持续渐变、过多胶囊和 Android Material 风格。
 
@@ -20,7 +20,7 @@
 - `primaryText`：`label`。
 - `secondaryText`：`secondaryLabel`。
 - `tertiaryText`：`tertiaryLabel`。
-- `accent`：`systemBlue`，仅用于主要操作、链接、进度、选中。
+- `accent`：动态蓝靛色，仅用于主要操作、链接、进度、选中。
 - `separator`：`separator` 的低透明版本。
 - `success`：`systemGreen`。
 - `danger`：`systemRed`。

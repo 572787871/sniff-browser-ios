@@ -105,7 +105,7 @@ final class BrowserToolbar: UIView {
     overrideUserInterfaceStyle = isPrivate ? .dark : .unspecified
     materialView.contentView.backgroundColor = isPrivate
       ? AppColors.privateBrowsingSurface.withAlphaComponent(0.68)
-      : .clear
+      : AppColors.browserChromeTint
     updateResolvedColors()
   }
 
@@ -133,10 +133,10 @@ final class BrowserToolbar: UIView {
     materialView.translatesAutoresizingMaskIntoConstraints = false
     materialView.layer.cornerCurve = .continuous
     materialView.layer.cornerRadius = 20
-    materialView.layer.borderWidth = 0.5
+    materialView.layer.borderWidth = 0.75
     materialView.clipsToBounds = true
     addSubview(materialView)
-    AppShadow.floating.apply(to: self)
+    AppShadow.browserChrome.apply(to: self)
 
     let definitions: [
       (button: BrowserChromeButton, action: BrowserToolbarAction, label: String)
@@ -171,7 +171,7 @@ final class BrowserToolbar: UIView {
     sniffButton.tintColor = AppColors.accent
 
     tabCountLabel.translatesAutoresizingMaskIntoConstraints = false
-    tabCountLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
+    tabCountLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
     tabCountLabel.textColor = AppColors.primaryText
     tabCountLabel.textAlignment = .center
     tabCountLabel.isAccessibilityElement = false
@@ -184,7 +184,7 @@ final class BrowserToolbar: UIView {
 
     resourceBadgeLabel.translatesAutoresizingMaskIntoConstraints = false
     resourceBadgeLabel.font = .monospacedDigitSystemFont(ofSize: 9, weight: .bold)
-    resourceBadgeLabel.textColor = .white
+    resourceBadgeLabel.textColor = AppColors.accentContent
     resourceBadgeLabel.backgroundColor = AppColors.accent
     resourceBadgeLabel.layer.cornerRadius = 8
     resourceBadgeLabel.clipsToBounds = true
@@ -253,8 +253,11 @@ final class BrowserToolbar: UIView {
     materialView.layer.borderColor = (
       isPrivateMode
         ? UIColor.white.withAlphaComponent(0.16)
-        : AppColors.separator.resolvedColor(with: traitCollection)
+        : AppColors.browserChromeBorder.resolvedColor(with: traitCollection)
     ).cgColor
+    materialView.contentView.backgroundColor = isPrivateMode
+      ? AppColors.privateBrowsingSurface.withAlphaComponent(0.68)
+      : AppColors.browserChromeTint
     let primary = isPrivateMode ? UIColor.white : AppColors.primaryText
     [backButton, forwardButton, tabsButton, moreButton].forEach {
       $0.tintColor = primary
@@ -300,9 +303,9 @@ private final class BrowserChromeButton: UIButton {
   override var isHighlighted: Bool {
     didSet {
       let changes = {
-        self.alpha = self.isHighlighted ? 0.58 : 1
+        self.alpha = self.isHighlighted ? 0.68 : 1
         self.transform = self.isHighlighted
-          ? CGAffineTransform(scaleX: 0.96, y: 0.96)
+          ? CGAffineTransform(scaleX: 0.97, y: 0.97)
           : .identity
       }
       guard !UIAccessibility.isReduceMotionEnabled else {

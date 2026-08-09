@@ -363,7 +363,7 @@ final class BrowserViewController: UIViewController {
 
   private func configureQuickLinksView() {
     quickLinksScrollView.translatesAutoresizingMaskIntoConstraints = false
-    quickLinksScrollView.backgroundColor = AppColors.background
+    quickLinksScrollView.backgroundColor = AppColors.browserCanvas
     quickLinksScrollView.showsHorizontalScrollIndicator = false
     quickLinksScrollView.alwaysBounceHorizontal = true
     quickLinksScrollView.directionalLayoutMargins = NSDirectionalEdgeInsets(
@@ -406,8 +406,8 @@ final class BrowserViewController: UIViewController {
 
   private func configureSearchHistoryView() {
     searchHistoryTableView.translatesAutoresizingMaskIntoConstraints = false
-    searchHistoryTableView.backgroundColor = AppColors.background
-    searchHistoryTableView.separatorColor = AppColors.separator
+    searchHistoryTableView.backgroundColor = AppColors.browserCanvas
+    searchHistoryTableView.separatorColor = AppColors.browserChromeSeparator
     searchHistoryTableView.separatorInset = UIEdgeInsets(
       top: 0,
       left: 72,
@@ -1229,7 +1229,7 @@ private final class BrowserSearchHistoryCell: UITableViewCell {
     selectionStyle = .default
     backgroundColor = .clear
     selectedBackgroundView = UIView()
-    selectedBackgroundView?.backgroundColor = AppColors.accentFill
+    selectedBackgroundView?.backgroundColor = AppColors.browserChromeSelection
 
     iconView.translatesAutoresizingMaskIntoConstraints = false
     iconView.tintColor = AppColors.secondaryText
@@ -1259,7 +1259,7 @@ private final class BrowserSearchHistoryCell: UITableViewCell {
     arrowView.contentMode = .scaleAspectFit
     arrowView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
       pointSize: 22,
-      weight: .medium
+      weight: .regular
     )
     contentView.addSubview(arrowView)
 

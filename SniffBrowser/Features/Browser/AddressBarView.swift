@@ -130,7 +130,7 @@ final class AddressBarView: UIView {
       self.textField.textAlignment = compact ? .center : (
         self.state.url == nil ? .center : .left
       )
-      self.layer.shadowOpacity = compact ? 0.04 : AppShadow.floating.opacity
+      self.layer.shadowOpacity = compact ? 0.04 : AppShadow.browserChrome.opacity
     }
     // 收缩时图标只作为视觉元素隐藏；地址栏本身仍要保留可触摸区域，
     // 点击收缩后的地址栏可以恢复编辑状态。
@@ -156,9 +156,9 @@ final class AddressBarView: UIView {
     materialView.layer.cornerRadius = AppRadius.input
     materialView.layer.cornerCurve = .continuous
     materialView.clipsToBounds = true
-    materialView.layer.borderWidth = 0.5
+    materialView.layer.borderWidth = 0.75
     addSubview(materialView)
-    AppShadow.floating.apply(to: self)
+    AppShadow.browserChrome.apply(to: self)
 
     let editingGesture = UITapGestureRecognizer(
       target: self,
@@ -173,7 +173,7 @@ final class AddressBarView: UIView {
     securityImageView.contentMode = .scaleAspectFit
     securityImageView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
       pointSize: 14,
-      weight: .medium
+      weight: .regular
     )
     securityImageView.isAccessibilityElement = true
     securityImageView.accessibilityTraits = .image
@@ -205,6 +205,10 @@ final class AddressBarView: UIView {
 
     trailingButton.translatesAutoresizingMaskIntoConstraints = false
     trailingButton.tintColor = AppColors.secondaryText
+    trailingButton.setPreferredSymbolConfiguration(
+      UIImage.SymbolConfiguration(pointSize: 19, weight: .regular),
+      forImageIn: .normal
+    )
     trailingButton.accessibilityIdentifier = "browser.reloadOrStop"
     trailingButton.addTarget(
       self,
@@ -291,8 +295,9 @@ final class AddressBarView: UIView {
     let foreground = isPrivateMode
       ? UIColor.white
       : pageThemeForegroundStyle?.color
-    let borderColor = foreground?.withAlphaComponent(0.16)
-      ?? AppColors.separator.resolvedColor(with: traitCollection)
+    let borderColor = foreground?.withAlphaComponent(
+      UIAccessibility.isDarkerSystemColorsEnabled ? 0.28 : 0.16
+    ) ?? AppColors.browserChromeBorder.resolvedColor(with: traitCollection)
     materialView.layer.borderColor = borderColor.cgColor
     if isPrivateMode {
       materialView.contentView.backgroundColor =
@@ -301,7 +306,7 @@ final class AddressBarView: UIView {
       materialView.contentView.backgroundColor = pageThemeColor?
         .withAlphaComponent(
           pageThemeForegroundStyle == .light ? 0.28 : 0.16
-        ) ?? .clear
+        ) ?? AppColors.browserChromeTint
     }
     textField.textColor = foreground ?? AppColors.primaryText
     textField.tintColor = isPrivateMode
@@ -332,7 +337,7 @@ final class AddressBarView: UIView {
     let symbol: String
     let color: UIColor
     if textField.isFirstResponder, !isPrivateMode {
-      symbol = "plus"
+      symbol = "globe"
       color = pageThemeForegroundStyle?.color ?? AppColors.accent
       securityImageView.accessibilityLabel = "正在编辑地址与搜索"
     } else if isPrivateMode {
@@ -365,7 +370,7 @@ final class AddressBarView: UIView {
     let isEditingWithText = textField.isFirstResponder
       && textField.text?.isEmpty == false
     let symbol = isEditingWithText
-      ? "xmark.circle.fill"
+      ? "xmark"
       : (isEditing ? "xmark" : (state.isLoading ? "xmark" : "arrow.clockwise"))
     trailingButton.setImage(UIImage(systemName: symbol), for: .normal)
     trailingButton.accessibilityLabel = isEditingWithText
