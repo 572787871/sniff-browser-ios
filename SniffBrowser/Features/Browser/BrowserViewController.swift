@@ -12,6 +12,10 @@ protocol BrowserRouting: AnyObject {
   func showFiles()
   func showUserCenter()
   func showSettings()
+  func showMoreDestination(
+    _ destination: BrowserMenuDestination,
+    in navigationController: UINavigationController
+  )
 }
 
 @MainActor

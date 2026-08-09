@@ -98,104 +98,127 @@ final class AppCoordinator: NSObject, BrowserRouting {
   }
 
   func showFavorites() {
+    showFavorites(in: navigationController)
+  }
+
+  private func showFavorites(in navigation: UINavigationController) {
     let controller = FavoritesViewController()
-    controller.onStartBrowsing = { [weak self] in
-      self?.returnToBrowser()
+    controller.onStartBrowsing = { [weak self, weak navigation] in
+      self?.returnToBrowser(from: navigation)
     }
-    controller.onOpenFavorite = { [weak self] item in
+    controller.onOpenFavorite = { [weak self, weak navigation] item in
       guard self?.browserViewController?.openFavoriteURL(
         item.url,
         inNewNormalTab: false
       ) == true else {
         return
       }
-      self?.returnToBrowser()
+      self?.returnToBrowser(from: navigation)
     }
-    controller.onOpenFavoriteInNewTab = { [weak self] item in
+    controller.onOpenFavoriteInNewTab = { [weak self, weak navigation] item in
       guard self?.browserViewController?.openFavoriteURL(
         item.url,
         inNewNormalTab: true
       ) == true else {
         return
       }
-      self?.returnToBrowser()
+      self?.returnToBrowser(from: navigation)
     }
-    push(controller)
+    push(controller, in: navigation)
   }
 
   func showHistory() {
+    showHistory(in: navigationController)
+  }
+
+  private func showHistory(in navigation: UINavigationController) {
     let controller = HistoryViewController()
-    controller.onStartBrowsing = { [weak self] in
-      self?.returnToBrowser()
+    controller.onStartBrowsing = { [weak self, weak navigation] in
+      self?.returnToBrowser(from: navigation)
     }
-    controller.onOpenPrivateTab = { [weak self] in
+    controller.onOpenPrivateTab = { [weak self, weak navigation] in
       guard self?.browserViewController?.openNewTab(isPrivate: true) == true
       else {
         return
       }
-      self?.returnToBrowser()
+      self?.returnToBrowser(from: navigation)
     }
-    controller.onOpenHistoryItem = { [weak self] item in
+    controller.onOpenHistoryItem = { [weak self, weak navigation] item in
       guard self?.browserViewController?.openFavoriteURL(
         item.url,
         inNewNormalTab: false
       ) == true else {
         return
       }
-      self?.returnToBrowser()
+      self?.returnToBrowser(from: navigation)
     }
-    push(controller)
+    push(controller, in: navigation)
   }
 
   func showDownloads() {
+    showDownloads(in: navigationController)
+  }
+
+  private func showDownloads(in navigation: UINavigationController) {
     let controller = DownloadManagerViewController(manager: downloadCenter)
-    controller.onBrowseForDownloads = { [weak self] in
-      self?.returnToBrowser()
+    controller.onBrowseForDownloads = { [weak self, weak navigation] in
+      self?.returnToBrowser(from: navigation)
     }
-    controller.onRoute = { [weak self] route in
-      self?.navigate(to: route)
+    controller.onRoute = { [weak self, weak navigation] route in
+      guard let navigation else { return }
+      self?.navigate(to: route, in: navigation)
     }
-    push(controller)
+    push(controller, in: navigation)
   }
 
   func showFiles() {
+    showFiles(in: navigationController)
+  }
+
+  private func showFiles(in navigation: UINavigationController) {
     let controller = FileManagerViewController(downloadCenter: downloadCenter)
     controller.onImportFiles = nil
     controller.onCreateFolder = nil
     controller.onSortOrderChanged = { [weak controller] order in
       controller?.setSortOrder(order)
     }
-    controller.onReturnToBrowser = { [weak self] in
-      self?.returnToBrowser()
+    controller.onReturnToBrowser = { [weak self, weak navigation] in
+      self?.returnToBrowser(from: navigation)
     }
-    push(controller)
+    push(controller, in: navigation)
   }
 
   func showUserCenter() {
+    showUserCenter(in: navigationController)
+  }
+
+  private func showUserCenter(in navigation: UINavigationController) {
     let controller = UserCenterViewController(counts: currentUserCenterCounts())
     userCenterViewController = controller
-    controller.onLogin = { [weak self] in
-      self?.push(LoginViewController())
+    controller.onLogin = { [weak self, weak navigation] in
+      guard let navigation else { return }
+      self?.push(LoginViewController(), in: navigation)
     }
-    controller.onSelectDestination = { [weak self] destination in
+    controller.onSelectDestination = { [weak self, weak navigation] destination in
+      guard let self, let navigation else { return }
       switch destination {
       case .login:
-        self?.push(LoginViewController())
+        self.push(LoginViewController(), in: navigation)
       case .sync:
-        self?.push(LoginViewController())
+        self.push(LoginViewController(), in: navigation)
       case .downloads:
-        self?.showDownloads()
+        self.showDownloads(in: navigation)
       case .files:
-        self?.showFiles()
+        self.showFiles(in: navigation)
       case .favorites:
-        self?.showFavorites()
+        self.showFavorites(in: navigation)
       case .history:
-        self?.showHistory()
+        self.showHistory(in: navigation)
       case .privacy, .about:
-        self?.showSettings()
+        self.showSettings(in: navigation)
       }
     }
-    push(controller)
+    push(controller, in: navigation)
   }
 
   private func currentUserCenterCounts() -> UserCenterCounts {
@@ -214,9 +237,14 @@ final class AppCoordinator: NSObject, BrowserRouting {
   }
 
   func showSettings() {
+    showSettings(in: navigationController)
+  }
+
+  private func showSettings(in navigation: UINavigationController) {
     let controller = SettingsViewController()
-    controller.onRoute = { [weak self] route in
-      self?.navigate(to: route)
+    controller.onRoute = { [weak self, weak navigation] route in
+      guard let navigation else { return }
+      self?.navigate(to: route, in: navigation)
     }
     controller.onClearBrowsingData = { [weak self, weak controller] in
       guard let self else { return }
@@ -226,18 +254,61 @@ final class AppCoordinator: NSObject, BrowserRouting {
         controller?.showBrowsingDataClearCompleted()
       }
     }
-    push(controller)
+    push(controller, in: navigation)
   }
 
   func navigate(to route: AppRoute) {
+    navigate(to: route, in: navigationController)
+  }
+
+  private func navigate(
+    to route: AppRoute,
+    in navigation: UINavigationController
+  ) {
     switch route {
     case .downloadSettings:
-      push(DownloadSettingsViewController())
+      push(DownloadSettingsViewController(), in: navigation)
+    }
+  }
+
+  func showMoreDestination(
+    _ destination: BrowserMenuDestination,
+    in navigationController: UINavigationController
+  ) {
+    switch destination {
+    case .downloads:
+      showDownloads(in: navigationController)
+    case .files:
+      showFiles(in: navigationController)
+    case .favorites:
+      showFavorites(in: navigationController)
+    case .history:
+      showHistory(in: navigationController)
+    case .userCenter:
+      showUserCenter(in: navigationController)
+    case .settings:
+      showSettings(in: navigationController)
     }
   }
 
   private func push(_ controller: UIViewController) {
-    navigationController.pushViewController(controller, animated: true)
+    push(controller, in: navigationController)
+  }
+
+  private func push(
+    _ controller: UIViewController,
+    in navigation: UINavigationController
+  ) {
+    navigation.pushViewController(controller, animated: true)
+  }
+
+  private func returnToBrowser(from navigation: UINavigationController?) {
+    guard let navigation else { return }
+    if navigation === navigationController {
+      returnToBrowser()
+    } else {
+      navigation.dismiss(animated: true)
+    }
   }
 
   private func sheetNavigation(

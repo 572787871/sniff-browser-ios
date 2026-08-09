@@ -62,6 +62,39 @@ final class DownloadSettingsRoutingTests: XCTestCase {
     }
 
     @MainActor
+    func testMoreDestinationsStayInsideSheetNavigationStack() throws {
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let coordinator = AppCoordinator(window: window)
+        coordinator.start()
+        let menu = BrowserMoreMenuViewController(state: BrowserMoreMenuState(
+            hasCurrentPage: true,
+            downloadSummary: nil,
+            fileSummary: nil,
+            accountSummary: "游客模式"
+        ))
+        let sheetNavigation = BrowserMoreNavigationController(root: menu)
+
+        coordinator.showMoreDestination(
+            .downloads,
+            in: sheetNavigation
+        )
+        let downloads = try XCTUnwrap(
+            sheetNavigation.topViewController as? DownloadManagerViewController
+        )
+        downloads.onRoute?(.downloadSettings)
+
+        XCTAssertEqual(sheetNavigation.modalPresentationStyle, .pageSheet)
+        XCTAssertTrue(sheetNavigation.viewControllers.first === menu)
+        XCTAssertTrue(
+            sheetNavigation.topViewController
+                is DownloadSettingsViewController
+        )
+
+        sheetNavigation.popViewController(animated: false)
+        XCTAssertTrue(sheetNavigation.topViewController === downloads)
+    }
+
+    @MainActor
     func testDownloadSettingsPageContainsOnlyPersistedPolicyRows() throws {
         let controller = DownloadSettingsViewController()
         layout(controller)

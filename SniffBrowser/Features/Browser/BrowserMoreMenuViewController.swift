@@ -245,9 +245,49 @@ extension BrowserMoreMenuViewController: UITableViewDataSource, UITableViewDeleg
       [.userCenter, .settings],
     ]
     let destination = destinations[indexPath.section][indexPath.row]
-    dismissAndPerform { [weak self] in
-      self?.onSelectDestination?(destination)
-    }
+    onSelectDestination?(destination)
+  }
+}
+
+@MainActor
+final class BrowserMoreNavigationController: UINavigationController,
+  UINavigationControllerDelegate {
+  init(root: BrowserMoreMenuViewController) {
+    super.init(rootViewController: root)
+    modalPresentationStyle = .pageSheet
+    navigationBar.prefersLargeTitles = true
+    navigationBar.tintColor = AppColors.accent
+    let appearance = UINavigationBarAppearance()
+    appearance.configureWithOpaqueBackground()
+    appearance.backgroundColor = AppColors.background
+    appearance.shadowColor = .clear
+    appearance.titleTextAttributes = [
+      .foregroundColor: AppColors.primaryText,
+      .font: AppTypography.headline,
+    ]
+    appearance.largeTitleTextAttributes = [
+      .foregroundColor: AppColors.primaryText,
+      .font: AppTypography.largeTitle,
+    ]
+    navigationBar.standardAppearance = appearance
+    navigationBar.compactAppearance = appearance
+    navigationBar.scrollEdgeAppearance = appearance
+    delegate = self
+  }
+
+  required init?(coder aDecoder: NSCoder) {
+    return nil
+  }
+
+  func navigationController(
+    _ navigationController: UINavigationController,
+    willShow viewController: UIViewController,
+    animated: Bool
+  ) {
+    navigationController.setNavigationBarHidden(
+      viewController === viewControllers.first,
+      animated: animated
+    )
   }
 }
 

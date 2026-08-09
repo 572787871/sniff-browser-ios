@@ -272,23 +272,23 @@ extension BrowserViewController {
       case .reload: self.activeWebView?.reload()
       }
     }
-    controller.onSelectDestination = { [weak self] destination in
-      switch destination {
-      case .downloads: self?.router?.showDownloads()
-      case .files: self?.router?.showFiles()
-      case .favorites: self?.router?.showFavorites()
-      case .history: self?.router?.showHistory()
-      case .userCenter: self?.router?.showUserCenter()
-      case .settings: self?.router?.showSettings()
-      }
+    controller.onSelectDestination = { [weak self, weak controller] destination in
+      guard let self,
+            let navigation = controller?.navigationController
+      else { return }
+      self.router?.showMoreDestination(
+        destination,
+        in: navigation
+      )
     }
-    if let sheet = controller.sheetPresentationController {
-      sheet.detents = [.medium(), .large()]
+    let navigation = BrowserMoreNavigationController(root: controller)
+    if let sheet = navigation.sheetPresentationController {
+      sheet.detents = [.large()]
       sheet.prefersGrabberVisible = true
       sheet.preferredCornerRadius = AppRadius.sheet
       sheet.prefersScrollingExpandsWhenScrolledToEdge = true
     }
-    present(controller, animated: true)
+    present(navigation, animated: true)
   }
 
   func currentPageURLForFavorite() -> URL? {
