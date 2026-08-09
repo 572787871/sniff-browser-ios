@@ -283,7 +283,23 @@ extension AppCoordinator: UINavigationControllerDelegate {
     from fromVC: UIViewController,
     to toVC: UIViewController
   ) -> UIViewControllerAnimatedTransitioning? {
-    PlainHorizontalNavigationAnimator(operation: operation)
+    if !popInteraction.isInteracting {
+      if fromVC === browserViewController,
+         let overview = toVC as? TabOverviewViewController {
+        return TabOverviewNavigationAnimator(
+          operation: .push,
+          overview: overview
+        )
+      }
+      if toVC === browserViewController,
+         let overview = fromVC as? TabOverviewViewController {
+        return TabOverviewNavigationAnimator(
+          operation: .pop,
+          overview: overview
+        )
+      }
+    }
+    return PlainHorizontalNavigationAnimator(operation: operation)
   }
 
   func navigationController(
@@ -316,6 +332,249 @@ extension AppCoordinator: UINavigationControllerDelegate {
     navigationController.navigationBar.standardAppearance = appearance
     navigationController.navigationBar.compactAppearance = appearance
     navigationController.navigationBar.scrollEdgeAppearance = appearance
+  }
+}
+
+/// Keeps the browser and its tab card spatially connected in both directions.
+private final class TabOverviewNavigationAnimator: NSObject,
+  UIViewControllerAnimatedTransitioning {
+  private let operation: UINavigationController.Operation
+  private weak var overview: TabOverviewViewController?
+
+  init(
+    operation: UINavigationController.Operation,
+    overview: TabOverviewViewController
+  ) {
+    self.operation = operation
+    self.overview = overview
+    super.init()
+  }
+
+  func transitionDuration(
+    using transitionContext: UIViewControllerContextTransitioning?
+  ) -> TimeInterval {
+    UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.42
+  }
+
+  func animateTransition(
+    using transitionContext: UIViewControllerContextTransitioning
+  ) {
+    guard !UIAccessibility.isReduceMotionEnabled,
+          let overview,
+          let itemID = overview.transitionItemID
+    else {
+      PlainHorizontalNavigationAnimator(operation: operation)
+        .animateTransition(using: transitionContext)
+      return
+    }
+
+    switch operation {
+    case .push:
+      animateShrink(
+        itemID: itemID,
+        overview: overview,
+        transitionContext: transitionContext
+      )
+    case .pop:
+      animateExpand(
+        itemID: itemID,
+        overview: overview,
+        transitionContext: transitionContext
+      )
+    default:
+      transitionContext.completeTransition(false)
+    }
+  }
+
+  private func animateShrink(
+    itemID: UUID,
+    overview: TabOverviewViewController,
+    transitionContext: UIViewControllerContextTransitioning
+  ) {
+    guard let fromView = transitionContext.view(forKey: .from),
+          let toView = transitionContext.view(forKey: .to),
+          let toViewController = transitionContext.viewController(forKey: .to),
+          let movingView = fromView.snapshotView(afterScreenUpdates: false)
+    else {
+      fallback(using: transitionContext)
+      return
+    }
+
+    let container = transitionContext.containerView
+    toView.frame = transitionContext.finalFrame(for: toViewController)
+    container.addSubview(toView)
+    container.layoutIfNeeded()
+    toView.layoutIfNeeded()
+    guard let targetFrame = overview.transitionFrame(
+      for: itemID,
+      in: container,
+      ensureVisible: true
+    ), targetFrame.width > 0, targetFrame.height > 0
+    else {
+      toView.removeFromSuperview()
+      fallback(using: transitionContext)
+      return
+    }
+
+    let initialFrame = container.convert(fromView.bounds, from: fromView)
+    let surface = transitionSurface(
+      frame: initialFrame,
+      cornerRadius: 0
+    )
+    movingView.frame = surface.bounds
+    movingView.autoresizingMask = []
+    surface.addSubview(movingView)
+    surface.layer.maskedCorners = [
+      .layerMinXMinYCorner,
+      .layerMaxXMinYCorner,
+    ]
+    overview.setTransitionItemHidden(itemID, hidden: true)
+    let navigationBar = overview.navigationController?.navigationBar
+    navigationBar?.alpha = 0
+    container.addSubview(surface)
+
+    UIView.animate(
+      withDuration: transitionDuration(using: transitionContext),
+      delay: 0,
+      usingSpringWithDamping: 1,
+      initialSpringVelocity: 0,
+      options: [.beginFromCurrentState, .allowUserInteraction],
+      animations: {
+        surface.frame = targetFrame
+        surface.layer.cornerRadius = AppRadius.card
+        movingView.frame = Self.aspectFillFrame(
+          contentSize: initialFrame.size,
+          containerSize: targetFrame.size
+        )
+        navigationBar?.alpha = 1
+      },
+      completion: { _ in
+        let completed = !transitionContext.transitionWasCancelled
+        navigationBar?.alpha = 1
+        overview.setTransitionItemHidden(itemID, hidden: false)
+        surface.removeFromSuperview()
+        if !completed { toView.removeFromSuperview() }
+        transitionContext.completeTransition(completed)
+      }
+    )
+  }
+
+  private func animateExpand(
+    itemID: UUID,
+    overview: TabOverviewViewController,
+    transitionContext: UIViewControllerContextTransitioning
+  ) {
+    guard let fromView = transitionContext.view(forKey: .from),
+          let toView = transitionContext.view(forKey: .to),
+          let toViewController = transitionContext.viewController(forKey: .to)
+    else {
+      fallback(using: transitionContext)
+      return
+    }
+
+    let container = transitionContext.containerView
+    toView.frame = transitionContext.finalFrame(for: toViewController)
+    container.insertSubview(toView, belowSubview: fromView)
+    container.layoutIfNeeded()
+    toView.layoutIfNeeded()
+    guard let sourceFrame = overview.transitionFrame(
+      for: itemID,
+      in: container,
+      ensureVisible: false
+    ), sourceFrame.width > 0, sourceFrame.height > 0,
+       let movingView = toView.snapshotView(afterScreenUpdates: true)
+    else {
+      toView.removeFromSuperview()
+      fallback(using: transitionContext)
+      return
+    }
+
+    let finalFrame = container.convert(toView.bounds, from: toView)
+    let surface = transitionSurface(
+      frame: sourceFrame,
+      cornerRadius: AppRadius.card
+    )
+    movingView.frame = Self.aspectFillFrame(
+      contentSize: finalFrame.size,
+      containerSize: sourceFrame.size
+    )
+    movingView.autoresizingMask = []
+    surface.addSubview(movingView)
+    surface.layer.maskedCorners = [
+      .layerMinXMinYCorner,
+      .layerMaxXMinYCorner,
+    ]
+    overview.setTransitionItemHidden(itemID, hidden: true)
+    let navigationBar = overview.navigationController?.navigationBar
+    navigationBar?.alpha = 1
+    container.addSubview(surface)
+
+    UIView.animate(
+      withDuration: transitionDuration(using: transitionContext),
+      delay: 0,
+      usingSpringWithDamping: 1,
+      initialSpringVelocity: 0,
+      options: [.beginFromCurrentState, .allowUserInteraction],
+      animations: {
+        surface.frame = finalFrame
+        surface.layer.cornerRadius = 0
+        movingView.frame = CGRect(origin: .zero, size: finalFrame.size)
+        navigationBar?.alpha = 0
+      },
+      completion: { _ in
+        let completed = !transitionContext.transitionWasCancelled
+        navigationBar?.alpha = 1
+        overview.setTransitionItemHidden(itemID, hidden: false)
+        surface.removeFromSuperview()
+        if !completed { toView.removeFromSuperview() }
+        transitionContext.completeTransition(completed)
+      }
+    )
+  }
+
+  private func fallback(
+    using transitionContext: UIViewControllerContextTransitioning
+  ) {
+    PlainHorizontalNavigationAnimator(operation: operation)
+      .animateTransition(using: transitionContext)
+  }
+
+  private func transitionSurface(
+    frame: CGRect,
+    cornerRadius: CGFloat
+  ) -> UIView {
+    let surface = UIView(frame: frame)
+    surface.backgroundColor = AppColors.surface
+    surface.isUserInteractionEnabled = false
+    surface.layer.cornerCurve = .continuous
+    surface.layer.cornerRadius = cornerRadius
+    surface.layer.masksToBounds = true
+    return surface
+  }
+
+  private static func aspectFillFrame(
+    contentSize: CGSize,
+    containerSize: CGSize
+  ) -> CGRect {
+    guard contentSize.width > 0,
+          contentSize.height > 0,
+          containerSize.width > 0,
+          containerSize.height > 0
+    else { return CGRect(origin: .zero, size: containerSize) }
+    let scale = max(
+      containerSize.width / contentSize.width,
+      containerSize.height / contentSize.height
+    )
+    let size = CGSize(
+      width: contentSize.width * scale,
+      height: contentSize.height * scale
+    )
+    return CGRect(
+      x: (containerSize.width - size.width) / 2,
+      y: (containerSize.height - size.height) / 2,
+      width: size.width,
+      height: size.height
+    )
   }
 }
 

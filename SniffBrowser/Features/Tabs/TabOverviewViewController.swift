@@ -26,6 +26,7 @@ final class TabOverviewViewController: BaseViewController {
     private var pagingState: TabOverviewPagingState
     private var isPageTransitionInFlight = false
     private var queuedTransition: PendingTransition?
+    private var selectedTransitionItemID: UUID?
 
     private let privacyTintView = UIView()
     private let modeControl = UISegmentedControl(
@@ -98,6 +99,39 @@ final class TabOverviewViewController: BaseViewController {
             animated: animated,
             notifyDelegate: false
         )
+    }
+
+    var transitionItemID: UUID? {
+        selectedTransitionItemID
+            ?? allItems.first(where: \.isSelected)?.id
+    }
+
+    func transitionFrame(
+        for itemID: UUID,
+        in coordinateSpace: UIView,
+        ensureVisible: Bool
+    ) -> CGRect? {
+        guard let item = allItems.first(where: { $0.id == itemID }) else {
+            return nil
+        }
+        let mode: TabOverviewMode = item.isPrivate
+            ? .privateBrowsing
+            : .standard
+        guard visiblePageMode == mode else { return nil }
+        view.layoutIfNeeded()
+        return page(for: mode).transitionFrame(
+            for: itemID,
+            in: coordinateSpace,
+            ensureVisible: ensureVisible
+        )
+    }
+
+    func setTransitionItemHidden(_ itemID: UUID, hidden: Bool) {
+        guard let item = allItems.first(where: { $0.id == itemID }) else {
+            return
+        }
+        page(for: item.isPrivate ? .privateBrowsing : .standard)
+            .setTransitionItemHidden(itemID, hidden: hidden)
     }
 
     private func configureNavigation() {
@@ -316,6 +350,7 @@ final class TabOverviewViewController: BaseViewController {
     ) -> TabOverviewPageViewController {
         let controller = TabOverviewPageViewController(mode: mode)
         controller.onSelectItem = { [weak self] itemID in
+            self?.selectedTransitionItemID = itemID
             self?.onSelectTab?(itemID)
         }
         controller.onCloseItem = { [weak self] itemID in

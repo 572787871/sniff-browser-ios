@@ -87,6 +87,43 @@ final class TabOverviewPageViewController: UIViewController {
         collectionView.collectionViewLayout.invalidateLayout()
     }
 
+    func transitionFrame(
+        for itemID: UUID,
+        in coordinateSpace: UIView,
+        ensureVisible: Bool
+    ) -> CGRect? {
+        loadViewIfNeeded()
+        view.layoutIfNeeded()
+        guard let indexPath = dataSource.indexPath(for: itemID) else {
+            return nil
+        }
+        if ensureVisible,
+           !collectionView.indexPathsForVisibleItems.contains(indexPath) {
+            collectionView.scrollToItem(
+                at: indexPath,
+                at: .centeredVertically,
+                animated: false
+            )
+        }
+        collectionView.layoutIfNeeded()
+        guard let attributes = collectionView
+            .layoutAttributesForItem(at: indexPath)
+        else { return nil }
+        if let cell = collectionView.cellForItem(at: indexPath)
+            as? TabOverviewCell {
+            return cell.transitionPreviewFrame(in: coordinateSpace)
+        }
+        return collectionView.convert(attributes.frame, to: coordinateSpace)
+    }
+
+    func setTransitionItemHidden(_ itemID: UUID, hidden: Bool) {
+        guard let indexPath = dataSource.indexPath(for: itemID),
+              let cell = collectionView.cellForItem(at: indexPath)
+        else { return }
+        guard let cell = cell as? TabOverviewCell else { return }
+        cell.setTransitionPreviewHidden(hidden)
+    }
+
     private func configureView() {
         overrideUserInterfaceStyle = mode.isPrivate ? .dark : .unspecified
         view.backgroundColor = mode.isPrivate

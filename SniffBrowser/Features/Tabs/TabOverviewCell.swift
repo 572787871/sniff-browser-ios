@@ -61,12 +61,14 @@ final class TabOverviewCell: UICollectionViewCell {
         previewImageView.image = nil
         displaysSelection = false
         displaysPrivateMode = false
+        previewContainer.alpha = 1
         contentView.alpha = 1
         contentView.transform = .identity
         accessibilityCustomActions = nil
     }
 
     func configure(with item: TabOverviewItem) {
+        previewContainer.alpha = 1
         titleLabel.text = item.displayTitle
         domainLabel.text = item.displayDomain
         previewImageView.image = item.thumbnail
@@ -86,6 +88,18 @@ final class TabOverviewCell: UICollectionViewCell {
                 selector: #selector(accessibilityClose)
             )
         ]
+    }
+
+    func transitionPreviewFrame(in coordinateSpace: UIView) -> CGRect {
+        contentView.layoutIfNeeded()
+        return previewContainer.convert(
+            previewContainer.bounds,
+            to: coordinateSpace
+        )
+    }
+
+    func setTransitionPreviewHidden(_ hidden: Bool) {
+        previewContainer.alpha = hidden ? 0 : 1
     }
 
     func updateResolvedColors() {
