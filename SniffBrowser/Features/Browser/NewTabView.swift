@@ -12,7 +12,6 @@ final class NewTabView: UIView {
   private let logoContainer = UIView()
   private let logoView = NewTabLogoView()
   private let titleLabel = UILabel()
-  private let privacyBadge = UILabel()
   private let welcomeLabel = UILabel()
   private let dateLabel = UILabel()
   private let scrollView = UIScrollView()
@@ -48,17 +47,14 @@ final class NewTabView: UIView {
 
   func setPrivateMode(_ isPrivate: Bool) {
     isPrivateMode = isPrivate
-    overrideUserInterfaceStyle = isPrivate ? .dark : .unspecified
-    backgroundColor = isPrivate
-      ? AppColors.privateBrowsingBackground
-      : AppColors.background
-    privacyBadge.isHidden = !isPrivate
+    overrideUserInterfaceStyle = .unspecified
+    backgroundColor = AppColors.background
     titleLabel.text = isPrivate ? "无痕浏览" : "嗅探浏览器"
     welcomeLabel.text = isPrivate
-      ? "无痕标签不会保存到浏览历史，下载和主动收藏的内容仍会保留。"
+      ? "不会保存浏览历史、搜索记录或自动填充信息；下载和主动收藏仍会保留。无痕模式不会让你在网络上匿名。"
       : "从一次安静、专注的浏览开始"
     refreshContentPreferences()
-    logoView.setPrivateMode(isPrivate)
+    searchMaterial.overrideUserInterfaceStyle = isPrivate ? .dark : .unspecified
     accessibilityLabel = isPrivate
       ? "无痕浏览。无痕模式不会让你在网络上匿名。"
       : nil
@@ -83,6 +79,7 @@ final class NewTabView: UIView {
     titleLabel.textAlignment = .center
     titleLabel.numberOfLines = 1
     titleLabel.adjustsFontForContentSizeCategory = true
+    titleLabel.accessibilityIdentifier = "newTab.title"
     titleLabel.setContentCompressionResistancePriority(
       .required,
       for: .horizontal
@@ -91,6 +88,7 @@ final class NewTabView: UIView {
     logoContainer.translatesAutoresizingMaskIntoConstraints = false
     logoView.translatesAutoresizingMaskIntoConstraints = false
     logoView.accessibilityLabel = "嗅探浏览器图标"
+    logoView.accessibilityIdentifier = "newTab.logo"
     logoContainer.addSubview(logoView)
 
     welcomeLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -100,6 +98,7 @@ final class NewTabView: UIView {
     welcomeLabel.textAlignment = .center
     welcomeLabel.numberOfLines = 0
     welcomeLabel.adjustsFontForContentSizeCategory = true
+    welcomeLabel.accessibilityIdentifier = "newTab.description"
     welcomeLabel.setContentCompressionResistancePriority(
       .defaultHigh,
       for: .horizontal
@@ -115,6 +114,7 @@ final class NewTabView: UIView {
     dateLabel.textAlignment = .center
     dateLabel.numberOfLines = 1
     dateLabel.adjustsFontForContentSizeCategory = true
+    dateLabel.accessibilityIdentifier = "newTab.date"
     dateLabel.setContentCompressionResistancePriority(
       .required,
       for: .horizontal
@@ -125,6 +125,7 @@ final class NewTabView: UIView {
     searchMaterial.layer.cornerCurve = .continuous
     searchMaterial.clipsToBounds = true
     searchMaterial.layer.borderWidth = 0.5
+    searchMaterial.contentView.accessibilityIdentifier = "newTab.searchSurface"
 
     searchImageView.translatesAutoresizingMaskIntoConstraints = false
     searchImageView.tintColor = AppColors.secondaryText
@@ -190,9 +191,6 @@ final class NewTabView: UIView {
     contentStack.setCustomSpacing(AppSpacing.sm, after: logoContainer)
     contentStack.addArrangedSubview(titleLabel)
     contentStack.setCustomSpacing(AppSpacing.lg, after: titleLabel)
-    privacyBadge.isHidden = true
-    contentStack.addArrangedSubview(privacyBadge)
-    contentStack.setCustomSpacing(AppSpacing.xxs, after: privacyBadge)
     contentStack.addArrangedSubview(searchMaterial)
     contentStack.setCustomSpacing(AppSpacing.lg, after: searchMaterial)
     contentStack.addArrangedSubview(welcomeLabel)
@@ -302,27 +300,28 @@ final class NewTabView: UIView {
   }
 
   private func updateResolvedColors() {
-    let primary = isPrivateMode
+    let searchPrimary = isPrivateMode
       ? UIColor.white.withAlphaComponent(0.96)
       : AppColors.primaryText
-    let secondary = isPrivateMode
+    let searchSecondary = isPrivateMode
       ? UIColor.white.withAlphaComponent(0.68)
       : AppColors.secondaryText
-    let tertiary = isPrivateMode
-      ? UIColor.white.withAlphaComponent(0.48)
-      : AppColors.tertiaryText
 
-    titleLabel.textColor = primary
-    welcomeLabel.textColor = secondary
-    dateLabel.textColor = tertiary
-    searchImageView.tintColor = secondary
-    textField.textColor = primary
+    titleLabel.textColor = isPrivateMode
+      ? AppColors.privateBrowsingDescription
+      : AppColors.primaryText
+    welcomeLabel.textColor = isPrivateMode
+      ? AppColors.privateBrowsingDescription.withAlphaComponent(0.82)
+      : AppColors.secondaryText
+    dateLabel.textColor = AppColors.tertiaryText
+    searchImageView.tintColor = searchSecondary
+    textField.textColor = searchPrimary
     textField.tintColor = isPrivateMode
       ? AppColors.privateBrowsingAccent
       : AppColors.accent
     textField.attributedPlaceholder = NSAttributedString(
       string: "搜索或输入网址",
-      attributes: [.foregroundColor: secondary.withAlphaComponent(0.72)]
+      attributes: [.foregroundColor: searchSecondary.withAlphaComponent(0.72)]
     )
     submitButton.tintColor = isPrivateMode
       ? AppColors.privateBrowsingAccent
@@ -336,7 +335,11 @@ final class NewTabView: UIView {
       )
       : .clear
     searchMaterial.layer.borderColor = AppColors.separator
-      .resolvedColor(with: traitCollection)
+      .resolvedColor(
+        with: isPrivateMode
+          ? UITraitCollection(userInterfaceStyle: .dark)
+          : traitCollection
+      )
       .cgColor
   }
 
@@ -395,7 +398,6 @@ private final class NewTabLogoView: UIView {
       )
     )
   )
-  private var isPrivateMode = false
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -405,11 +407,6 @@ private final class NewTabLogoView: UIView {
   required init?(coder: NSCoder) {
     super.init(coder: coder)
     configure()
-  }
-
-  func setPrivateMode(_ isPrivate: Bool) {
-    isPrivateMode = isPrivate
-    updateColors()
   }
 
   private func configure() {
@@ -428,15 +425,7 @@ private final class NewTabLogoView: UIView {
       symbolView.widthAnchor.constraint(equalToConstant: 44),
       symbolView.heightAnchor.constraint(equalToConstant: 44),
     ])
-    updateColors()
-  }
-
-  private func updateColors() {
-    backgroundColor = isPrivateMode
-      ? AppColors.privateBrowsingSurface
-      : AppColors.accent
-    symbolView.tintColor = isPrivateMode
-      ? AppColors.privateBrowsingAccent
-      : .white
+    backgroundColor = AppColors.accent
+    symbolView.tintColor = .white
   }
 }

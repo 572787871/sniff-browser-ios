@@ -300,8 +300,7 @@ final class BrowserViewController: UIViewController {
       topChromeBackgroundView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
       topChromeBackgroundView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
       topChromeBackgroundView.bottomAnchor.constraint(
-        equalTo: addressBar.bottomAnchor,
-        constant: AppSpacing.xxs
+        equalTo: addressBar.bottomAnchor
       ),
 
       addressBar.topAnchor.constraint(
@@ -318,8 +317,7 @@ final class BrowserViewController: UIViewController {
       ),
 
       quickLinksScrollView.topAnchor.constraint(
-        equalTo: addressBar.bottomAnchor,
-        constant: AppSpacing.xxs
+        equalTo: addressBar.bottomAnchor
       ),
       quickLinksScrollView.leadingAnchor.constraint(
         equalTo: view.leadingAnchor
@@ -370,6 +368,7 @@ final class BrowserViewController: UIViewController {
     quickLinksScrollView.backgroundColor = AppColors.browserCanvas
     quickLinksScrollView.showsHorizontalScrollIndicator = false
     quickLinksScrollView.alwaysBounceHorizontal = true
+    quickLinksScrollView.accessibilityIdentifier = "browser.searchFavorites"
     quickLinksScrollView.directionalLayoutMargins = NSDirectionalEdgeInsets(
       top: AppSpacing.xs,
       leading: AppSpacing.md,
@@ -475,8 +474,9 @@ final class BrowserViewController: UIViewController {
       url: viewModel.state.url ?? activeWebView?.url
     )
     searchHistoryQuery = initialQuery
-    reloadSearchHistory(matching: initialQuery)
     reloadQuickLinks()
+    reloadSearchHistory(matching: initialQuery)
+    view.layoutIfNeeded()
     searchHistoryTableView.isHidden = false
   }
 
@@ -508,14 +508,15 @@ final class BrowserViewController: UIViewController {
     searchHistoryItems = Array(matchingEntries.prefix(12))
     if activeTab?.isPrivate == true {
       searchHistoryEmptyLabel.text = "无痕模式不显示历史记录"
+      searchHistoryEmptyLabel.textColor = AppColors.privateBrowsingDescription
     } else {
       searchHistoryEmptyLabel.text = normalizedQuery.isEmpty
         ? "暂无历史记录"
         : "没有匹配的历史记录"
+      searchHistoryEmptyLabel.textColor = AppColors.secondaryText
     }
     searchHistoryEmptyLabel.isHidden = !searchHistoryItems.isEmpty
     searchHistoryTableView.reloadData()
-    searchHistoryTableView.isHidden = !isSearchHistoryVisible
   }
 
   private func reloadQuickLinks() {
@@ -748,9 +749,8 @@ final class BrowserViewController: UIViewController {
 
     bindActiveWebView(webView)
     newTabView.setPrivateMode(tab.isPrivate)
-    searchHistoryTableView.overrideUserInterfaceStyle = tab.isPrivate
-      ? .dark
-      : .unspecified
+    searchHistoryTableView.overrideUserInterfaceStyle = .unspecified
+    quickLinksScrollView.overrideUserInterfaceStyle = .unspecified
     applyChromeState(.expanded, animated: false)
     chromeScrollController.reset()
 
@@ -863,13 +863,11 @@ final class BrowserViewController: UIViewController {
     animated: Bool
   ) {
     let isPrivate = activeTab?.isPrivate == true
-    let foregroundStyle: BrowserChromeForegroundStyle? = isPrivate
-      ? .light
-      : color.map { ContrastColorResolver.foregroundStyle(for: $0) }
+    let foregroundStyle = color.map {
+      ContrastColorResolver.foregroundStyle(for: $0)
+    }
     pageChromeForegroundStyle = foregroundStyle
-    let resolvedBackground = isPrivate
-      ? AppColors.privateBrowsingChrome
-      : (color?.uiColor ?? AppColors.background)
+    let resolvedBackground = color?.uiColor ?? AppColors.background
 
     let changes = {
       self.view.backgroundColor = resolvedBackground
@@ -879,7 +877,7 @@ final class BrowserViewController: UIViewController {
         isPrivate ? nil : color,
         foregroundStyle: foregroundStyle
       )
-      self.toolbar.setPrivateMode(isPrivate)
+      self.toolbar.setPrivateMode(false)
       self.setNeedsStatusBarAppearanceUpdate()
     }
     guard animated, !UIAccessibility.isReduceMotionEnabled else {

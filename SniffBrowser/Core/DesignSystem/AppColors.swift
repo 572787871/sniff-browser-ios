@@ -42,6 +42,13 @@ enum AppColors {
         blue: 0.95,
         alpha: 1
     )
+    /// 普通与无痕主页共用布局和画布，仅用该动态色强调无痕说明。
+    static let privateBrowsingDescription = UIColor { traits in
+        if traits.userInterfaceStyle == .dark {
+            return UIColor(red: 0.72, green: 0.72, blue: 0.96, alpha: 1)
+        }
+        return UIColor(red: 0.31, green: 0.27, blue: 0.58, alpha: 1)
+    }
 
     /// 普通卡片与列表分组背景。
     static let surface = UIColor.secondarySystemGroupedBackground
