@@ -76,12 +76,11 @@ final class DesignSystemTests: XCTestCase {
   func testPrivateNewTabKeepsRegularLayoutAndOnlyRestylesPrivacyElements() throws {
     let regular = NewTabView()
     let privateView = NewTabView()
-    [regular, privateView].forEach {
-      $0.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-    }
+    let regularHost = fixedSizeHost(containing: regular)
+    let privateHost = fixedSizeHost(containing: privateView)
     regular.setPrivateMode(false)
     privateView.setPrivateMode(true)
-    [regular, privateView].forEach {
+    [regularHost, privateHost].forEach {
       $0.setNeedsLayout()
       $0.layoutIfNeeded()
     }
@@ -132,6 +131,21 @@ final class DesignSystemTests: XCTestCase {
       regularSearch.backgroundColor,
       privateSearch.backgroundColor
     ))
+  }
+
+  @MainActor
+  func testBrowserConfigurationAllowsScriptedPlaybackContinuation() {
+    let configurations = [
+      BrowserConfiguration.makeWebViewConfiguration(isPrivate: false),
+      BrowserConfiguration.makeWebViewConfiguration(isPrivate: true),
+    ]
+
+    for configuration in configurations {
+      XCTAssertTrue(configuration.allowsInlineMediaPlayback)
+      XCTAssertTrue(
+        configuration.mediaTypesRequiringUserActionForPlayback.isEmpty
+      )
+    }
   }
 
   @MainActor
@@ -211,6 +225,20 @@ final class DesignSystemTests: XCTestCase {
       code: 1,
       userInfo: [NSLocalizedDescriptionKey: "Missing view: \(identifier)"]
     )
+  }
+
+  @MainActor
+  private func fixedSizeHost(containing view: UIView) -> UIView {
+    let host = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+    view.translatesAutoresizingMaskIntoConstraints = false
+    host.addSubview(view)
+    NSLayoutConstraint.activate([
+      view.topAnchor.constraint(equalTo: host.topAnchor),
+      view.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+      view.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+      view.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+    ])
+    return host
   }
 
   private func sameLightColor(_ lhs: UIColor?, _ rhs: UIColor?) -> Bool {
