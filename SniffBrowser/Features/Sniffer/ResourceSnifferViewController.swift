@@ -6,7 +6,7 @@ final class ResourceSnifferViewController: BaseViewController {
     var onReturnToPage: (() -> Void)?
     var onShowDownloads: (() -> Void)?
 
-    private enum Filter: Int, CaseIterable {
+    private enum Filter: Int, CaseIterable, Equatable {
         case all
         case video
         case audio
@@ -40,6 +40,50 @@ final class ResourceSnifferViewController: BaseViewController {
         }
     }
 
+    private struct RenderedResourceRow: Equatable {
+        let id: UUID
+        let canonicalURL: URL
+        let fileName: String
+        let fileExtension: String?
+        let mimeType: String?
+        let resourceType: ResourceType
+        let estimatedSize: Int64?
+        let duration: Double?
+        let width: Int?
+        let height: Int?
+        let bitrate: Int?
+        let thumbnailURL: URL?
+        let isPotentiallyDownloadable: Bool
+
+        init(_ resource: DetectedResource) {
+            id = resource.id
+            canonicalURL = resource.canonicalURL
+            fileName = resource.fileName
+            fileExtension = resource.fileExtension
+            mimeType = resource.mimeType
+            resourceType = resource.resourceType
+            estimatedSize = resource.estimatedSize
+            duration = resource.duration
+            width = resource.width
+            height = resource.height
+            bitrate = resource.bitrate
+            thumbnailURL = resource.thumbnailURL
+            isPotentiallyDownloadable = resource.isPotentiallyDownloadable
+        }
+    }
+
+    private struct RenderedContent: Equatable {
+        let pageTitle: String
+        let pageURL: URL?
+        let isPrivate: Bool
+        let scanState: ResourceScanState
+        let errorMessage: String?
+        let activationState: SniffingActivationState
+        let selectedFilter: Filter
+        let filterCounts: [Int]
+        let rows: [RenderedResourceRow]
+    }
+
     private let viewModel: ResourceSnifferViewModel
     private var resources: [DetectedResource] = []
     private var selectedFilter = Filter.all
@@ -47,6 +91,8 @@ final class ResourceSnifferViewController: BaseViewController {
     private var scanState: ResourceScanState = .idle
     private var errorMessage: String?
     private var activationState: SniffingActivationState = .disabled
+    private var renderedRows: [RenderedResourceRow] = []
+    private var renderedContent: RenderedContent?
 
     private let summaryView = ResourcePageSummaryView()
     private let filterScrollView = UIScrollView()
@@ -268,6 +314,24 @@ final class ResourceSnifferViewController: BaseViewController {
     }
 
     private func updateContent(state: ResourceSnifferViewModel.State) {
+        let nextRows = filteredResources.map(RenderedResourceRow.init)
+        let nextContent = RenderedContent(
+            pageTitle: state.pageTitle,
+            pageURL: state.pageURL,
+            isPrivate: state.isPrivate,
+            scanState: state.scanState,
+            errorMessage: state.errorMessage,
+            activationState: state.activationState,
+            selectedFilter: selectedFilter,
+            filterCounts: Filter.allCases.map { filter in
+                resources.lazy.filter {
+                    filter.includes($0.resourceType)
+                }.count
+            },
+            rows: nextRows
+        )
+        guard nextContent != renderedContent else { return }
+        renderedContent = nextContent
         let isScanning = state.scanState == .installing
             || state.scanState == .scanning
         summaryView.configure(
@@ -278,7 +342,10 @@ final class ResourceSnifferViewController: BaseViewController {
             isPrivate: state.isPrivate
         )
         summaryView.setRefreshAvailable(!isScanning && state.pageURL != nil)
-        tableView.reloadData()
+        if nextRows != renderedRows {
+            renderedRows = nextRows
+            tableView.reloadData()
+        }
         let isEmpty = filteredResources.isEmpty
         tableView.isHidden = isEmpty
         emptyState.isHidden = !isEmpty
@@ -641,6 +708,10 @@ extension ResourceSnifferViewController: UITableViewDataSource {
             thumbnailRequestProvider: { [weak viewModel] url in
                 guard let viewModel else { return nil }
                 return await viewModel.thumbnailRequest(for: url)
+            },
+            mediaContextProvider: { [weak viewModel] resource in
+                guard let viewModel else { return nil }
+                return await viewModel.requestContext(for: resource)
             },
             onCopy: { [weak self] in self?.copy(resource) },
             onShare: { [weak self] in self?.share(resource) },

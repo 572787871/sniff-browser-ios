@@ -650,7 +650,24 @@ private final class DownloadTaskCell: UITableViewCell {
             fromByteCount: task.downloadedSize,
             countStyle: .file
         )
-        if let expected = task.expectedSize, expected > 0 {
+        if task.state == .completed {
+            let localFileSize = fileURL.flatMap { url -> Int64? in
+                guard let values = try? url.resourceValues(
+                    forKeys: [.fileSizeKey]
+                ), let size = values.fileSize, size > 0
+                else { return nil }
+                return Int64(size)
+            }
+            let finalSize = localFileSize ?? (task.downloadedSize > 0
+                ? task.downloadedSize
+                : (task.expectedSize ?? 0))
+            sizeLabel.text = finalSize > 0
+                ? ByteCountFormatter.string(
+                    fromByteCount: finalSize,
+                    countStyle: .file
+                )
+                : "大小未知"
+        } else if let expected = task.expectedSize, expected > 0 {
             let total = ByteCountFormatter.string(fromByteCount: expected, countStyle: .file)
             sizeLabel.text = "\(downloaded) / \(total)"
         } else if let progressFraction = task.progressFraction, progressFraction > 0,
@@ -668,7 +685,16 @@ private final class DownloadTaskCell: UITableViewCell {
             var detailParts: [String] = []
             if let width = task.mediaWidth, let height = task.mediaHeight,
                width > 0, height > 0 {
-                detailParts.append("\(width)×\(height)")
+                if [.video, .hls].contains(task.resourceType),
+                   let quality = HLSQualityLabel.make(
+                    width: width,
+                    height: height,
+                    bitrate: nil
+                   ) {
+                    detailParts.append(quality)
+                } else {
+                    detailParts.append("\(width)×\(height)")
+                }
             }
             if let duration = task.mediaDuration, duration.isFinite, duration > 0 {
                 detailParts.append(Self.durationText(duration))

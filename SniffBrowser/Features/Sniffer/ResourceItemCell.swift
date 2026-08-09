@@ -14,8 +14,11 @@ final class ResourceListCell: UITableViewCell {
     private let downloadButton = UIButton(type: .system)
     private let moreButton = UIButton(type: .system)
     private var thumbnailTask: Task<Void, Never>?
+    private var mediaThumbnailTask: Task<Void, Never>?
     private var thumbnailToken: ResourceThumbnailToken?
+    private var mediaThumbnailToken: ResourceThumbnailToken?
     private var representedResourceID: UUID?
+    private var hasMediaFrame = false
     private var iconWidthConstraint: NSLayoutConstraint?
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
@@ -31,9 +34,14 @@ final class ResourceListCell: UITableViewCell {
         super.prepareForReuse()
         thumbnailTask?.cancel()
         thumbnailTask = nil
+        mediaThumbnailTask?.cancel()
+        mediaThumbnailTask = nil
         thumbnailToken?.cancel()
         thumbnailToken = nil
+        mediaThumbnailToken?.cancel()
+        mediaThumbnailToken = nil
         representedResourceID = nil
+        hasMediaFrame = false
         typeIconView.image = nil
         moreButton.menu = nil
     }
@@ -42,6 +50,7 @@ final class ResourceListCell: UITableViewCell {
         resource: DetectedResource,
         allowsThumbnailDiskCache: Bool,
         thumbnailRequestProvider: @escaping @MainActor (URL) async -> URLRequest?,
+        mediaContextProvider: @escaping @MainActor (DetectedResource) async -> DownloadRequestContext?,
         onCopy: @escaping () -> Void,
         onShare: @escaping () -> Void,
         onDetails: @escaping () -> Void,
@@ -50,9 +59,14 @@ final class ResourceListCell: UITableViewCell {
     ) {
         thumbnailTask?.cancel()
         thumbnailTask = nil
+        mediaThumbnailTask?.cancel()
+        mediaThumbnailTask = nil
         thumbnailToken?.cancel()
         thumbnailToken = nil
+        mediaThumbnailToken?.cancel()
+        mediaThumbnailToken = nil
         representedResourceID = resource.id
+        hasMediaFrame = false
         nameLabel.text = resource.fileName
         var metadata = [resource.fileExtension?.uppercased()
             ?? resource.resourceType.localizedTitle]
@@ -98,6 +112,8 @@ final class ResourceListCell: UITableViewCell {
         let thumbnailURL = resource.resourceType == .image
             ? resource.canonicalURL
             : resource.thumbnailURL
+        let supportsMediaFrame = resource.resourceType == .video
+            || resource.resourceType == .hls
         iconWidthConstraint?.constant = thumbnailURL == nil ? 48 : 80
         typeIconView.contentMode = thumbnailURL == nil
             ? .center
@@ -124,9 +140,39 @@ final class ResourceListCell: UITableViewCell {
                 ) { [weak self] image in
                     guard let self,
                           self.representedResourceID == resource.id,
+                          !self.hasMediaFrame,
                           let image
                     else { return }
                     self.typeIconView.image = image
+                    self.typeIconView.contentMode = .scaleAspectFill
+                    self.typeIconView.backgroundColor = AppColors.progressTrack
+                }
+            }
+        }
+        if supportsMediaFrame {
+            let scale = UIScreen.main.scale
+            mediaThumbnailTask = Task { [weak self] in
+                guard let context = await mediaContextProvider(resource),
+                      !Task.isCancelled
+                else { return }
+                self?.mediaThumbnailToken = RemoteMediaThumbnailLoader.shared.load(
+                    resource: resource,
+                    context: context,
+                    targetPixelSize: CGSize(
+                        width: 80 * scale,
+                        height: 64 * scale
+                    ),
+                    allowsSharedCache: allowsThumbnailDiskCache
+                ) { [weak self] image in
+                    guard let self,
+                          self.representedResourceID == resource.id,
+                          let image
+                    else { return }
+                    self.hasMediaFrame = true
+                    self.thumbnailToken?.cancel()
+                    self.thumbnailToken = nil
+                    self.typeIconView.image = image
+                    self.typeIconView.contentMode = .scaleAspectFill
                     self.typeIconView.backgroundColor = AppColors.progressTrack
                 }
             }

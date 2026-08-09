@@ -13,6 +13,10 @@ final class HLSResourcePresentationTests: XCTestCase {
             "4K"
         )
         XCTAssertEqual(
+            HLSQualityLabel.make(width: 720, height: 1_280, bitrate: nil),
+            "720p"
+        )
+        XCTAssertEqual(
             HLSQualityLabel.make(width: nil, height: nil, bitrate: 2_500_000),
             "2.5 Mbps"
         )

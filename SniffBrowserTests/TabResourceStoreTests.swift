@@ -115,6 +115,24 @@ final class TabResourceStoreTests: XCTestCase {
         XCTAssertTrue(counts.contains(0))
     }
 
+    @MainActor
+    func testAutomaticRescanDoesNotPublishTransientScanningState() {
+        let store = TabResourceStore()
+        let tabID = UUID()
+        activate(store, tabID: tabID)
+        store.completeScan(tabID: tabID, scanID: nil, isManual: false)
+        var states: [ResourceScanState] = []
+        let token = store.observe(tabID: tabID) {
+            states.append($0.scanState)
+        }
+
+        store.beginScan(tabID: tabID, scanID: nil, isManual: false)
+        store.completeScan(tabID: tabID, scanID: nil, isManual: false)
+        store.removeObserver(token)
+
+        XCTAssertEqual(states, [.completed])
+    }
+
     private func resource(
         tabID: UUID,
         name: String,

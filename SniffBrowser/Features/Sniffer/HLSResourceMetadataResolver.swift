@@ -5,6 +5,7 @@ struct HLSResolvedMetadata: Equatable, Sendable {
     let height: Int?
     let bitrate: Int?
     let duration: TimeInterval?
+    let estimatedSize: Int64?
 
     var qualityLabel: String? {
         HLSQualityLabel.make(width: width, height: height, bitrate: bitrate)
@@ -13,11 +14,17 @@ struct HLSResolvedMetadata: Equatable, Sendable {
 
 enum HLSQualityLabel {
     static func make(width: Int?, height: Int?, bitrate: Int?) -> String? {
-        if let height, height > 0 {
-            switch height {
+        let verticalResolution: Int? = {
+            if let width, width > 0, let height, height > 0 {
+                return min(width, height)
+            }
+            return height.flatMap { $0 > 0 ? $0 : nil }
+        }()
+        if let verticalResolution {
+            switch verticalResolution {
             case 2_160...: return "4K"
             case 1_440...: return "1440p"
-            default: return "\(height)p"
+            default: return "\(verticalResolution)p"
             }
         }
         if let width, width >= 3_840 { return "4K" }
@@ -62,6 +69,12 @@ struct HLSResourceMetadataResolver {
                     .compactMap(\.duration)
                     .reduce(0, +)
                 if measuredDuration > 0 { duration = measuredDuration }
+                let estimatedSize = await estimateSize(
+                    playlist: playlist,
+                    duration: duration,
+                    bitrate: selectedVariant?.bandwidth,
+                    context: context
+                )
                 return enrichedResource(
                     resource,
                     metadata: HLSResolvedMetadata(
@@ -70,7 +83,8 @@ struct HLSResourceMetadataResolver {
                         height: selectedVariant?.height
                             ?? Self.inferredResolution(from: playlistURL).height,
                         bitrate: selectedVariant?.bandwidth,
-                        duration: duration
+                        duration: duration,
+                        estimatedSize: estimatedSize
                     )
                 )
             }
@@ -120,15 +134,6 @@ struct HLSResourceMetadataResolver {
         } else {
             fileName = FileNameSanitizer.sanitize("\(readableTitle).m3u8")
         }
-        let estimatedSize: Int64?
-        if let bitrate = metadata.bitrate,
-           let duration = metadata.duration,
-           duration.isFinite,
-           duration > 0 {
-            estimatedSize = Int64((Double(bitrate) * duration / 8).rounded())
-        } else {
-            estimatedSize = nil
-        }
         return DetectedResource(
             id: resource.id,
             canonicalURL: resource.canonicalURL,
@@ -139,7 +144,7 @@ struct HLSResourceMetadataResolver {
             fileExtension: "m3u8",
             mimeType: resource.mimeType,
             resourceType: .hls,
-            estimatedSize: estimatedSize,
+            estimatedSize: metadata.estimatedSize ?? resource.estimatedSize,
             duration: metadata.duration,
             width: metadata.width,
             height: metadata.height,
@@ -180,6 +185,96 @@ struct HLSResourceMetadataResolver {
         return (lhs.height ?? 0) < (rhs.height ?? 0)
     }
 
+    private func estimateSize(
+        playlist: HLSMediaPlaylist,
+        duration: TimeInterval?,
+        bitrate: Int?,
+        context: DownloadRequestContext
+    ) async -> Int64? {
+        if let bitrate,
+           let duration,
+           duration.isFinite,
+           duration > 0 {
+            return Int64((Double(bitrate) * duration / 8).rounded())
+        }
+
+        let rangedSegments = playlist.segments.compactMap(\.byteRange)
+        if rangedSegments.count == playlist.segments.count {
+            return rangedSegments.reduce(Int64(0)) { $0 + $1.length }
+                + (playlist.initializationSegment?.byteRange?.length ?? 0)
+        }
+
+        let samples = Self.sampledSegments(from: playlist.segments)
+        var sampledBytes: Int64 = 0
+        var sampledDuration: TimeInterval = 0
+        var measuredCount = 0
+        for segment in samples {
+            guard !Task.isCancelled,
+                  let byteCount = await Self.contentLength(
+                    for: segment,
+                    context: context
+                  ), byteCount > 0
+            else { continue }
+            sampledBytes += byteCount
+            sampledDuration += segment.duration ?? 0
+            measuredCount += 1
+        }
+        guard measuredCount > 0 else { return nil }
+
+        let mediaBytes: Double
+        if sampledDuration > 0,
+           let duration,
+           duration.isFinite,
+           duration > 0 {
+            mediaBytes = Double(sampledBytes) / sampledDuration * duration
+        } else {
+            mediaBytes = Double(sampledBytes) / Double(measuredCount)
+                * Double(playlist.segments.count)
+        }
+        let initializationBytes: Int64
+        if let initializationSegment = playlist.initializationSegment {
+            if let byteRange = initializationSegment.byteRange {
+                initializationBytes = byteRange.length
+            } else {
+                initializationBytes = await Self.contentLength(
+                    for: initializationSegment,
+                    context: context
+                ) ?? 0
+            }
+        } else {
+            initializationBytes = 0
+        }
+        guard mediaBytes.isFinite, mediaBytes > 0 else { return nil }
+        return Int64(mediaBytes.rounded()) + initializationBytes
+    }
+
+    private static func sampledSegments(
+        from segments: [HLSSegment]
+    ) -> [HLSSegment] {
+        guard segments.count > 5 else { return segments }
+        let last = segments.count - 1
+        let indexes = Set([0, last / 4, last / 2, last * 3 / 4, last])
+        return indexes.sorted().map { segments[$0] }
+    }
+
+    private static func contentLength(
+        for segment: HLSSegment,
+        context: DownloadRequestContext
+    ) async -> Int64? {
+        if let byteRange = segment.byteRange { return byteRange.length }
+        var headRequest = context.makeRequest(for: segment.url)
+        headRequest.httpMethod = "HEAD"
+        headRequest.timeoutInterval = 10
+        if let length = await HLSContentLengthProbe.measure(headRequest) {
+            return length
+        }
+        var rangeRequest = context.makeRequest(for: segment.url)
+        rangeRequest.httpMethod = "GET"
+        rangeRequest.timeoutInterval = 10
+        rangeRequest.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+        return await HLSContentLengthProbe.measure(rangeRequest)
+    }
+
     private static func inferredResolution(from url: URL) -> (width: Int?, height: Int?) {
         let value = url.absoluteString.lowercased()
         let patterns = [
@@ -207,5 +302,91 @@ struct HLSResourceMetadataResolver {
             }
         }
         return (nil, nil)
+    }
+}
+
+private final class HLSContentLengthProbe: NSObject, URLSessionDataDelegate {
+    private var continuation: CheckedContinuation<Int64?, Never>?
+    private var session: URLSession?
+    private var didFinish = false
+
+    static func measure(_ request: URLRequest) async -> Int64? {
+        await withCheckedContinuation { continuation in
+            let probe = HLSContentLengthProbe()
+            probe.start(request: request, continuation: continuation)
+        }
+    }
+
+    private func start(
+        request: URLRequest,
+        continuation: CheckedContinuation<Int64?, Never>
+    ) {
+        self.continuation = continuation
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 1
+        let session = URLSession(
+            configuration: configuration,
+            delegate: self,
+            delegateQueue: queue
+        )
+        self.session = session
+        session.dataTask(with: request).resume()
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        let length = Self.contentLength(
+            from: response,
+            requestedRange: dataTask.originalRequest?
+                .value(forHTTPHeaderField: "Range") != nil
+        )
+        completionHandler(.cancel)
+        finish(length)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        finish(nil)
+    }
+
+    private func finish(_ value: Int64?) {
+        guard !didFinish else { return }
+        didFinish = true
+        let continuation = continuation
+        self.continuation = nil
+        session?.invalidateAndCancel()
+        session = nil
+        continuation?.resume(returning: value)
+    }
+
+    private static func contentLength(
+        from response: URLResponse,
+        requestedRange: Bool
+    ) -> Int64? {
+        guard let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode)
+        else { return nil }
+        if let contentRange = http.value(forHTTPHeaderField: "Content-Range"),
+           let totalText = contentRange.split(separator: "/").last,
+           totalText != "*",
+           let total = Int64(totalText),
+           total > 0 {
+            return total
+        }
+        if requestedRange, http.statusCode == 206 { return nil }
+        return response.expectedContentLength > 0
+            ? response.expectedContentLength
+            : nil
     }
 }

@@ -38,6 +38,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
   func applicationDidReceiveMemoryWarning(_ application: UIApplication) {
     ResourceThumbnailLoader.shared.clearMemoryCache()
+    RemoteMediaThumbnailLoader.shared.clearMemoryCache()
     FileThumbnailLoader.shared.clearMemory()
   }
 }

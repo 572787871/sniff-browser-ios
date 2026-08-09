@@ -130,14 +130,14 @@ final class TabResourceStore {
     func beginScan(tabID: UUID, scanID: UUID?, isManual: Bool) {
         var bucket = buckets[tabID] ?? Bucket()
         guard bucket.activationState.isEnabled else { return }
-        bucket.scanState = .scanning
         bucket.errorMessage = nil
         if isManual {
+            bucket.scanState = .scanning
             bucket.manualScanID = scanID
             bucket.manualSeenKeys.removeAll(keepingCapacity: true)
         }
         buckets[tabID] = bucket
-        notify(tabID)
+        if isManual { notify(tabID) }
     }
 
     func upsert(_ resources: [DetectedResource], tabID: UUID) {
@@ -173,6 +173,9 @@ final class TabResourceStore {
 
     func completeScan(tabID: UUID, scanID: UUID?, isManual: Bool) {
         guard var bucket = buckets[tabID] else { return }
+        let shouldNotify = isManual
+            || bucket.scanState != .completed
+            || bucket.errorMessage != nil
         if isManual {
             guard scanID == bucket.manualScanID else { return }
             bucket.resourcesByURL = bucket.resourcesByURL.filter {
@@ -185,7 +188,7 @@ final class TabResourceStore {
         bucket.lastScanAt = Date()
         bucket.errorMessage = nil
         buckets[tabID] = bucket
-        notify(tabID)
+        if shouldNotify { notify(tabID) }
     }
 
     func failScan(tabID: UUID, scanID: UUID?, message: String) {
@@ -287,7 +290,7 @@ final class TabResourceStore {
                     return leftBitrate > rightBitrate
                 }
             }
-            return lhs.lastSeenAt > rhs.lastSeenAt
+            return lhs.detectedAt > rhs.detectedAt
         }
     }
 
