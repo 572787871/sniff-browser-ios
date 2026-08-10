@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import SniffBrowser
 
@@ -82,6 +83,41 @@ final class WebPageThemeColorTests: XCTestCase {
         for: WebPageThemeColor(red: 0.95, green: 0.96, blue: 0.97)
       ),
       .dark
+    )
+  }
+
+  func testDarkAppearanceRejectsLightPageTheme() {
+    let lightPage = WebPageThemeColor(red: 0.96, green: 0.96, blue: 0.96)
+
+    XCTAssertNil(
+      BrowserChromeThemeResolver.effectivePageTheme(
+        lightPage,
+        interfaceStyle: .dark
+      )
+    )
+  }
+
+  func testDarkAppearanceKeepsDarkPageTheme() {
+    let darkPage = WebPageThemeColor(red: 0.04, green: 0.05, blue: 0.06)
+
+    XCTAssertEqual(
+      BrowserChromeThemeResolver.effectivePageTheme(
+        darkPage,
+        interfaceStyle: .dark
+      ),
+      darkPage
+    )
+  }
+
+  func testLightAppearanceKeepsDarkPageTheme() {
+    let darkPage = WebPageThemeColor(red: 0.04, green: 0.05, blue: 0.06)
+
+    XCTAssertEqual(
+      BrowserChromeThemeResolver.effectivePageTheme(
+        darkPage,
+        interfaceStyle: .light
+      ),
+      darkPage
     )
   }
 }

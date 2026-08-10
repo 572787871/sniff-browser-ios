@@ -306,7 +306,8 @@ final class BrowserViewController: UIViewController {
       topChromeBackgroundView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
       topChromeBackgroundView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
       topChromeBackgroundView.bottomAnchor.constraint(
-        equalTo: addressBar.bottomAnchor
+        equalTo: addressBar.bottomAnchor,
+        constant: AppSpacing.xs
       ),
 
       addressBar.topAnchor.constraint(
@@ -380,6 +381,14 @@ final class BrowserViewController: UIViewController {
     dismissEditingGesture.cancelsTouchesInView = false
     dismissEditingGesture.delegate = self
     contentView.addGestureRecognizer(dismissEditingGesture)
+
+    registerForTraitChanges([UITraitUserInterfaceStyle.self]) {
+      (controller: BrowserViewController, _) in
+      controller.applyPageTheme(
+        controller.activeTab?.pageThemeColor,
+        animated: false
+      )
+    }
   }
 
   private func configureQuickLinksView() {
@@ -751,8 +760,8 @@ final class BrowserViewController: UIViewController {
     guard let tab = activeTab else { return }
     tab.activate()
     guard let webView = tab.webView else { return }
-    applyPageTheme(tab.pageThemeColor, animated: false)
     configureWebView(webView)
+    applyPageTheme(tab.pageThemeColor, animated: false)
     activeResourceObservationToken = resourceStore.observe(tabID: tab.id) {
       [weak self, weak tab] snapshot in
       guard let self, let tab else { return }
@@ -893,26 +902,36 @@ final class BrowserViewController: UIViewController {
     animated: Bool
   ) {
     let isPrivate = activeTab?.isPrivate == true
-    let detectedForegroundStyle = color.map {
+    let effectivePageTheme = isSearchOverlayActive
+      ? nil
+      : BrowserChromeThemeResolver.effectivePageTheme(
+        color,
+        interfaceStyle: traitCollection.userInterfaceStyle
+      )
+    let foregroundStyle = effectivePageTheme.map {
       ContrastColorResolver.foregroundStyle(for: $0)
     }
-    let foregroundStyle = isSearchOverlayActive
-      ? nil
-      : detectedForegroundStyle
     pageChromeForegroundStyle = foregroundStyle
     let resolvedBackground = isSearchOverlayActive
       ? AppColors.browserCanvas
-      : (color?.uiColor ?? AppColors.background)
+      : (effectivePageTheme?.uiColor ?? AppColors.background)
 
     let changes = {
       self.view.backgroundColor = resolvedBackground
       self.topChromeBackgroundView.backgroundColor = resolvedBackground
+      self.activeWebView?.backgroundColor = resolvedBackground
+      self.activeWebView?.scrollView.backgroundColor = resolvedBackground
+      self.activeWebView?.underPageBackgroundColor = resolvedBackground
       self.addressBar.setPrivateMode(isPrivate)
       self.addressBar.applyPageTheme(
-        isPrivate || self.isSearchOverlayActive ? nil : color,
+        isPrivate ? nil : effectivePageTheme,
         foregroundStyle: foregroundStyle
       )
       self.toolbar.setPrivateMode(false)
+      self.toolbar.applyPageTheme(
+        effectivePageTheme,
+        foregroundStyle: foregroundStyle
+      )
       self.setNeedsStatusBarAppearanceUpdate()
     }
     guard animated, !UIAccessibility.isReduceMotionEnabled else {

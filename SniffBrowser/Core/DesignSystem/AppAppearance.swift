@@ -136,6 +136,46 @@ enum AppIconography {
         }
         return image.withRenderingMode(.alwaysTemplate)
     }
+
+    static func tabStackImage(
+        pointSize: CGFloat,
+        weight: CGFloat = 1.8
+    ) -> UIImage {
+        let size = CGSize(width: pointSize, height: pointSize)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let image = renderer.image { context in
+            let cgContext = context.cgContext
+            cgContext.setStrokeColor(UIColor.black.cgColor)
+            cgContext.setLineWidth(weight)
+            cgContext.setLineJoin(.round)
+
+            let side = pointSize * 0.58
+            let offset = pointSize * 0.20
+            let inset = max(weight, pointSize * 0.08)
+            let radius = pointSize * 0.13
+            let rearRect = CGRect(
+                x: inset + offset,
+                y: inset,
+                width: side,
+                height: side
+            )
+            let frontRect = CGRect(
+                x: inset,
+                y: inset + offset,
+                width: side,
+                height: side
+            )
+            cgContext.addPath(
+                UIBezierPath(roundedRect: rearRect, cornerRadius: radius).cgPath
+            )
+            cgContext.strokePath()
+            cgContext.addPath(
+                UIBezierPath(roundedRect: frontRect, cornerRadius: radius).cgPath
+            )
+            cgContext.strokePath()
+        }
+        return image.withRenderingMode(.alwaysTemplate)
+    }
 }
 
 /// 会随“降低透明度”设置实时切换的原生材质容器。

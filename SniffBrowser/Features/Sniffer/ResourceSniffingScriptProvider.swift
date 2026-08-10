@@ -31,6 +31,11 @@ enum ResourceSniffingScriptProvider {
         maximumCandidates: 500
       };
       const mediaEvents = ["loadedmetadata", "durationchange", "progress", "play", "canplay"];
+      const lazyImageURLAttributes = [
+        "z-image-loader-url", "data-src", "data-original", "data-lazy-src",
+        "data-original-src", "data-actualsrc"
+      ];
+      const lazyImageSrcsetAttributes = ["data-srcset", "data-lazy-srcset"];
       const mediaPattern = /\.(m3u8|mp4|mov|m4v|webm|ts|mpeg|mpg|mkv|mp3|m4a|aac|wav|flac|ogg|opus|vtt|srt|ass|pdf|txt|epub|docx?|xlsx?|pptx?|json|xml|zip|rar|7z|tar|gz|jpe?g|png|gif|webp|heic|avif|svg)(?:$|[?#])/i;
       // 仅匹配 URL 路径（不含查询参数）以媒体扩展名结尾的链接。
       // Google 等站点的 /imgres?imgurl=xxx.png、/url?q=xxx.png 跳转包装链接
@@ -161,6 +166,34 @@ enum ResourceSniffingScriptProvider {
         source,
         elementType: element instanceof HTMLVideoElement ? "video" : "audio"
       });
+      const enqueueImageURL = (element, raw, source) => {
+        const value = String(raw || "").trim();
+        if (!value || value.startsWith("data:")) return;
+        enqueue({
+          url: value,
+          width: element.naturalWidth,
+          height: element.naturalHeight,
+          source,
+          elementType: "img"
+        });
+      };
+      const scanImageSrcset = (element, raw, source) => String(raw || "")
+        .split(",")
+        .forEach(value => enqueueImageURL(
+          element,
+          value.trim().split(/\s+/, 1)[0],
+          source
+        ));
+      const scanImageElement = (element, source) => {
+        enqueueImageURL(element, element.currentSrc || element.src, source);
+        scanImageSrcset(element, element.srcset, source);
+        lazyImageURLAttributes.forEach(attribute => {
+          enqueueImageURL(element, element.getAttribute(attribute), source);
+        });
+        lazyImageSrcsetAttributes.forEach(attribute => {
+          scanImageSrcset(element, element.getAttribute(attribute), source);
+        });
+      };
       const scanElement = (element, source) => {
         if (!state.enabled || !(element instanceof Element)) return;
         const tag = element.tagName.toLowerCase();
@@ -169,21 +202,23 @@ enum ResourceSniffingScriptProvider {
           element.querySelectorAll("source").forEach(child => scanElement(child, source));
         } else if (tag === "source") {
           const parentTag = element.parentElement?.tagName?.toLowerCase();
-          enqueue({ url: element.src || element.getAttribute("src"), mimeType: element.type,
-            thumbnailURL: parentTag === "video"
-              ? (element.parentElement?.poster
-                || element.parentElement?.dataset?.poster
-                || element.parentElement?.dataset?.thumbnail
-                || pagePreview()) : null,
-            source, elementType: parentTag === "audio" ? "source-audio" : "source-video" });
+          if (parentTag === "picture") {
+            scanImageSrcset(element, element.srcset, source);
+            scanImageSrcset(element, element.getAttribute("data-srcset"), source);
+            scanImageSrcset(element, element.getAttribute("data-lazy-srcset"), source);
+          } else {
+            enqueue({ url: element.src || element.getAttribute("src"), mimeType: element.type,
+              thumbnailURL: parentTag === "video"
+                ? (element.parentElement?.poster
+                  || element.parentElement?.dataset?.poster
+                  || element.parentElement?.dataset?.thumbnail
+                  || pagePreview()) : null,
+              source, elementType: parentTag === "audio" ? "source-audio" : "source-video" });
+          }
         } else if (tag === "track") {
           enqueue({ url: element.src || element.getAttribute("src"), mimeType: "text/vtt", source, elementType: "track" });
         } else if (tag === "img") {
-          enqueue({ url: element.currentSrc || element.src, width: element.naturalWidth,
-            height: element.naturalHeight, source, elementType: "img" });
-          String(element.srcset || "").split(",").forEach(value => enqueue({
-            url: value.trim().split(/\s+/, 1)[0], source, elementType: "img"
-          }));
+          scanImageElement(element, source);
         } else if (tag === "a" || tag === "link") {
           const raw = element.href || element.getAttribute("href");
           const mime = element.type || null;
@@ -338,7 +373,10 @@ enum ResourceSniffingScriptProvider {
         });
         state.observer.observe(document.documentElement || document, {
           subtree: true, childList: true, attributes: true,
-          attributeFilter: ["src", "href", "srcset", "type"]
+          attributeFilter: [
+            "src", "href", "srcset", "type",
+            ...lazyImageURLAttributes, ...lazyImageSrcsetAttributes
+          ]
         });
       };
       const enable = () => {

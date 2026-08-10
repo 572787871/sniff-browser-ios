@@ -80,6 +80,27 @@ final class DesignSystemTests: XCTestCase {
     XCTAssertEqual(image.renderingMode, .alwaysTemplate)
   }
 
+  @MainActor
+  func testTabStackImageRendersAtRequestedSize() {
+    let image = AppIconography.tabStackImage(pointSize: 22)
+
+    XCTAssertEqual(image.size.width, 22, accuracy: 0.01)
+    XCTAssertEqual(image.size.height, 22, accuracy: 0.01)
+    XCTAssertEqual(image.renderingMode, .alwaysTemplate)
+  }
+
+  @MainActor
+  func testBrowserToolbarKeepsCenterActionsSquare() throws {
+    let toolbar = BrowserToolbar(frame: CGRect(x: 0, y: 0, width: 358, height: 58))
+    toolbar.layoutIfNeeded()
+
+    for identifier in ["browser.toolbar.sniffer", "browser.toolbar.tabs"] {
+      let button = try identifiedView(identifier, in: toolbar)
+      XCTAssertEqual(button.bounds.width, AppMetrics.minimumTapSize, accuracy: 0.5)
+      XCTAssertEqual(button.bounds.height, AppMetrics.minimumTapSize, accuracy: 0.5)
+    }
+  }
+
   func testSpacingUsesFourPointBaseline() {
     let values = [
       AppSpacing.xxs,

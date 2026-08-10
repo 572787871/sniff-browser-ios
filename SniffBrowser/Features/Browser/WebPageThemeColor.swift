@@ -77,3 +77,22 @@ enum ContrastColorResolver {
     return (lighter + 0.05) / (darker + 0.05)
   }
 }
+
+/// Keeps browser chrome coherent with the selected app appearance while still
+/// allowing dark websites to extend their color into the surrounding chrome.
+enum BrowserChromeThemeResolver {
+  static func effectivePageTheme(
+    _ color: WebPageThemeColor?,
+    interfaceStyle: UIUserInterfaceStyle
+  ) -> WebPageThemeColor? {
+    guard let color else { return nil }
+    guard interfaceStyle == .dark else { return color }
+
+    // A light page theme inside dark appearance would turn only the address
+    // bar light while the surrounding inset remains dark. Keep all chrome dark
+    // in that case; genuinely dark page themes are still adopted.
+    return ContrastColorResolver.foregroundStyle(for: color) == .light
+      ? color
+      : nil
+  }
+}

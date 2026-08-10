@@ -26,9 +26,7 @@ final class BrowserToolbar: UIView {
   )
   private let backButton = BrowserChromeButton(symbol: "chevron.backward")
   private let forwardButton = BrowserChromeButton(symbol: "chevron.forward")
-  private let sniffButton = BrowserChromeButton(
-    symbol: "viewfinder"
-  )
+  private let sniffButton = BrowserChromeButton(symbol: "circle")
   private let tabsButton = BrowserChromeButton(symbol: "square.on.square")
   private let moreButton = BrowserChromeButton(symbol: "ellipsis")
   private let tabCountLabel = BrowserToolbarBadgeLabel()
@@ -37,6 +35,8 @@ final class BrowserToolbar: UIView {
   private var isCollapsed = false
   private var isPrivateMode = false
   private var snifferActivationState: SniffingActivationState = .disabled
+  private var pageThemeColor: UIColor?
+  private var pageThemeForegroundStyle: BrowserChromeForegroundStyle?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -105,9 +105,15 @@ final class BrowserToolbar: UIView {
     guard isPrivateMode != isPrivate else { return }
     isPrivateMode = isPrivate
     overrideUserInterfaceStyle = isPrivate ? .dark : .unspecified
-    materialView.contentView.backgroundColor = isPrivate
-      ? AppColors.privateBrowsingSurface.withAlphaComponent(0.68)
-      : AppColors.browserChromeTint
+    updateResolvedColors()
+  }
+
+  func applyPageTheme(
+    _ theme: WebPageThemeColor?,
+    foregroundStyle: BrowserChromeForegroundStyle?
+  ) {
+    pageThemeColor = theme?.uiColor
+    pageThemeForegroundStyle = foregroundStyle
     updateResolvedColors()
   }
 
@@ -153,10 +159,10 @@ final class BrowserToolbar: UIView {
       definition.button.tintColor = AppColors.primaryText
       definition.button.accessibilityLabel = definition.label
       definition.button.widthAnchor.constraint(
-        greaterThanOrEqualToConstant: AppMetrics.minimumTapSize
+        equalToConstant: AppMetrics.minimumTapSize
       ).isActive = true
       definition.button.heightAnchor.constraint(
-        greaterThanOrEqualToConstant: AppMetrics.minimumTapSize
+        equalToConstant: AppMetrics.minimumTapSize
       ).isActive = true
       definition.button.addAction(
         UIAction { [weak self, weak button = definition.button] _ in
@@ -171,23 +177,25 @@ final class BrowserToolbar: UIView {
       )
     }
     sniffButton.setImage(
-      UIImage(
-        systemName: "viewfinder",
-        withConfiguration: UIImage.SymbolConfiguration(
-          pointSize: AppMetrics.toolbarIconSize,
-          weight: .medium
-        )
+      AppIconography.scanApertureImage(
+        pointSize: AppMetrics.toolbarIconSize,
+        weight: 1.8
       ),
       for: .normal
     )
-    sniffButton.backgroundColor = AppColors.accentFill
-    sniffButton.layer.cornerRadius = 14
+    sniffButton.layer.cornerRadius = AppMetrics.minimumTapSize / 2
     sniffButton.layer.cornerCurve = .continuous
     sniffButton.tintColor = AppColors.accent
     sniffButton.accessibilityIdentifier = "browser.toolbar.sniffer"
 
-    tabsButton.backgroundColor = AppColors.accentFill
-    tabsButton.layer.cornerRadius = 14
+    tabsButton.setImage(
+      AppIconography.tabStackImage(
+        pointSize: AppMetrics.toolbarIconSize,
+        weight: 1.8
+      ),
+      for: .normal
+    )
+    tabsButton.layer.cornerRadius = AppMetrics.minimumTapSize / 2
     tabsButton.layer.cornerCurve = .continuous
     tabsButton.tintColor = AppColors.accent
     tabsButton.accessibilityIdentifier = "browser.toolbar.tabs"
@@ -199,14 +207,14 @@ final class BrowserToolbar: UIView {
     NSLayoutConstraint.activate([
       tabCountLabel.centerXAnchor.constraint(
         equalTo: tabsButton.centerXAnchor,
-        constant: 13
+        constant: 10
       ),
       tabCountLabel.centerYAnchor.constraint(
         equalTo: tabsButton.centerYAnchor,
-        constant: -12
+        constant: -10
       ),
-      tabCountLabel.heightAnchor.constraint(equalToConstant: 16),
-      tabCountLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 16),
+      tabCountLabel.heightAnchor.constraint(equalToConstant: 14),
+      tabCountLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 14),
     ])
 
     resourceBadgeLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -223,14 +231,14 @@ final class BrowserToolbar: UIView {
     NSLayoutConstraint.activate([
       resourceBadgeLabel.centerXAnchor.constraint(
         equalTo: sniffButton.centerXAnchor,
-        constant: 13
+        constant: 10
       ),
       resourceBadgeLabel.centerYAnchor.constraint(
         equalTo: sniffButton.centerYAnchor,
-        constant: -12
+        constant: -10
       ),
-      resourceBadgeLabel.heightAnchor.constraint(equalToConstant: 16),
-      resourceBadgeLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 16),
+      resourceBadgeLabel.heightAnchor.constraint(equalToConstant: 14),
+      resourceBadgeLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 14),
       scanIndicator.centerXAnchor.constraint(equalTo: sniffButton.centerXAnchor),
       scanIndicator.centerYAnchor.constraint(equalTo: sniffButton.centerYAnchor),
     ])
@@ -240,7 +248,7 @@ final class BrowserToolbar: UIView {
     )
     stack.translatesAutoresizingMaskIntoConstraints = false
     stack.axis = .horizontal
-    stack.alignment = .fill
+    stack.alignment = .center
     stack.distribution = .equalCentering
     materialView.contentView.addSubview(stack)
     NSLayoutConstraint.activate([
@@ -273,19 +281,24 @@ final class BrowserToolbar: UIView {
   }
 
   private func updateResolvedColors() {
+    let pageForeground = isPrivateMode
+      ? nil
+      : pageThemeForegroundStyle?.color
     materialView.layer.borderColor = (
       isPrivateMode
         ? AppColors.privateBrowsingAccent.withAlphaComponent(0.20)
-        : AppColors.browserChromeBorder.resolvedColor(with: traitCollection)
+        : pageForeground?.withAlphaComponent(
+          UIAccessibility.isDarkerSystemColorsEnabled ? 0.28 : 0.16
+        ) ?? AppColors.browserChromeBorder.resolvedColor(with: traitCollection)
     ).cgColor
     materialView.contentView.backgroundColor = isPrivateMode
       ? AppColors.privateBrowsingSurface.withAlphaComponent(0.68)
-      : AppColors.browserChromeTint
+      : pageThemeColor?.withAlphaComponent(0.92) ?? AppColors.browserChromeTint
     let primary = isPrivateMode
       ? AppColors.primaryText.resolvedColor(
         with: UITraitCollection(userInterfaceStyle: .dark)
       )
-      : AppColors.primaryText
+      : (pageForeground ?? AppColors.primaryText)
     [backButton, forwardButton, moreButton].forEach {
       $0.tintColor = primary
     }
@@ -293,12 +306,11 @@ final class BrowserToolbar: UIView {
       ? AppColors.privateBrowsingAccent
       : AppColors.accent
     tabsButton.tintColor = actionAccent
-    tabsButton.backgroundColor = isPrivateMode
-      ? AppColors.privateBrowsingAccent.withAlphaComponent(0.18)
-      : AppColors.accentFill
+    tabsButton.backgroundColor = .clear
     switch snifferActivationState {
     case .disabled, .stopping:
-      sniffButton.tintColor = AppColors.secondaryText
+      sniffButton.tintColor = pageForeground?.withAlphaComponent(0.62)
+        ?? AppColors.secondaryText
     case .failed:
       sniffButton.tintColor = AppColors.danger
     case .starting, .active:
@@ -322,9 +334,7 @@ final class BrowserToolbar: UIView {
   private func updateSniffButtonBackground() {
     switch snifferActivationState {
     case .disabled, .stopping:
-      sniffButton.backgroundColor = isPrivateMode
-        ? AppColors.privateBrowsingSurface
-        : AppColors.secondarySurface
+      sniffButton.backgroundColor = .clear
     case .failed:
       sniffButton.backgroundColor = AppColors.danger.withAlphaComponent(0.12)
     case .starting, .active:
@@ -338,15 +348,15 @@ final class BrowserToolbar: UIView {
 private final class BrowserToolbarBadgeLabel: UILabel {
   override var intrinsicContentSize: CGSize {
     let size = super.intrinsicContentSize
-    return CGSize(width: max(16, size.width + 6), height: 16)
+    return CGSize(width: max(14, size.width + 5), height: 14)
   }
 
   func configureAppearance() {
-    font = .monospacedDigitSystemFont(ofSize: 9, weight: .bold)
+    font = .monospacedDigitSystemFont(ofSize: 8, weight: .bold)
     textColor = AppColors.accentContent
     backgroundColor = AppColors.accent
     textAlignment = .center
-    layer.cornerRadius = 8
+    layer.cornerRadius = 7
     layer.cornerCurve = .continuous
     clipsToBounds = true
   }
