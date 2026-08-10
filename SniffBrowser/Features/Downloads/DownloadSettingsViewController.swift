@@ -362,6 +362,7 @@ private final class DownloadSettingToggleCell: UITableViewCell {
     init(reuseIdentifier: String) {
         super.init(style: .default, reuseIdentifier: reuseIdentifier)
         selectionStyle = .none
+        configureBackground()
         toggle.addTarget(self, action: #selector(toggleChanged), for: .valueChanged)
         accessoryView = toggle
     }
@@ -396,6 +397,12 @@ private final class DownloadSettingToggleCell: UITableViewCell {
         accessibilityValue = isOn ? "已开启" : "已关闭"
     }
 
+    private func configureBackground() {
+        var background = UIBackgroundConfiguration.listGroupedCell()
+        background.backgroundColor = AppColors.surface
+        backgroundConfiguration = background
+    }
+
     @objc private func toggleChanged() {
         accessibilityValue = toggle.isOn ? "已开启" : "已关闭"
         onChange?(toggle.isOn)
@@ -416,6 +423,7 @@ private final class DownloadSettingStepperCell: UITableViewCell {
     init(reuseIdentifier: String) {
         super.init(style: .default, reuseIdentifier: reuseIdentifier)
         selectionStyle = .none
+        configureBackground()
 
         iconContainer.backgroundColor = AppColors.accentFill
         iconContainer.layer.cornerRadius = AppRadius.control
@@ -563,6 +571,12 @@ private final class DownloadSettingStepperCell: UITableViewCell {
         accessibilityValue = "\(value)"
     }
 
+    private func configureBackground() {
+        var background = UIBackgroundConfiguration.listGroupedCell()
+        background.backgroundColor = AppColors.surface
+        backgroundConfiguration = background
+    }
+
     @objc private func stepperChanged() {
         let value = Int(stepper.value)
         valueLabel.text = "\(value)"
@@ -575,6 +589,7 @@ private final class DownloadSettingInfoCell: UITableViewCell {
     init(reuseIdentifier: String) {
         super.init(style: .default, reuseIdentifier: reuseIdentifier)
         selectionStyle = .none
+        configureBackground()
     }
 
     required init?(coder: NSCoder) {
@@ -598,5 +613,11 @@ private final class DownloadSettingInfoCell: UITableViewCell {
 
         self.accessibilityIdentifier = accessibilityIdentifier
         accessibilityLabel = "\(title)，\(subtitle)"
+    }
+
+    private func configureBackground() {
+        var background = UIBackgroundConfiguration.listGroupedCell()
+        background.backgroundColor = AppColors.surface
+        backgroundConfiguration = background
     }
 }
