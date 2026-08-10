@@ -186,10 +186,17 @@ final class DesignSystemTests: XCTestCase {
     XCTAssertEqual(regularTitle.frame, privateTitle.frame)
     XCTAssertEqual(regularSearch.frame, privateSearch.frame)
     XCTAssertTrue(sameLightColor(regular.backgroundColor, privateView.backgroundColor))
-    XCTAssertTrue(sameLightColor(
-      regularLogo.backgroundColor,
-      privateLogo.backgroundColor
-    ))
+    let regularLogoImage = regularLogo.subviews
+      .compactMap { $0 as? UIImageView }
+      .first?
+      .image
+    let privateLogoImage = privateLogo.subviews
+      .compactMap { $0 as? UIImageView }
+      .first?
+      .image
+    XCTAssertNotNil(regularLogoImage)
+    XCTAssertNotNil(privateLogoImage)
+    XCTAssertEqual(regularLogoImage, privateLogoImage)
     XCTAssertTrue(sameLightColor(
       (regularDate as? UILabel)?.textColor,
       (privateDate as? UILabel)?.textColor
