@@ -48,6 +48,7 @@ final class NewTabView: UIView {
   private let scrollView = UIScrollView()
   private let contentContainer = UIView()
   private let contentStack = UIStackView()
+  private var contentTopConstraint: NSLayoutConstraint?
   private let searchMaterial = UIView()
   private let searchImageView = UIImageView(
     image: UIImage(systemName: "magnifyingglass")
@@ -77,6 +78,22 @@ final class NewTabView: UIView {
   override func didMoveToWindow() {
     super.didMoveToWindow()
     updateResolvedColors()
+    updateContentTopInset()
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    updateContentTopInset()
+  }
+
+  override func safeAreaInsetsDidChange() {
+    super.safeAreaInsetsDidChange()
+    updateContentTopInset()
+  }
+
+  /// 自定义背景图是否正在展示（供浏览器调整状态栏样式）。
+  var showsPhotoBackground: Bool {
+    hasCustomBackground
   }
 
   func focusSearch() {
@@ -344,6 +361,9 @@ final class NewTabView: UIView {
     scrollView.alwaysBounceVertical = false
     scrollView.keyboardDismissMode = .interactive
     scrollView.showsVerticalScrollIndicator = false
+    // 新标签页现在延伸到状态栏下方，内容顶部需要自己按安全区留白，
+    // 避免系统再自动叠加一次 safe area inset。
+    scrollView.contentInsetAdjustmentBehavior = .never
     addSubview(scrollView)
 
     contentContainer.translatesAutoresizingMaskIntoConstraints = false
@@ -368,6 +388,10 @@ final class NewTabView: UIView {
       equalTo: scrollView.frameLayoutGuide.heightAnchor
     )
     viewportHeightConstraint.priority = .defaultLow
+    contentTopConstraint = contentStack.topAnchor.constraint(
+      equalTo: contentContainer.topAnchor,
+      constant: AppSpacing.xxl
+    )
     NSLayoutConstraint.activate([
       backgroundImageView.topAnchor.constraint(equalTo: topAnchor),
       backgroundImageView.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -393,10 +417,7 @@ final class NewTabView: UIView {
       ),
       viewportHeightConstraint,
 
-      contentStack.topAnchor.constraint(
-        equalTo: contentContainer.topAnchor,
-        constant: AppSpacing.xxl
-      ),
+      contentTopConstraint!,
       contentStack.leadingAnchor.constraint(
         equalTo: contentContainer.leadingAnchor,
         constant: AppSpacing.xl
@@ -477,6 +498,14 @@ final class NewTabView: UIView {
     quickActionsStack.arrangedSubviews
       .compactMap { $0 as? NewTabQuickActionButton }
       .forEach { $0.updateAppearance(overPhoto: hasCustomBackground) }
+  }
+
+  private func updateContentTopInset() {
+    guard let contentTopConstraint else { return }
+    let inset = max(0, safeAreaInsets.top) + AppSpacing.xxl
+    if contentTopConstraint.constant != inset {
+      contentTopConstraint.constant = inset
+    }
   }
 
   @objc private func textDidChange() {
@@ -560,10 +589,7 @@ private final class NewTabPhotoScrimView: UIView {
 }
 
 private final class NewTabLogoView: UIView {
-  private let symbolView = UIImageView(
-    image: AppIconography.scanApertureImage(pointSize: 30, weight: 2.1)
-  )
-  private let accentDot = UIView()
+  private let symbolView = UIImageView(image: UIImage(named: "AppLogo"))
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -583,36 +609,15 @@ private final class NewTabLogoView: UIView {
     accessibilityTraits = .image
 
     symbolView.translatesAutoresizingMaskIntoConstraints = false
-    symbolView.contentMode = .scaleAspectFit
-    symbolView.tintColor = UIColor(
-      red: 0.965,
-      green: 0.953,
-      blue: 0.925,
-      alpha: 1
-    )
+    symbolView.contentMode = .scaleAspectFill
     addSubview(symbolView)
 
-    accentDot.translatesAutoresizingMaskIntoConstraints = false
-    accentDot.backgroundColor = AppColors.accent
-    accentDot.layer.cornerRadius = 3
-    addSubview(accentDot)
-
     NSLayoutConstraint.activate([
-      symbolView.centerXAnchor.constraint(equalTo: centerXAnchor, constant: -1),
-      symbolView.centerYAnchor.constraint(equalTo: centerYAnchor),
-      symbolView.widthAnchor.constraint(equalToConstant: 30),
-      symbolView.heightAnchor.constraint(equalToConstant: 30),
-      accentDot.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-      accentDot.topAnchor.constraint(equalTo: topAnchor, constant: 9),
-      accentDot.widthAnchor.constraint(equalToConstant: 6),
-      accentDot.heightAnchor.constraint(equalTo: accentDot.widthAnchor),
+      symbolView.topAnchor.constraint(equalTo: topAnchor),
+      symbolView.leadingAnchor.constraint(equalTo: leadingAnchor),
+      symbolView.trailingAnchor.constraint(equalTo: trailingAnchor),
+      symbolView.bottomAnchor.constraint(equalTo: bottomAnchor),
     ])
-    backgroundColor = UIColor(
-      red: 0.145,
-      green: 0.145,
-      blue: 0.133,
-      alpha: 1
-    )
   }
 }
 

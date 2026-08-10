@@ -133,6 +133,7 @@ final class BrowserViewController: UIViewController {
     configureActions()
     configureLifecycleObservers()
     observeContentBlockerChanges()
+    observeNewTabBackgroundChanges()
     attachSelectedTab()
     contentBlockerService.loadIfNeeded()
   }
@@ -155,6 +156,19 @@ final class BrowserViewController: UIViewController {
           notification.userInfo?[ContentBlockerService.reloadActivePageUserInfoKey]
             as? Bool ?? true
         self?.reapplyContentRules(reloadActivePage: reloadActivePage)
+      }
+    }
+    lifecycleObservers.append(observer)
+  }
+
+  private func observeNewTabBackgroundChanges() {
+    let observer = NotificationCenter.default.addObserver(
+      forName: .newTabBackgroundDidChange,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor in
+        self?.setNeedsStatusBarAppearanceUpdate()
       }
     }
     lifecycleObservers.append(observer)
@@ -189,6 +203,9 @@ final class BrowserViewController: UIViewController {
   override var preferredStatusBarStyle: UIStatusBarStyle {
     if let pageChromeForegroundStyle {
       return pageChromeForegroundStyle.statusBarStyle
+    }
+    if isShowingNewTab, !isSearchOverlayActive, newTabView.showsPhotoBackground {
+      return .lightContent
     }
     return traitCollection.userInterfaceStyle == .dark
       ? .lightContent
@@ -285,9 +302,7 @@ final class BrowserViewController: UIViewController {
     searchHistoryTableView.isHidden = true
 
     NSLayoutConstraint.activate([
-      contentView.topAnchor.constraint(
-        equalTo: view.safeAreaLayoutGuide.topAnchor
-      ),
+      contentView.topAnchor.constraint(equalTo: view.topAnchor),
       contentView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
       contentView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
       contentView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -297,7 +312,9 @@ final class BrowserViewController: UIViewController {
       newTabView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
       newTabView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
 
-      errorView.topAnchor.constraint(equalTo: contentView.topAnchor),
+      errorView.topAnchor.constraint(
+        equalTo: contentView.safeAreaLayoutGuide.topAnchor
+      ),
       errorView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
       errorView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
       errorView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
@@ -780,7 +797,9 @@ final class BrowserViewController: UIViewController {
     webView.translatesAutoresizingMaskIntoConstraints = false
     contentView.insertSubview(webView, at: 0)
     NSLayoutConstraint.activate([
-      webView.topAnchor.constraint(equalTo: contentView.topAnchor),
+      webView.topAnchor.constraint(
+        equalTo: contentView.safeAreaLayoutGuide.topAnchor
+      ),
       webView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
       webView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
       webView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
