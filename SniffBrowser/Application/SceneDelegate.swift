@@ -11,7 +11,9 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     options connectionOptions: UIScene.ConnectionOptions
   ) {
     guard let windowScene = scene as? UIWindowScene else { return }
+    windowScene.traitOverrides.appThemeColor = AppThemeColor.current
     let window = UIWindow(windowScene: windowScene)
+    window.tintColor = AppColors.accent
     let coordinator = AppCoordinator(window: window)
     self.window = window
     self.coordinator = coordinator

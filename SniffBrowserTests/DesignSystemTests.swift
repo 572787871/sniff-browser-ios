@@ -43,6 +43,34 @@ final class DesignSystemTests: XCTestCase {
     XCTAssertEqual(alpha, 1, accuracy: 0.01)
   }
 
+  func testThemeTraitProducesDistinctGlobalAccentColors() {
+    let colors = AppThemeColor.allCases.map { theme in
+      let traits = UITraitCollection { mutableTraits in
+        mutableTraits.userInterfaceStyle = .light
+        mutableTraits.appThemeColor = theme
+      }
+      return AppColors.accent.resolvedColor(with: traits)
+    }
+
+    XCTAssertEqual(Set(colors.map(\.description)).count, AppThemeColor.allCases.count)
+  }
+
+  func testThemeAccentContentAdaptsForLightAndDarkSurfaces() {
+    let lightOcean = UITraitCollection { mutableTraits in
+      mutableTraits.userInterfaceStyle = .light
+      mutableTraits.appThemeColor = .ocean
+    }
+    let darkOcean = UITraitCollection { mutableTraits in
+      mutableTraits.userInterfaceStyle = .dark
+      mutableTraits.appThemeColor = .ocean
+    }
+
+    let lightContent = AppColors.accentContent.resolvedColor(with: lightOcean)
+    let darkContent = AppColors.accentContent.resolvedColor(with: darkOcean)
+
+    XCTAssertGreaterThan(relativeLuminance(of: lightContent), relativeLuminance(of: darkContent))
+  }
+
   @MainActor
   func testScanApertureBrandImageRendersAtRequestedSize() {
     let image = AppIconography.scanApertureImage(pointSize: 24)

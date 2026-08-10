@@ -284,6 +284,7 @@ final class AddressBarView: UIView {
     registerForTraitChanges([
       UITraitUserInterfaceStyle.self,
       UITraitAccessibilityContrast.self,
+      AppThemeColorTrait.self,
     ]) { (view: AddressBarView, _) in
       view.updateResolvedColors()
     }

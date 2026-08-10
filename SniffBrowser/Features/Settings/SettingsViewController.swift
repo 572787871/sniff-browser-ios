@@ -164,9 +164,15 @@ extension SettingsViewController: UITableViewDataSource, UITableViewDelegate {
         let row = sections[indexPath.section].rows[indexPath.row]
         let isClearAction = row.destination == .clearBrowsingData
         let isEnabled = !isClearAction || onClearBrowsingData != nil
-        let subtitle = row.destination == .searchEngine
-            ? BrowserPreferences().searchEngine.displayName
-            : row.subtitle
+        let subtitle: String?
+        switch row.destination {
+        case .searchEngine:
+            subtitle = BrowserPreferences().searchEngine.displayName
+        case .appearance:
+            subtitle = "\(AppearancePreference.current.displayName) · \(AppThemeColor.current.displayName)"
+        default:
+            subtitle = row.subtitle
+        }
         let tint = tintColor(for: row.destination)
         cell.configure(
             title: row.title,

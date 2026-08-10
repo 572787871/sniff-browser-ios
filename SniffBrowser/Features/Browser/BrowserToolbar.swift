@@ -27,12 +27,12 @@ final class BrowserToolbar: UIView {
   private let backButton = BrowserChromeButton(symbol: "chevron.backward")
   private let forwardButton = BrowserChromeButton(symbol: "chevron.forward")
   private let sniffButton = BrowserChromeButton(
-    symbol: "circle"
+    symbol: "viewfinder"
   )
-  private let tabsButton = BrowserChromeButton(symbol: "square")
+  private let tabsButton = BrowserChromeButton(symbol: "square.on.square")
   private let moreButton = BrowserChromeButton(symbol: "ellipsis")
-  private let tabCountLabel = UILabel()
-  private let resourceBadgeLabel = UILabel()
+  private let tabCountLabel = BrowserToolbarBadgeLabel()
+  private let resourceBadgeLabel = BrowserToolbarBadgeLabel()
   private let scanIndicator = UIActivityIndicatorView(style: .medium)
   private var isCollapsed = false
   private var isPrivateMode = false
@@ -70,6 +70,7 @@ final class BrowserToolbar: UIView {
     resourceBadgeLabel.isHidden = count == 0 || activationState != .active
     let isStarting = activationState == .starting
     scanIndicator.isHidden = !isStarting
+    sniffButton.imageView?.isHidden = isStarting
     isStarting ? scanIndicator.startAnimating() : scanIndicator.stopAnimating()
     switch activationState {
     case .disabled:
@@ -170,37 +171,46 @@ final class BrowserToolbar: UIView {
       )
     }
     sniffButton.setImage(
-      AppIconography.scanApertureImage(
-        pointSize: AppMetrics.toolbarIconSize,
-        weight: 1.8
+      UIImage(
+        systemName: "viewfinder",
+        withConfiguration: UIImage.SymbolConfiguration(
+          pointSize: AppMetrics.toolbarIconSize,
+          weight: .medium
+        )
       ),
       for: .normal
     )
     sniffButton.backgroundColor = AppColors.accentFill
-    sniffButton.layer.cornerRadius = AppMetrics.minimumTapSize / 2
+    sniffButton.layer.cornerRadius = 14
     sniffButton.layer.cornerCurve = .continuous
-    sniffButton.clipsToBounds = true
     sniffButton.tintColor = AppColors.accent
+    sniffButton.accessibilityIdentifier = "browser.toolbar.sniffer"
+
+    tabsButton.backgroundColor = AppColors.accentFill
+    tabsButton.layer.cornerRadius = 14
+    tabsButton.layer.cornerCurve = .continuous
+    tabsButton.tintColor = AppColors.accent
+    tabsButton.accessibilityIdentifier = "browser.toolbar.tabs"
 
     tabCountLabel.translatesAutoresizingMaskIntoConstraints = false
-    tabCountLabel.font = .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
-    tabCountLabel.textColor = AppColors.primaryText
-    tabCountLabel.textAlignment = .center
+    tabCountLabel.configureAppearance()
     tabCountLabel.isAccessibilityElement = false
     tabsButton.addSubview(tabCountLabel)
     NSLayoutConstraint.activate([
-      tabCountLabel.centerXAnchor.constraint(equalTo: tabsButton.centerXAnchor),
-      tabCountLabel.centerYAnchor.constraint(equalTo: tabsButton.centerYAnchor),
-      tabCountLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 18),
+      tabCountLabel.centerXAnchor.constraint(
+        equalTo: tabsButton.centerXAnchor,
+        constant: 13
+      ),
+      tabCountLabel.centerYAnchor.constraint(
+        equalTo: tabsButton.centerYAnchor,
+        constant: -12
+      ),
+      tabCountLabel.heightAnchor.constraint(equalToConstant: 16),
+      tabCountLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 16),
     ])
 
     resourceBadgeLabel.translatesAutoresizingMaskIntoConstraints = false
-    resourceBadgeLabel.font = .monospacedDigitSystemFont(ofSize: 9, weight: .bold)
-    resourceBadgeLabel.textColor = AppColors.accentContent
-    resourceBadgeLabel.backgroundColor = AppColors.accent
-    resourceBadgeLabel.layer.cornerRadius = 8
-    resourceBadgeLabel.clipsToBounds = true
-    resourceBadgeLabel.textAlignment = .center
+    resourceBadgeLabel.configureAppearance()
     resourceBadgeLabel.isHidden = true
     resourceBadgeLabel.isAccessibilityElement = false
     sniffButton.addSubview(resourceBadgeLabel)
@@ -254,6 +264,7 @@ final class BrowserToolbar: UIView {
     registerForTraitChanges([
       UITraitUserInterfaceStyle.self,
       UITraitAccessibilityContrast.self,
+      AppThemeColorTrait.self,
     ]) { (view: BrowserToolbar, _) in
       view.updateResolvedColors()
     }
@@ -275,9 +286,16 @@ final class BrowserToolbar: UIView {
         with: UITraitCollection(userInterfaceStyle: .dark)
       )
       : AppColors.primaryText
-    [backButton, forwardButton, tabsButton, moreButton].forEach {
+    [backButton, forwardButton, moreButton].forEach {
       $0.tintColor = primary
     }
+    let actionAccent = isPrivateMode
+      ? AppColors.privateBrowsingAccent
+      : AppColors.accent
+    tabsButton.tintColor = actionAccent
+    tabsButton.backgroundColor = isPrivateMode
+      ? AppColors.privateBrowsingAccent.withAlphaComponent(0.18)
+      : AppColors.accentFill
     switch snifferActivationState {
     case .disabled, .stopping:
       sniffButton.tintColor = AppColors.secondaryText
@@ -288,13 +306,15 @@ final class BrowserToolbar: UIView {
         ? AppColors.privateBrowsingAccent
         : AppColors.accent
     }
-    tabCountLabel.textColor = primary
+    tabCountLabel.textColor = AppColors.accentContent
+    tabCountLabel.backgroundColor = actionAccent
     scanIndicator.color = isPrivateMode
       ? AppColors.privateBrowsingAccent
       : AppColors.accent
     resourceBadgeLabel.backgroundColor = isPrivateMode
       ? AppColors.privateBrowsingAccent
       : AppColors.accent
+    resourceBadgeLabel.textColor = AppColors.accentContent
     updateSniffButtonBackground()
     layer.shadowColor = UIColor.black.cgColor
   }
@@ -312,6 +332,23 @@ final class BrowserToolbar: UIView {
         ? AppColors.privateBrowsingAccent.withAlphaComponent(0.18)
         : AppColors.accentFill
     }
+  }
+}
+
+private final class BrowserToolbarBadgeLabel: UILabel {
+  override var intrinsicContentSize: CGSize {
+    let size = super.intrinsicContentSize
+    return CGSize(width: max(16, size.width + 6), height: 16)
+  }
+
+  func configureAppearance() {
+    font = .monospacedDigitSystemFont(ofSize: 9, weight: .bold)
+    textColor = AppColors.accentContent
+    backgroundColor = AppColors.accent
+    textAlignment = .center
+    layer.cornerRadius = 8
+    layer.cornerCurve = .continuous
+    clipsToBounds = true
   }
 }
 

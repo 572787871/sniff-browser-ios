@@ -35,6 +35,8 @@ protocol NewTabViewDelegate: AnyObject {
 final class NewTabView: UIView {
   weak var delegate: NewTabViewDelegate?
 
+  private let backgroundImageView = UIImageView()
+  private let backgroundScrimView = NewTabPhotoScrimView()
   private let logoContainer = UIView()
   private let logoView = NewTabLogoView()
   private let headerContainer = UIView()
@@ -53,6 +55,8 @@ final class NewTabView: UIView {
   private let textField = UITextField()
   private let submitButton = UIButton(type: .system)
   private var isPrivateMode = false
+  private var hasCustomBackground = false
+  private var backgroundChangeObserver: NSObjectProtocol?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -62,6 +66,12 @@ final class NewTabView: UIView {
   required init?(coder: NSCoder) {
     super.init(coder: coder)
     configure()
+  }
+
+  deinit {
+    if let backgroundChangeObserver {
+      NotificationCenter.default.removeObserver(backgroundChangeObserver)
+    }
   }
 
   override func didMoveToWindow() {
@@ -93,6 +103,12 @@ final class NewTabView: UIView {
     let preferences = BrowserPreferences()
     welcomeLabel.isHidden = !preferences.newTabShowsWelcome
     dateLabel.isHidden = !preferences.newTabShowsDate
+    let backgroundImage = NewTabBackgroundStore.shared.image()
+    backgroundImageView.image = backgroundImage
+    hasCustomBackground = backgroundImage != nil
+    backgroundImageView.isHidden = !hasCustomBackground
+    backgroundScrimView.isHidden = !hasCustomBackground
+    updateResolvedColors()
   }
 
   private func configure() {
@@ -104,14 +120,29 @@ final class NewTabView: UIView {
     configureQuickActions()
     configureDate()
     configureHierarchy()
+    observeBackgroundChanges()
 
+    refreshContentPreferences()
     updateSubmitButton()
     updateResolvedColors()
     registerForTraitChanges([
       UITraitUserInterfaceStyle.self,
       UITraitAccessibilityContrast.self,
+      AppThemeColorTrait.self,
     ]) { (view: NewTabView, _) in
       view.updateResolvedColors()
+    }
+  }
+
+  private func observeBackgroundChanges() {
+    backgroundChangeObserver = NotificationCenter.default.addObserver(
+      forName: .newTabBackgroundDidChange,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor in
+        self?.refreshContentPreferences()
+      }
     }
   }
 
@@ -296,6 +327,19 @@ final class NewTabView: UIView {
   }
 
   private func configureHierarchy() {
+    backgroundImageView.translatesAutoresizingMaskIntoConstraints = false
+    backgroundImageView.contentMode = .scaleAspectFill
+    backgroundImageView.clipsToBounds = true
+    backgroundImageView.isUserInteractionEnabled = false
+    backgroundImageView.isAccessibilityElement = false
+    backgroundImageView.accessibilityIdentifier = "newTab.backgroundImage"
+    addSubview(backgroundImageView)
+
+    backgroundScrimView.translatesAutoresizingMaskIntoConstraints = false
+    backgroundScrimView.isUserInteractionEnabled = false
+    backgroundScrimView.isAccessibilityElement = false
+    addSubview(backgroundScrimView)
+
     scrollView.translatesAutoresizingMaskIntoConstraints = false
     scrollView.alwaysBounceVertical = false
     scrollView.keyboardDismissMode = .interactive
@@ -325,6 +369,15 @@ final class NewTabView: UIView {
     )
     viewportHeightConstraint.priority = .defaultLow
     NSLayoutConstraint.activate([
+      backgroundImageView.topAnchor.constraint(equalTo: topAnchor),
+      backgroundImageView.leadingAnchor.constraint(equalTo: leadingAnchor),
+      backgroundImageView.trailingAnchor.constraint(equalTo: trailingAnchor),
+      backgroundImageView.bottomAnchor.constraint(equalTo: bottomAnchor),
+      backgroundScrimView.topAnchor.constraint(equalTo: topAnchor),
+      backgroundScrimView.leadingAnchor.constraint(equalTo: leadingAnchor),
+      backgroundScrimView.trailingAnchor.constraint(equalTo: trailingAnchor),
+      backgroundScrimView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
       scrollView.topAnchor.constraint(equalTo: topAnchor),
       scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
       scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -371,14 +424,31 @@ final class NewTabView: UIView {
       )
       : AppColors.secondaryText
 
-    titleLabel.textColor = isPrivateMode
-      ? AppColors.privateBrowsingDescription
-      : AppColors.primaryText
-    welcomeLabel.textColor = isPrivateMode
-      ? AppColors.privateBrowsingDescription.withAlphaComponent(0.86)
-      : AppColors.secondaryText
-    quickActionsTitleLabel.textColor = AppColors.primaryText
-    dateLabel.textColor = AppColors.tertiaryText
+    if hasCustomBackground {
+      titleLabel.textColor = isPrivateMode
+        ? AppColors.privateBrowsingDescription
+        : .white
+      welcomeLabel.textColor = isPrivateMode
+        ? AppColors.privateBrowsingDescription.withAlphaComponent(0.92)
+        : UIColor.white.withAlphaComponent(0.88)
+      quickActionsTitleLabel.textColor = .white
+      dateLabel.textColor = UIColor.white.withAlphaComponent(0.76)
+    } else {
+      titleLabel.textColor = isPrivateMode
+        ? AppColors.privateBrowsingDescription
+        : AppColors.primaryText
+      welcomeLabel.textColor = isPrivateMode
+        ? AppColors.privateBrowsingDescription.withAlphaComponent(0.86)
+        : AppColors.secondaryText
+      quickActionsTitleLabel.textColor = AppColors.primaryText
+      dateLabel.textColor = AppColors.tertiaryText
+    }
+    [titleLabel, welcomeLabel, quickActionsTitleLabel, dateLabel].forEach {
+      $0.layer.shadowColor = UIColor.black.cgColor
+      $0.layer.shadowOpacity = hasCustomBackground ? 0.38 : 0
+      $0.layer.shadowRadius = hasCustomBackground ? 3 : 0
+      $0.layer.shadowOffset = CGSize(width: 0, height: 1)
+    }
     searchImageView.tintColor = isPrivateMode
       ? AppColors.privateBrowsingAccent
       : searchSecondary
@@ -393,15 +463,20 @@ final class NewTabView: UIView {
     submitButton.configuration?.baseBackgroundColor = isPrivateMode
       ? AppColors.privateBrowsingAccent
       : AppColors.accent
-    submitButton.configuration?.baseForegroundColor = AppColors.accentContent
+    submitButton.configuration?.baseForegroundColor = isPrivateMode
+      ? AppColors.privateBrowsingAccentContent
+      : AppColors.accentContent
     searchMaterial.backgroundColor = isPrivateMode
       ? AppColors.privateBrowsingChrome
-      : AppColors.surface
+      : AppColors.surface.withAlphaComponent(hasCustomBackground ? 0.94 : 1)
     searchMaterial.layer.borderColor = (
       isPrivateMode
         ? AppColors.privateBrowsingAccent.withAlphaComponent(0.30)
         : AppColors.browserChromeBorder.resolvedColor(with: traitCollection)
     ).cgColor
+    quickActionsStack.arrangedSubviews
+      .compactMap { $0 as? NewTabQuickActionButton }
+      .forEach { $0.updateAppearance(overPhoto: hasCustomBackground) }
   }
 
   @objc private func textDidChange() {
@@ -453,6 +528,34 @@ extension NewTabView: UITextFieldDelegate {
   func textFieldShouldReturn(_ textField: UITextField) -> Bool {
     submit()
     return true
+  }
+}
+
+private final class NewTabPhotoScrimView: UIView {
+  override class var layerClass: AnyClass {
+    CAGradientLayer.self
+  }
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    configureGradient()
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    configureGradient()
+  }
+
+  private func configureGradient() {
+    guard let gradient = layer as? CAGradientLayer else { return }
+    gradient.colors = [
+      UIColor.black.withAlphaComponent(0.38).cgColor,
+      UIColor.black.withAlphaComponent(0.14).cgColor,
+      UIColor.black.withAlphaComponent(0.30).cgColor,
+    ]
+    gradient.locations = [0, 0.52, 1]
+    gradient.startPoint = CGPoint(x: 0.5, y: 0)
+    gradient.endPoint = CGPoint(x: 0.5, y: 1)
   }
 }
 
@@ -545,6 +648,23 @@ private final class NewTabQuickActionButton: UIButton {
     self.configuration = configuration
     accessibilityLabel = action.title
     accessibilityHint = "打开\(action.title)"
+  }
+
+  func updateAppearance(overPhoto: Bool) {
+    guard var configuration else { return }
+    let foreground = overPhoto ? UIColor.white : AppColors.primaryText
+    configuration.baseForegroundColor = foreground
+    configuration.baseBackgroundColor = overPhoto
+      ? UIColor.black.withAlphaComponent(0.34)
+      : AppColors.secondarySurface
+    configuration.titleTextAttributesTransformer =
+      UIConfigurationTextAttributesTransformer { attributes in
+        var attributes = attributes
+        attributes.font = AppTypography.caption
+        attributes.foregroundColor = foreground
+        return attributes
+      }
+    self.configuration = configuration
   }
 
   required init?(coder: NSCoder) {

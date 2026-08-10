@@ -19,6 +19,12 @@ enum AppAppearance {
         }
     }
 
+    /// 主题色 trait 变化时更新系统外观代理；现有视图由动态色自动重绘。
+    static func refreshThemeAppearance() {
+        applyNavigationAppearance()
+        applyControlAppearance()
+    }
+
     private static func applyNavigationAppearance() {
         let navigationAppearance = UINavigationBarAppearance()
         navigationAppearance.configureWithOpaqueBackground()

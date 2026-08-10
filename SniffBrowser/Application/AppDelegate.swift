@@ -11,6 +11,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     AppAppearance.configure()
     // Apply saved appearance preference before any window is shown
     AppearancePreference.applyGlobal()
+    AppThemeColor.applyGlobal()
     return true
   }
 

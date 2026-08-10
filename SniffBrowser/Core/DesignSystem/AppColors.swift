@@ -34,19 +34,19 @@ enum AppColors {
         blue: 0.080,
         alpha: 1
     )
-    /// 无痕模式仍使用品牌琥珀，但提高亮度以适配深色表面。
-    static let privateBrowsingAccent = UIColor(
-        red: 0.902,
-        green: 0.643,
-        blue: 0.365,
+    /// 无痕模式继承用户选择的全局主题色，并按深色表面自动提高可读性。
+    static let privateBrowsingAccent = UIColor { traits in
+        traits.appThemeColor.resolvedPrivateColor(for: traits)
+    }
+    static let privateBrowsingAccentContent = UIColor(
+        red: 0.105,
+        green: 0.094,
+        blue: 0.080,
         alpha: 1
     )
     /// 普通与无痕主页共用布局和画布，仅用该动态色强调无痕说明。
     static let privateBrowsingDescription = UIColor { traits in
-        if traits.userInterfaceStyle == .dark {
-            return UIColor(red: 0.902, green: 0.718, blue: 0.506, alpha: 1)
-        }
-        return UIColor(red: 0.455, green: 0.304, blue: 0.176, alpha: 1)
+        traits.appThemeColor.resolvedDescriptionColor(for: traits)
     }
 
     /// 普通卡片与列表分组背景，像同一张纸上的不同叠层。
@@ -129,23 +129,9 @@ enum AppColors {
     }
     static let placeholderText = tertiaryText
 
-    /// Paper Signal 的品牌琥珀色，仅用于选中、进度和关键操作。
+    /// 用户选择的全局主题色，仅用于选中、进度和关键操作。
     static let accent = UIColor { traits in
-        let highContrast = traits.accessibilityContrast == .high
-        if traits.userInterfaceStyle == .dark {
-            return UIColor(
-                red: highContrast ? 0.949 : 0.878,
-                green: highContrast ? 0.690 : 0.573,
-                blue: highContrast ? 0.392 : 0.286,
-                alpha: 1
-            )
-        }
-        return UIColor(
-            red: highContrast ? 0.584 : 0.773,
-            green: highContrast ? 0.306 : 0.478,
-            blue: highContrast ? 0.075 : 0.165,
-            alpha: 1
-        )
+        traits.appThemeColor.resolvedColor(for: traits)
     }
     static let accentFill = UIColor { traits in
         accent.resolvedColor(with: traits).withAlphaComponent(
@@ -153,12 +139,9 @@ enum AppColors {
         )
     }
     /// 强调色实心背景上的文字与图标颜色。
-    static let accentContent = UIColor(
-        red: 0.125,
-        green: 0.110,
-        blue: 0.090,
-        alpha: 1
-    )
+    static let accentContent = UIColor { traits in
+        traits.appThemeColor.resolvedContentColor(for: traits)
+    }
     static let browserChromeSelection = accentFill
     static let progressTrack = tertiarySurface
 
