@@ -306,9 +306,7 @@ final class AddressBarView: UIView {
         AppColors.privateBrowsingSurface.withAlphaComponent(0.74)
     } else {
       materialView.contentView.backgroundColor = pageThemeColor?
-        .withAlphaComponent(
-          pageThemeForegroundStyle == .light ? 0.28 : 0.16
-        ) ?? AppColors.browserChromeTint
+        .withAlphaComponent(0.92) ?? AppColors.browserChromeTint
     }
     textField.textColor = foreground ?? AppColors.primaryText
     textField.tintColor = isPrivateMode
