@@ -97,6 +97,10 @@ final class TabOverviewPageViewController: UIViewController {
         guard let indexPath = dataSource.indexPath(for: itemID) else {
             return nil
         }
+        if !ensureVisible,
+           !collectionView.indexPathsForVisibleItems.contains(indexPath) {
+            return nil
+        }
         if ensureVisible,
            !collectionView.indexPathsForVisibleItems.contains(indexPath) {
             collectionView.scrollToItem(

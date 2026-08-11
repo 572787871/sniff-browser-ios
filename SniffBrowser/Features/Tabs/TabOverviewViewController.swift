@@ -27,6 +27,7 @@ final class TabOverviewViewController: BaseViewController {
     private var isPageTransitionInFlight = false
     private var queuedTransition: PendingTransition?
     private var selectedTransitionItemID: UUID?
+    private var selectedTransitionFrameInWindow: CGRect?
     private var usesSpatialTransition = true
 
     private let privacyTintView = UIView()
@@ -121,6 +122,15 @@ final class TabOverviewViewController: BaseViewController {
         in coordinateSpace: UIView,
         ensureVisible: Bool
     ) -> CGRect? {
+        if !ensureVisible,
+           itemID == selectedTransitionItemID,
+           let selectedTransitionFrameInWindow,
+           let window = view.window {
+            return window.convert(
+                selectedTransitionFrameInWindow,
+                to: coordinateSpace
+            )
+        }
         guard let item = allItems.first(where: { $0.id == itemID }) else {
             return nil
         }
@@ -142,6 +152,68 @@ final class TabOverviewViewController: BaseViewController {
         }
         page(for: item.isPrivate ? .privateBrowsing : .standard)
             .setTransitionItemHidden(itemID, hidden: hidden)
+    }
+
+    /// 在导航控制器改变安全区之前保存用户实际点击位置。
+    func captureCurrentTransitionFrameIfNeeded() {
+        guard selectedTransitionFrameInWindow == nil,
+              let itemID = transitionItemID
+        else { return }
+        selectedTransitionItemID = itemID
+        captureTransitionFrame(for: itemID)
+    }
+
+    private func captureTransitionFrame(for itemID: UUID) {
+        selectedTransitionFrameInWindow = nil
+        guard isViewLoaded,
+              let item = allItems.first(where: { $0.id == itemID }),
+              let window = view.window
+        else { return }
+        let mode: TabOverviewMode = item.isPrivate
+            ? .privateBrowsing
+            : .standard
+        guard visiblePageMode == mode else { return }
+        view.layoutIfNeeded()
+        guard let frame = page(for: mode).transitionFrame(
+            for: itemID,
+            in: window,
+            ensureVisible: false
+        ), frame.intersects(window.bounds)
+        else { return }
+        selectedTransitionFrameInWindow = frame
+    }
+
+    /// 将总览的辅助层拆开，以便主网页快照独立完成空间转场。
+    func prepareSpatialTransition(enteringOverview: Bool) {
+        loadViewIfNeeded()
+        view.layoutIfNeeded()
+        view.backgroundColor = .clear
+        privacyTintView.backgroundColor = AppColors.background
+        privacyTintView.alpha = enteringOverview ? 0 : 1
+        pageViewController.view.alpha = enteringOverview ? 0 : 1
+        bottomBar.alpha = enteringOverview ? 0 : 1
+        bottomBar.transform = enteringOverview
+            ? CGAffineTransform(translationX: 0, y: 24)
+            : .identity
+    }
+
+    func animateSpatialTransition(enteringOverview: Bool) {
+        privacyTintView.alpha = enteringOverview ? 1 : 0
+        pageViewController.view.alpha = enteringOverview ? 1 : 0
+        bottomBar.alpha = enteringOverview ? 1 : 0
+        bottomBar.transform = enteringOverview
+            ? .identity
+            : CGAffineTransform(translationX: 0, y: 24)
+    }
+
+    func completeSpatialTransition() {
+        view.backgroundColor = AppColors.background
+        privacyTintView.alpha = 0
+        pageViewController.view.alpha = 1
+        bottomBar.alpha = 1
+        bottomBar.transform = .identity
+        selectedTransitionFrameInWindow = nil
+        selectedTransitionItemID = nil
     }
 
     private func configureNavigation() {
@@ -270,6 +342,7 @@ final class TabOverviewViewController: BaseViewController {
 
     private func configureBackground() {
         privacyTintView.backgroundColor = AppColors.background
+        privacyTintView.accessibilityIdentifier = "tabs.transitionBackground"
         privacyTintView.isUserInteractionEnabled = false
         privacyTintView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(privacyTintView)
@@ -283,6 +356,7 @@ final class TabOverviewViewController: BaseViewController {
     }
 
     private func configureBottomBar() {
+        bottomBar.accessibilityIdentifier = "tabs.bottomBar"
         bottomBar.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(bottomBar)
         bottomBar.mode = pagingState.selectedMode
@@ -311,6 +385,7 @@ final class TabOverviewViewController: BaseViewController {
         pageViewController.dataSource = self
         pageViewController.delegate = self
         pageViewController.view.backgroundColor = .clear
+        pageViewController.view.accessibilityIdentifier = "tabs.pageContainer"
         pageViewController.view.clipsToBounds = true
         pageViewController.view.directionalLayoutMargins = .zero
         pageViewController.view.insetsLayoutMarginsFromSafeArea = false
@@ -360,9 +435,11 @@ final class TabOverviewViewController: BaseViewController {
     ) -> TabOverviewPageViewController {
         let controller = TabOverviewPageViewController(mode: mode)
         controller.onSelectItem = { [weak self] itemID in
-            self?.usesSpatialTransition = true
-            self?.selectedTransitionItemID = itemID
-            self?.onSelectTab?(itemID)
+            guard let self else { return }
+            self.usesSpatialTransition = true
+            self.selectedTransitionItemID = itemID
+            self.captureTransitionFrame(for: itemID)
+            self.onSelectTab?(itemID)
         }
         controller.onCloseItem = { [weak self] itemID in
             self?.close(itemID: itemID)
@@ -713,6 +790,7 @@ final class TabOverviewViewController: BaseViewController {
     }
 
     private func finish() {
+        captureCurrentTransitionFrameIfNeeded()
         if let onDone {
             onDone()
         } else if presentingViewController != nil {

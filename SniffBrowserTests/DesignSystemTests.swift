@@ -323,6 +323,46 @@ final class DesignSystemTests: XCTestCase {
   }
 
   @MainActor
+  func testTabOverviewSpatialTransitionAnimatesAuxiliaryLayersSeparately() throws {
+    let controller = TabOverviewViewController(items: [
+      TabOverviewItem(title: "新标签页", url: nil, isSelected: true)
+    ])
+    controller.loadViewIfNeeded()
+    controller.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+    controller.view.layoutIfNeeded()
+    let background = try identifiedView(
+      "tabs.transitionBackground",
+      in: controller.view
+    )
+    let page = try identifiedView("tabs.pageContainer", in: controller.view)
+    let bottomBar = try identifiedView("tabs.bottomBar", in: controller.view)
+
+    controller.prepareSpatialTransition(enteringOverview: true)
+    XCTAssertEqual(background.alpha, 0)
+    XCTAssertEqual(page.alpha, 0)
+    XCTAssertEqual(bottomBar.alpha, 0)
+    XCTAssertGreaterThan(bottomBar.transform.ty, 0)
+
+    controller.animateSpatialTransition(enteringOverview: true)
+    XCTAssertEqual(background.alpha, 1)
+    XCTAssertEqual(page.alpha, 1)
+    XCTAssertEqual(bottomBar.alpha, 1)
+    XCTAssertEqual(bottomBar.transform, .identity)
+
+    controller.prepareSpatialTransition(enteringOverview: false)
+    controller.animateSpatialTransition(enteringOverview: false)
+    XCTAssertEqual(background.alpha, 0)
+    XCTAssertEqual(page.alpha, 0)
+    XCTAssertEqual(bottomBar.alpha, 0)
+    XCTAssertGreaterThan(bottomBar.transform.ty, 0)
+
+    controller.completeSpatialTransition()
+    XCTAssertEqual(page.alpha, 1)
+    XCTAssertEqual(bottomBar.alpha, 1)
+    XCTAssertEqual(bottomBar.transform, .identity)
+  }
+
+  @MainActor
   func testBrowserTransitionCoverMatchesTheNativePageContentFrame() throws {
     let controller = BrowserViewController(
       viewModel: BrowserViewModel(),
@@ -360,6 +400,46 @@ final class DesignSystemTests: XCTestCase {
     XCTAssertLessThan(visibleTransitionFrame.maxY, fullTransitionFrame.maxY)
     controller.removeTabTransitionCover(animated: false)
     XCTAssertNil(controller.tabTransitionCoverView)
+  }
+
+  @MainActor
+  func testBrowserTransitionSnapshotFreezesCurrentContentCoordinates() throws {
+    let controller = BrowserViewController(
+      viewModel: BrowserViewModel(),
+      tabManager: BrowserTabManager(restoresSession: false),
+      favoriteService: .shared,
+      historyService: .shared,
+      contentBlockerService: .shared,
+      resourceStore: TabResourceStore(),
+      downloadCenter: .shared
+    )
+    controller.loadViewIfNeeded()
+    controller.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+    controller.view.layoutIfNeeded()
+    let fallback = UIGraphicsImageRenderer(
+      size: CGSize(width: 390, height: 844)
+    ).image { _ in }
+
+    let snapshot = try XCTUnwrap(controller.makeTabTransitionSnapshot(
+      in: controller.view,
+      fallbackImage: fallback
+    ))
+    let frames = try XCTUnwrap(snapshot.frames(in: controller.view))
+
+    XCTAssertEqual(
+      frames.full,
+      controller.tabTransitionFullContentFrame(in: controller.view)
+    )
+    XCTAssertEqual(
+      frames.visible,
+      controller.tabTransitionContentFrame(in: controller.view)
+    )
+    XCTAssertGreaterThan(snapshot.contentSize.width, 0)
+    XCTAssertGreaterThan(snapshot.contentSize.height, 0)
+    XCTAssertEqual(
+      snapshot.contentView.accessibilityIdentifier,
+      "browser.tabTransitionSnapshot"
+    )
   }
 
   @MainActor

@@ -338,6 +338,10 @@ final class AppCoordinator: NSObject, BrowserRouting {
 extension AppCoordinator: UINavigationControllerDelegate {
   @objc
   private func handlePopGesture(_ gesture: UIScreenEdgePanGestureRecognizer) {
+    if gesture.state == .began {
+      (navigationController.topViewController as? TabOverviewViewController)?
+        .captureCurrentTransitionFrameIfNeeded()
+    }
     popInteraction.handleGesture(gesture)
   }
 
@@ -354,21 +358,21 @@ extension AppCoordinator: UINavigationControllerDelegate {
     from fromVC: UIViewController,
     to toVC: UIViewController
   ) -> UIViewControllerAnimatedTransitioning? {
-    if !popInteraction.isInteracting {
-      if fromVC === browserViewController,
-         let overview = toVC as? TabOverviewViewController {
-        return TabOverviewNavigationAnimator(
-          operation: .push,
-          overview: overview
-        )
-      }
-      if toVC === browserViewController,
-         let overview = fromVC as? TabOverviewViewController {
-        return TabOverviewNavigationAnimator(
-          operation: .pop,
-          overview: overview
-        )
-      }
+    if !popInteraction.isInteracting,
+       fromVC === browserViewController,
+       let overview = toVC as? TabOverviewViewController {
+      return TabOverviewNavigationAnimator(
+        operation: .push,
+        overview: overview
+      )
+    }
+    if toVC === browserViewController,
+       let overview = fromVC as? TabOverviewViewController {
+      overview.captureCurrentTransitionFrameIfNeeded()
+      return TabOverviewNavigationAnimator(
+        operation: .pop,
+        overview: overview
+      )
     }
     return PlainHorizontalNavigationAnimator(operation: operation)
   }
@@ -411,6 +415,7 @@ private final class TabOverviewNavigationAnimator: NSObject,
   UIViewControllerAnimatedTransitioning {
   private let operation: UINavigationController.Operation
   private weak var overview: TabOverviewViewController?
+  private var propertyAnimator: UIViewPropertyAnimator?
 
   init(
     operation: UINavigationController.Operation,
@@ -424,7 +429,7 @@ private final class TabOverviewNavigationAnimator: NSObject,
   func transitionDuration(
     using transitionContext: UIViewControllerContextTransitioning?
   ) -> TimeInterval {
-    UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.4
+    UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.42
   }
 
   func animateTransition(
@@ -470,6 +475,11 @@ private final class TabOverviewNavigationAnimator: NSObject,
     transitionContext: UIViewControllerContextTransitioning
   ) {
     var browserWithCover: BrowserViewController?
+    if operation == .push,
+       let browser = transitionContext.viewController(forKey: .from)
+        as? BrowserViewController {
+      browser.discardTabTransitionSnapshot()
+    }
     if operation == .pop,
        let browser = transitionContext.viewController(forKey: .to)
         as? BrowserViewController,
@@ -511,16 +521,20 @@ private final class TabOverviewNavigationAnimator: NSObject,
 
     let container = transitionContext.containerView
     toView.frame = transitionContext.finalFrame(for: toViewController)
-    toView.alpha = 0
+    toView.alpha = 1
     container.insertSubview(toView, belowSubview: fromView)
     container.layoutIfNeeded()
     toView.layoutIfNeeded()
-    let fullInitialFrame = browser.tabTransitionFullContentFrame(in: container)
-    let initialFrame = browser.tabTransitionContentFrame(in: container)
-    guard fullInitialFrame.width > 0,
-          fullInitialFrame.height > 0,
-          initialFrame.width > 0,
-          initialFrame.height > 0,
+
+    guard let pageSnapshot = browser.consumeTabTransitionSnapshot(
+            in: container,
+            fallbackImage: transitionImage
+          ),
+          let pageFrames = pageSnapshot.frames(in: container),
+          pageFrames.full.width > 0,
+          pageFrames.full.height > 0,
+          pageFrames.visible.width > 0,
+          pageFrames.visible.height > 0,
           let targetFrame = overview.transitionFrame(
             for: itemID,
             in: container,
@@ -529,58 +543,57 @@ private final class TabOverviewNavigationAnimator: NSObject,
           targetFrame.width > 0,
           targetFrame.height > 0
     else {
-      toView.alpha = 1
       toView.removeFromSuperview()
       fallback(using: transitionContext)
       return
     }
 
-    let initialImageLayout = TabOverviewTransitionGeometry.clippedPageLayout(
-      contentSize: transitionImage.size,
-      fullContainerFrame: fullInitialFrame,
-      clippedTo: initialFrame
+    let initialLayout = TabOverviewTransitionGeometry.clippedPageLayout(
+      contentSize: pageSnapshot.contentSize,
+      fullContainerFrame: pageFrames.full,
+      clippedTo: pageFrames.visible
     )
-    let targetImageLayout = TabOverviewTransitionGeometry.pageFillLayout(
-      contentSize: transitionImage.size,
+    let targetLayout = TabOverviewTransitionGeometry.pageFillLayout(
+      contentSize: pageSnapshot.contentSize,
       containerSize: targetFrame.size
     )
     let surface = transitionSurface(
-      frame: initialFrame,
+      frame: pageFrames.visible,
       cornerRadius: 0
     )
-    let movingImageView = transitionImageView(
-      image: transitionImage,
-      layout: initialImageLayout
+    let movingContentView = transitionContentView(
+      pageSnapshot.contentView,
+      contentSize: pageSnapshot.contentSize,
+      layout: initialLayout
     )
-    surface.addSubview(movingImageView)
+    surface.addSubview(movingContentView)
+    overview.prepareSpatialTransition(enteringOverview: true)
     overview.setTransitionItemHidden(itemID, hidden: true)
     let navigationBar = overview.navigationController?.navigationBar
     navigationBar?.alpha = 0
     container.addSubview(surface)
+    browser.setTabTransitionPageHidden(true)
 
-    UIView.animate(
-      withDuration: transitionDuration(using: transitionContext),
-      delay: 0,
-      usingSpringWithDamping: 1,
-      initialSpringVelocity: 0,
-      options: [.beginFromCurrentState, .allowUserInteraction],
+    startPropertyAnimator(
+      using: transitionContext,
       animations: {
         fromView.alpha = 0
-        toView.alpha = 1
+        overview.animateSpatialTransition(enteringOverview: true)
         self.apply(frame: targetFrame, to: surface)
         surface.layer.cornerRadius = AppRadius.card
-        self.apply(layout: targetImageLayout, to: movingImageView)
+        self.apply(layout: targetLayout, to: movingContentView)
         navigationBar?.alpha = 1
       },
-      completion: { _ in
-        let completed = !transitionContext.transitionWasCancelled
+      completion: { completed in
+        browser.setTabTransitionPageHidden(false)
         navigationBar?.alpha = 1
         overview.setTransitionItemHidden(itemID, hidden: false)
         surface.removeFromSuperview()
-        if !completed { toView.removeFromSuperview() }
-        transitionContext.completeTransition(completed)
         fromView.alpha = 1
         toView.alpha = 1
+        overview.completeSpatialTransition()
+        if !completed { toView.removeFromSuperview() }
+        transitionContext.completeTransition(completed)
       }
     )
   }
@@ -602,7 +615,7 @@ private final class TabOverviewNavigationAnimator: NSObject,
 
     let container = transitionContext.containerView
     toView.frame = transitionContext.finalFrame(for: browser)
-    toView.alpha = 0
+    toView.alpha = 1
     container.insertSubview(toView, belowSubview: fromView)
     container.layoutIfNeeded()
     toView.layoutIfNeeded()
@@ -620,18 +633,17 @@ private final class TabOverviewNavigationAnimator: NSObject,
           sourceFrame.width > 0,
           sourceFrame.height > 0
     else {
-      toView.alpha = 1
       toView.removeFromSuperview()
       fallback(using: transitionContext)
       return
     }
 
     browser.installTabTransitionCover(image: transitionImage)
-    let sourceImageLayout = TabOverviewTransitionGeometry.pageFillLayout(
+    let sourceLayout = TabOverviewTransitionGeometry.pageFillLayout(
       contentSize: transitionImage.size,
       containerSize: sourceFrame.size
     )
-    let finalImageLayout = TabOverviewTransitionGeometry.clippedPageLayout(
+    let finalLayout = TabOverviewTransitionGeometry.clippedPageLayout(
       contentSize: transitionImage.size,
       fullContainerFrame: fullFinalFrame,
       clippedTo: finalFrame
@@ -640,44 +652,45 @@ private final class TabOverviewNavigationAnimator: NSObject,
       frame: sourceFrame,
       cornerRadius: AppRadius.card
     )
-    let movingImageView = transitionImageView(
+    let movingContentView = transitionImageView(
       image: transitionImage,
-      layout: sourceImageLayout
+      layout: sourceLayout
     )
-    surface.addSubview(movingImageView)
+    surface.addSubview(movingContentView)
+    overview.prepareSpatialTransition(enteringOverview: false)
     overview.setTransitionItemHidden(itemID, hidden: true)
+    browser.setTabTransitionChromeAlpha(0)
     let navigationBar = overview.navigationController?.navigationBar
     navigationBar?.alpha = 1
     container.addSubview(surface)
 
-    UIView.animate(
-      withDuration: transitionDuration(using: transitionContext),
-      delay: 0,
-      usingSpringWithDamping: 1,
-      initialSpringVelocity: 0,
-      options: [.beginFromCurrentState, .allowUserInteraction],
+    startPropertyAnimator(
+      using: transitionContext,
       animations: {
-        fromView.alpha = 0
-        toView.alpha = 1
+        overview.animateSpatialTransition(enteringOverview: false)
+        browser.setTabTransitionChromeAlpha(1)
         self.apply(frame: finalFrame, to: surface)
         surface.layer.cornerRadius = 0
-        self.apply(layout: finalImageLayout, to: movingImageView)
+        self.apply(layout: finalLayout, to: movingContentView)
         navigationBar?.alpha = 0
       },
-      completion: { _ in
-        let completed = !transitionContext.transitionWasCancelled
+      completion: { completed in
         navigationBar?.alpha = 1
+        browser.setTabTransitionChromeAlpha(1)
         overview.setTransitionItemHidden(itemID, hidden: false)
         surface.removeFromSuperview()
-        if completed {
-          browser.completeTabTransitionCover()
-        } else {
-          browser.removeTabTransitionCover(animated: false)
-          toView.removeFromSuperview()
-        }
-        transitionContext.completeTransition(completed)
         fromView.alpha = 1
         toView.alpha = 1
+        if completed {
+          transitionContext.completeTransition(true)
+          overview.completeSpatialTransition()
+          browser.completeTabTransitionCover()
+        } else {
+          overview.completeSpatialTransition()
+          browser.removeTabTransitionCover(animated: false)
+          toView.removeFromSuperview()
+          transitionContext.completeTransition(false)
+        }
       }
     )
   }
@@ -685,8 +698,34 @@ private final class TabOverviewNavigationAnimator: NSObject,
   private func fallback(
     using transitionContext: UIViewControllerContextTransitioning
   ) {
+    (transitionContext.viewController(forKey: .from) as? BrowserViewController)?
+      .discardTabTransitionSnapshot()
     PlainHorizontalNavigationAnimator(operation: operation)
       .animateTransition(using: transitionContext)
+  }
+
+  private func startPropertyAnimator(
+    using transitionContext: UIViewControllerContextTransitioning,
+    animations: @escaping () -> Void,
+    completion: @escaping (Bool) -> Void
+  ) {
+    let timing = UISpringTimingParameters(
+      dampingRatio: 0.88,
+      initialVelocity: CGVector(dx: 0, dy: 0)
+    )
+    let animator = UIViewPropertyAnimator(
+      duration: transitionDuration(using: transitionContext),
+      timingParameters: timing
+    )
+    animator.addAnimations(animations)
+    animator.addCompletion { position in
+      let completed = position == .end
+        && !transitionContext.transitionWasCancelled
+      self.propertyAnimator = nil
+      completion(completed)
+    }
+    propertyAnimator = animator
+    animator.startAnimation()
   }
 
   private func transitionSurface(
@@ -711,13 +750,30 @@ private final class TabOverviewNavigationAnimator: NSObject,
     layout: TabOverviewTransitionGeometry.PageImageLayout
   ) -> UIImageView {
     let imageView = UIImageView(image: image)
-    imageView.bounds = CGRect(origin: .zero, size: image.size)
-    imageView.layer.anchorPoint = .zero
     imageView.contentMode = .scaleToFill
     imageView.clipsToBounds = false
-    imageView.isUserInteractionEnabled = false
-    apply(layout: layout, to: imageView)
+    transitionContentView(
+      imageView,
+      contentSize: image.size,
+      layout: layout
+    )
     return imageView
+  }
+
+  @discardableResult
+  private func transitionContentView(
+    _ contentView: UIView,
+    contentSize: CGSize,
+    layout: TabOverviewTransitionGeometry.PageImageLayout
+  ) -> UIView {
+    contentView.transform = .identity
+    contentView.bounds = CGRect(origin: .zero, size: contentSize)
+    contentView.layer.anchorPoint = .zero
+    contentView.isUserInteractionEnabled = false
+    contentView.setNeedsLayout()
+    contentView.layoutIfNeeded()
+    apply(layout: layout, to: contentView)
+    return contentView
   }
 
   private func apply(frame: CGRect, to surface: UIView) {
@@ -727,10 +783,10 @@ private final class TabOverviewNavigationAnimator: NSObject,
 
   private func apply(
     layout: TabOverviewTransitionGeometry.PageImageLayout,
-    to imageView: UIImageView
+    to contentView: UIView
   ) {
-    imageView.layer.position = layout.origin
-    imageView.transform = CGAffineTransform(
+    contentView.layer.position = layout.origin
+    contentView.transform = CGAffineTransform(
       scaleX: layout.scale,
       y: layout.scale
     )
