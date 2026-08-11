@@ -75,7 +75,7 @@ extension BrowserViewController {
   /// 在 push 导航改变安全区之前冻结网页，确保动画从用户点击时看到的
   /// 原始位置开始，而不是从导航栏布局完成后的新位置开始。
   func prepareTabTransitionSnapshot() {
-    let coordinateSpace = view.window ?? view
+    guard let coordinateSpace = view.window ?? view else { return }
     pendingTabTransitionSnapshot = makeTabTransitionSnapshot(
       in: coordinateSpace,
       fallbackImage: tabTransitionCoverView?.image ?? activeTab?.snapshot
