@@ -229,7 +229,7 @@ final class DesignSystemTests: XCTestCase {
     let view = NewTabView()
     let favorites = [
       FavoriteItem(
-        title: "示例一",
+        title: "每日大赛之真实的反差情侣合集",
         url: try XCTUnwrap(URL(string: "about:blank")),
         host: "example.test"
       ),
@@ -255,7 +255,7 @@ final class DesignSystemTests: XCTestCase {
     XCTAssertEqual(buttons.count, 2)
     XCTAssertEqual(
       buttons.compactMap { $0.configuration?.title },
-      ["示例一", "示例二"]
+      ["每日大赛之真实的反差情侣合集", "示例二"]
     )
     let firstFavoriteButton = try XCTUnwrap(buttons.first)
     view.updateFavorites(favorites)
@@ -265,6 +265,20 @@ final class DesignSystemTests: XCTestCase {
     XCTAssertTrue(firstFavoriteButton === retainedFavoriteButton)
     XCTAssertEqual(stack.distribution, .fillEqually)
     XCTAssertTrue(buttons.allSatisfy { $0.titleLabel?.numberOfLines == 2 })
+
+    firstFavoriteButton.isHighlighted = true
+    firstFavoriteButton.setNeedsUpdateConfiguration()
+    firstFavoriteButton.updateConfiguration()
+    firstFavoriteButton.layoutIfNeeded()
+    XCTAssertEqual(firstFavoriteButton.titleLabel?.numberOfLines, 2)
+    XCTAssertEqual(
+      firstFavoriteButton.titleLabel?.lineBreakMode,
+      .byTruncatingTail
+    )
+    XCTAssertGreaterThan(
+      firstFavoriteButton.titleLabel?.bounds.height ?? 0,
+      (firstFavoriteButton.titleLabel?.font.lineHeight ?? 0) * 1.5
+    )
   }
 
   @MainActor

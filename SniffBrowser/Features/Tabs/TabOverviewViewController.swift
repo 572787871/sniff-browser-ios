@@ -15,6 +15,7 @@ final class TabOverviewViewController: BaseViewController {
     var onToggleFavorite: ((UUID) -> Void)?
     var onModeChanged: ((Bool) -> Void)?
     var onDone: (() -> Void)?
+    var onScrollPositionChange: ((TabOverviewMode, CGFloat) -> Void)?
 
     private struct PendingTransition {
         let mode: TabOverviewMode
@@ -43,13 +44,21 @@ final class TabOverviewViewController: BaseViewController {
         options: [.interPageSpacing: NSNumber(value: 0)]
     )
 
-    init(items: [TabOverviewItem]) {
+    init(
+        items: [TabOverviewItem],
+        standardScrollOffset: CGFloat = 0,
+        privateScrollOffset: CGFloat = 0
+    ) {
         allItems = items
         let initialMode: TabOverviewMode =
             items.first(where: \.isSelected)?.isPrivate == true
                 ? .privateBrowsing
                 : .standard
-        pagingState = TabOverviewPagingState(selectedMode: initialMode)
+        pagingState = TabOverviewPagingState(
+            selectedMode: initialMode,
+            standardScrollOffset: standardScrollOffset,
+            privateScrollOffset: privateScrollOffset
+        )
         super.init(title: "标签页", prefersLargeTitle: false)
     }
 
@@ -65,6 +74,7 @@ final class TabOverviewViewController: BaseViewController {
         configurePageController()
         registerForEnvironmentChanges()
         updatePages(animated: false)
+        restoreScrollOffset(for: pagingState.selectedMode)
         applyModeAppearance(animated: false)
     }
 
@@ -461,6 +471,7 @@ final class TabOverviewViewController: BaseViewController {
         let controller = TabOverviewPageViewController(mode: mode)
         controller.onSelectItem = { [weak self] itemID in
             guard let self else { return }
+            self.saveScrollOffset(for: mode)
             self.usesSpatialTransition = true
             self.beginSpatialTransition(for: itemID)
             self.captureTransitionFrame(for: itemID)
@@ -478,7 +489,9 @@ final class TabOverviewViewController: BaseViewController {
             )
         }
         controller.onScrollOffsetChange = { [weak self] offset in
-            self?.pagingState.saveScrollOffset(offset, for: mode)
+            guard let self else { return }
+            self.pagingState.saveScrollOffset(offset, for: mode)
+            self.reportScrollOffset(for: mode)
         }
         return controller
     }
@@ -596,6 +609,11 @@ final class TabOverviewViewController: BaseViewController {
     private func saveScrollOffset(for mode: TabOverviewMode) {
         guard isViewLoaded else { return }
         pagingState.saveScrollOffset(page(for: mode).scrollOffsetY, for: mode)
+        reportScrollOffset(for: mode)
+    }
+
+    private func reportScrollOffset(for mode: TabOverviewMode) {
+        onScrollPositionChange?(mode, pagingState.scrollOffset(for: mode))
     }
 
     private func restoreScrollOffset(for mode: TabOverviewMode?) {
@@ -823,6 +841,7 @@ final class TabOverviewViewController: BaseViewController {
     }
 
     private func finish() {
+        saveScrollOffset(for: pagingState.selectedMode)
         captureCurrentTransitionFrameIfNeeded()
         if let onDone {
             onDone()

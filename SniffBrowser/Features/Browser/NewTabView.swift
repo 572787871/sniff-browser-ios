@@ -767,6 +767,19 @@ private final class NewTabFavoriteButton: UIButton {
     }
   }
 
+  override func updateConfiguration() {
+    super.updateConfiguration()
+    // UIButton.Configuration may recreate titleLabel after state/theme/image
+    // updates. Reapply the shared two-line rule every time configuration is
+    // resolved so the live page and its rendered tab preview stay identical.
+    configureTitleLabel()
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    configureTitleLabel()
+  }
+
   func updateAppearance(overPhoto: Bool) {
     guard var configuration else { return }
     let foreground = overPhoto ? UIColor.white : AppColors.primaryText
@@ -812,6 +825,7 @@ private final class NewTabFavoriteButton: UIButton {
     titleLabel?.numberOfLines = 2
     titleLabel?.textAlignment = .center
     titleLabel?.lineBreakMode = .byTruncatingTail
+    titleLabel?.adjustsFontSizeToFitWidth = false
   }
 
   private static func preparedFavicon(_ image: UIImage) -> UIImage {

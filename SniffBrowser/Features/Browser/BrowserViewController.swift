@@ -57,6 +57,10 @@ final class BrowserViewController: UIViewController {
   var tabTransitionCoverView: TabPageSnapshotView?
   var tabTransitionCoverID: UUID?
   var tabTransitionRequiresPageLoad = false
+  /// 标签总览每次都会创建新的 Controller，因此滚动位置保存在持久的
+  /// Browser 层；普通与无痕互不覆盖。
+  var standardTabOverviewScrollOffset: CGFloat = 0
+  var privateTabOverviewScrollOffset: CGFloat = 0
   var pageChromeForegroundStyle: BrowserChromeForegroundStyle?
   var elementHideInjected: [ObjectIdentifier: Bool] = [:]
   var blockedElementCounterHandler: BlockedElementCounterHandler?

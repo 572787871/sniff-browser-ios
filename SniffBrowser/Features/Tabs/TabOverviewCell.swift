@@ -15,6 +15,7 @@ final class TabPageSnapshotView: UIView {
     }
 
     private let imageView = UIImageView()
+    private var usesAutomaticImageLayout = true
 
     init(image: UIImage? = nil) {
         self.image = image
@@ -22,7 +23,7 @@ final class TabPageSnapshotView: UIView {
         clipsToBounds = true
         isUserInteractionEnabled = false
         imageView.image = image
-        imageView.contentMode = .scaleToFill
+        imageView.contentMode = .scaleAspectFit
         imageView.isUserInteractionEnabled = false
         imageView.isAccessibilityElement = false
         addSubview(imageView)
@@ -32,8 +33,16 @@ final class TabPageSnapshotView: UIView {
         return nil
     }
 
+    /// 空间转场使用明确的等比图片 frame。它只在一次全新的临时快照上
+    /// 生效，避免容器宽高变化时 layoutSubviews 重新选择缩放比例。
+    func setRenderedImageFrame(_ frame: CGRect) {
+        usesAutomaticImageLayout = false
+        imageView.frame = frame
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
+        guard usesAutomaticImageLayout else { return }
         guard let image else {
             imageView.frame = bounds
             return

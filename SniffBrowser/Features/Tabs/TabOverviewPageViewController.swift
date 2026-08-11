@@ -361,7 +361,9 @@ final class TabOverviewPageViewController: UIViewController {
         dataSource.apply(
             snapshot,
             animatingDifferences: animated && view.window != nil
-        )
+        ) { [weak self] in
+            self?.restorePendingOffsetIfPossible()
+        }
 
         let isEmpty = identifiers.isEmpty
         collectionView.isHidden = isEmpty
@@ -371,6 +373,10 @@ final class TabOverviewPageViewController: UIViewController {
     private func restorePendingOffsetIfPossible() {
         guard let pendingRestoredOffset else { return }
         collectionView.layoutIfNeeded()
+        guard collectionView.bounds.height > 0 else { return }
+        if !items.isEmpty, collectionView.contentSize.height <= 0 {
+            return
+        }
 
         let minimumOffset = -collectionView.adjustedContentInset.top
         let maximumOffset = max(
@@ -442,12 +448,9 @@ extension TabOverviewPageViewController: UICollectionViewDelegate {
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard
-            !scrollView.isDragging,
-            !scrollView.isDecelerating
-        else {
-            return
-        }
+        // 只把用户手势产生的位置写回持久状态。reload/layout 后的
+        // 程序化 offset 变化不能把刚恢复的旧位置覆盖成 0。
+        guard scrollView.isDragging || scrollView.isDecelerating else { return }
         onScrollOffsetChange?(max(0, scrollView.contentOffset.y))
     }
 

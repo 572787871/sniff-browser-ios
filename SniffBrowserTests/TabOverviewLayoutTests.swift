@@ -119,6 +119,41 @@ final class TabOverviewLayoutTests: XCTestCase {
         XCTAssertEqual(state.scrollOffset(for: .privateBrowsing), 376)
     }
 
+    func testPersistedPagingOffsetsInitializeIndependentlyAndNormalizeValues() {
+        let state = TabOverviewPagingState(
+            selectedMode: .privateBrowsing,
+            standardScrollOffset: 428,
+            privateScrollOffset: -30
+        )
+
+        XCTAssertEqual(state.scrollOffset(for: .standard), 428)
+        XCTAssertEqual(state.scrollOffset(for: .privateBrowsing), 0)
+    }
+
+    func testTransitionImageFramesKeepOneAspectRatioAtBothEndpoints() {
+        let imageSize = CGSize(width: 390, height: 844)
+        let sourceFrame = TabOverviewTransitionGeometry.pageFillFrame(
+            contentSize: imageSize,
+            containerSize: CGSize(width: 170, height: 260)
+        )
+        let targetFrame = TabOverviewTransitionGeometry.clippedPageFrame(
+            contentSize: imageSize,
+            fullContainerFrame: CGRect(x: 0, y: 50, width: 390, height: 794),
+            clippedTo: CGRect(x: 0, y: 130, width: 390, height: 620)
+        )
+
+        XCTAssertEqual(
+            sourceFrame.width / imageSize.width,
+            sourceFrame.height / imageSize.height,
+            accuracy: 0.000_1
+        )
+        XCTAssertEqual(
+            targetFrame.width / imageSize.width,
+            targetFrame.height / imageSize.height,
+            accuracy: 0.000_1
+        )
+    }
+
     func testPortraitPageFillKeepsFullWidthAndCropsOnlyBelowTheVisibleTop() {
         let containerSize = CGSize(width: 170, height: 260)
         let frame = TabOverviewTransitionGeometry.pageFillFrame(

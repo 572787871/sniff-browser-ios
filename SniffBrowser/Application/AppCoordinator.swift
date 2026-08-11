@@ -568,7 +568,21 @@ private final class TabOverviewNavigationAnimator: NSObject,
       frame: pageFrames.visible,
       cornerRadius: 0
     )
-    attachTransitionSnapshot(pageSnapshot.contentView, to: surface)
+    let transitionContent = pageSnapshot.contentView
+    let sourceImageFrame = TabOverviewTransitionGeometry.clippedPageFrame(
+      contentSize: pageSnapshot.contentSize,
+      fullContainerFrame: pageFrames.full,
+      clippedTo: pageFrames.visible
+    )
+    let targetImageFrame = TabOverviewTransitionGeometry.pageFillFrame(
+      contentSize: pageSnapshot.contentSize,
+      containerSize: targetFrame.size
+    )
+    attachTransitionSnapshot(
+      transitionContent,
+      imageFrame: sourceImageFrame,
+      to: surface
+    )
     overview.prepareSpatialTransition(enteringOverview: true)
     overview.setTransitionItemHidden(itemID, hidden: true)
     let navigationBar = overview.navigationController?.navigationBar
@@ -592,6 +606,11 @@ private final class TabOverviewNavigationAnimator: NSObject,
         fromView.alpha = 0
         overview.animateSpatialTransition(enteringOverview: true)
         self.apply(containerFrame: targetFrame, to: surface)
+        self.apply(
+          containerSize: targetFrame.size,
+          imageFrame: targetImageFrame,
+          to: transitionContent
+        )
         surface.layer.cornerRadius = AppRadius.card
         navigationBar?.alpha = 1
       },
@@ -657,8 +676,13 @@ private final class TabOverviewNavigationAnimator: NSObject,
       for: itemID,
       fallbackImage: overview.transitionImage(for: itemID)
     )
+    let finalFullFrame = browser.tabTransitionFullContentFrame(
+      in: transitionWindow
+    )
     let finalFrame = browser.tabTransitionContentFrame(in: transitionWindow)
     guard let transitionImage,
+          finalFullFrame.width > 0,
+          finalFullFrame.height > 0,
           finalFrame.width > 0,
           finalFrame.height > 0,
           let sourceFrame = overview.transitionFrame(
@@ -685,8 +709,19 @@ private final class TabOverviewNavigationAnimator: NSObject,
       frame: sourceFrame,
       cornerRadius: AppRadius.card
     )
+    let transitionContent = TabPageSnapshotView(image: transitionImage)
+    let sourceImageFrame = TabOverviewTransitionGeometry.pageFillFrame(
+      contentSize: transitionImage.size,
+      containerSize: sourceFrame.size
+    )
+    let targetImageFrame = TabOverviewTransitionGeometry.clippedPageFrame(
+      contentSize: transitionImage.size,
+      fullContainerFrame: finalFullFrame,
+      clippedTo: finalFrame
+    )
     attachTransitionSnapshot(
-      TabPageSnapshotView(image: transitionImage),
+      transitionContent,
+      imageFrame: sourceImageFrame,
       to: surface
     )
     overview.prepareSpatialTransition(enteringOverview: false)
@@ -713,6 +748,11 @@ private final class TabOverviewNavigationAnimator: NSObject,
         overview.animateSpatialTransition(enteringOverview: false)
         browser.setTabTransitionChromeAlpha(1)
         self.apply(containerFrame: finalFrame, to: surface)
+        self.apply(
+          containerSize: finalFrame.size,
+          imageFrame: targetImageFrame,
+          to: transitionContent
+        )
         surface.layer.cornerRadius = 0
         navigationBar?.alpha = 0
       },
@@ -727,24 +767,23 @@ private final class TabOverviewNavigationAnimator: NSObject,
           targetFrame: finalFrame,
           in: transitionWindow
         )
-        self.disposeTransitionSurface(surface)
-        fromView.alpha = 1
-        toView.alpha = 1
         toView.frame = finalBrowserFrame
         toView.transform = .identity
         toView.layer.transform = CATransform3DIdentity
-        browser.normalizeTabTransitionBrowserState()
-        browser.restoreTabTransitionScrollPosition()
-        browser.setTabTransitionChromeAlpha(1)
+        browser.prepareTabOpenTransitionHandoff()
         browser.debugLogTabTransitionState(
           "TAB TRANSITION BEFORE HANDOFF",
           in: transitionWindow
         )
+        // Surface 已经到达最终像素位置。先让同一张 cover 在真实 WebView
+        // 上方接管，再销毁 window 上的临时 surface，用户不会看到中间帧。
+        self.disposeTransitionSurface(surface)
+        fromView.alpha = 1
+        toView.alpha = 1
         browser.debugLogTabTransitionState(
           "TAB OPEN FINISH \(completed ? "success" : "cancelled")",
           in: transitionWindow
         )
-        browser.clearTabTransitionScrollState()
         overview.completeSpatialTransition()
         overview.debugLogTransitionState(
           "\(openLabel) FINISH \(completed ? "success" : "cancelled")",
@@ -752,8 +791,9 @@ private final class TabOverviewNavigationAnimator: NSObject,
           in: transitionWindow
         )
         if completed {
-          browser.completeTabTransitionCover()
+          browser.finishTabOpenTransition()
         } else {
+          browser.clearTabTransitionScrollState()
           browser.removeTabTransitionCover(animated: false)
           toView.removeFromSuperview()
         }
@@ -841,14 +881,15 @@ private final class TabOverviewNavigationAnimator: NSObject,
     surface.removeFromSuperview()
   }
 
-  /// 快照本身不参加缩放。外层窗口只改变 bounds/center，内部页面图像
-  /// 通过 TabPageSnapshotView 的等比铺满规则重新布局，永远不使用 transform。
+  /// 外层窗口只改变 bounds/center；内部 frozen image 使用明确的等比
+  /// 起止 frame，固定顶部取景，不随中间容器宽高重新选择铺满比例。
   private func attachTransitionSnapshot(
     _ snapshot: UIView,
+    imageFrame: CGRect,
     to surface: UIView
   ) {
     snapshot.translatesAutoresizingMaskIntoConstraints = true
-    snapshot.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    snapshot.autoresizingMask = []
     snapshot.transform = .identity
     snapshot.layer.transform = CATransform3DIdentity
     snapshot.layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
@@ -859,8 +900,21 @@ private final class TabOverviewNavigationAnimator: NSObject,
       x: surface.bounds.midX,
       y: surface.bounds.midY
     )
-    snapshot.setNeedsLayout()
-    snapshot.layoutIfNeeded()
+    (snapshot as? TabPageSnapshotView)?.setRenderedImageFrame(imageFrame)
+  }
+
+  private func apply(
+    containerSize: CGSize,
+    imageFrame: CGRect,
+    to snapshot: UIView
+  ) {
+    snapshot.transform = .identity
+    snapshot.bounds = CGRect(origin: .zero, size: containerSize)
+    snapshot.center = CGPoint(
+      x: containerSize.width / 2,
+      y: containerSize.height / 2
+    )
+    (snapshot as? TabPageSnapshotView)?.setRenderedImageFrame(imageFrame)
   }
 
   private func apply(containerFrame frame: CGRect, to surface: UIView) {

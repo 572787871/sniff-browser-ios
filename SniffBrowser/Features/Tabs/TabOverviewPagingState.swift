@@ -8,8 +8,14 @@ struct TabOverviewPagingState: Equatable {
     private var standardScrollOffset: CGFloat = 0
     private var privateScrollOffset: CGFloat = 0
 
-    init(selectedMode: TabOverviewMode) {
+    init(
+        selectedMode: TabOverviewMode,
+        standardScrollOffset: CGFloat = 0,
+        privateScrollOffset: CGFloat = 0
+    ) {
         self.selectedMode = selectedMode
+        self.standardScrollOffset = Self.normalized(standardScrollOffset)
+        self.privateScrollOffset = Self.normalized(privateScrollOffset)
     }
 
     @discardableResult
@@ -56,5 +62,9 @@ struct TabOverviewPagingState: Equatable {
         case .privateBrowsing:
             return privateScrollOffset
         }
+    }
+
+    private static func normalized(_ offset: CGFloat) -> CGFloat {
+        offset.isFinite ? max(0, offset) : 0
     }
 }

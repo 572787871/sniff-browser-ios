@@ -276,6 +276,37 @@ extension BrowserViewController {
     restoreTabTransitionScrollPosition()
   }
 
+  /// 标签卡片已经扩大到最终 frame 后，为冻结图与真实页面的交接准备
+  /// 完整浏览器布局。此时 cover 仍覆盖在 WebView 上方，用户只能看到
+  /// 动画使用的同一份像素，不会暴露 Auto Layout 或滚动位置修正过程。
+  func prepareTabOpenTransitionHandoff() {
+    normalizeTabTransitionBrowserState()
+    setTabTransitionChromeAlpha(1)
+
+    view.setNeedsLayout()
+    view.layoutIfNeeded()
+    contentView.setNeedsLayout()
+    contentView.layoutIfNeeded()
+    activeWebView?.setNeedsLayout()
+    activeWebView?.layoutIfNeeded()
+
+    // layout/安全区稳定后再按文档坐标恢复一次。必须发生在真实 WebView
+    // 可见之前，避免用户看到页面顶部被系统 inset 拉动。
+    restoreTabTransitionScrollPosition()
+  }
+
+  /// 让已经完成最终布局的真实页面先在 cover 下绘制一帧，再释放冻结图。
+  /// 这不是人为延迟；仅跨越一次主线程提交，保证最后一帧无缝接管。
+  func finishTabOpenTransition() {
+    prepareTabOpenTransitionHandoff()
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.prepareTabOpenTransitionHandoff()
+      self.clearTabTransitionScrollState()
+      self.completeTabTransitionCover()
+    }
+  }
+
   /// 保存标签卡片对应 WebView 的真实文档位置。坐标使用 adjusted inset
   /// 修正后再恢复，因此地址栏/安全区短暂变化不会把页面内容向顶部拉动。
   func captureTabTransitionScrollState(
@@ -450,7 +481,11 @@ extension BrowserViewController {
 
   private func presentTabOverview() {
     prepareTabTransitionSnapshot()
-    let controller = TabOverviewViewController(items: makeTabItems())
+    let controller = TabOverviewViewController(
+      items: makeTabItems(),
+      standardScrollOffset: standardTabOverviewScrollOffset,
+      privateScrollOffset: privateTabOverviewScrollOffset
+    )
     tabOverviewController = controller
     configureTabOverviewActions(controller)
     router?.showTabs(controller)
@@ -558,6 +593,15 @@ extension BrowserViewController {
   }
 
   func configureTabOverviewActions(_ controller: TabOverviewViewController) {
+    controller.onScrollPositionChange = { [weak self] mode, offset in
+      guard let self else { return }
+      switch mode {
+      case .standard:
+        self.standardTabOverviewScrollOffset = offset
+      case .privateBrowsing:
+        self.privateTabOverviewScrollOffset = offset
+      }
+    }
     controller.onSelectTab = { [weak self] id in
       self?.selectTab(id: id, returnsToBrowser: true)
     }
