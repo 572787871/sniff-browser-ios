@@ -393,9 +393,10 @@ final class NewTabView: UIView {
     favoritesStack.spacing = AppSpacing.xs
     favoritesStack.isHidden = true
     favoritesStack.accessibilityIdentifier = "newTab.favorites"
-    favoritesStack.heightAnchor.constraint(
-      greaterThanOrEqualToConstant: 88
-    ).isActive = true
+    // 收藏卡片与保存的主页预览使用同一固定高度。两行标题只在卡片
+    // 内部换行，不允许 UIButton 的 intrinsic size 把整排向下撑长。
+    favoritesStack.clipsToBounds = true
+    favoritesStack.heightAnchor.constraint(equalToConstant: 88).isActive = true
   }
 
   private func configureDate() {

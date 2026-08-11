@@ -217,3 +217,38 @@ enum TabOverviewTransitionGeometry {
         ).frame(contentSize: contentSize)
     }
 }
+
+/// 恢复标签总览位置时的纯几何计算。默认保留用户原来的 offset；只有
+/// 当前标签已经与视口相交但被上下边缘裁切时，才移动到刚好完整可见。
+enum TabOverviewScrollRestorationGeometry {
+    static func resolvedOffset(
+        savedOffset: CGFloat,
+        minimumOffset: CGFloat,
+        maximumOffset: CGFloat,
+        viewportHeight: CGFloat,
+        selectedItemFrame: CGRect?,
+        visibilityPadding: CGFloat = TabOverviewGridLayoutMetrics.bottomInset
+    ) -> CGFloat {
+        let lowerBound = min(minimumOffset, maximumOffset)
+        let upperBound = max(minimumOffset, maximumOffset)
+        var offset = min(upperBound, max(lowerBound, savedOffset))
+        guard viewportHeight > 0, let selectedItemFrame else { return offset }
+
+        let viewportMinY = offset
+        let viewportMaxY = offset + viewportHeight
+        guard selectedItemFrame.maxY > viewportMinY,
+              selectedItemFrame.minY < viewportMaxY
+        else {
+            return offset
+        }
+
+        if selectedItemFrame.maxY + visibilityPadding > viewportMaxY {
+            offset = selectedItemFrame.maxY
+                + visibilityPadding
+                - viewportHeight
+        } else if selectedItemFrame.minY - visibilityPadding < viewportMinY {
+            offset = selectedItemFrame.minY - visibilityPadding
+        }
+        return min(upperBound, max(lowerBound, offset))
+    }
+}

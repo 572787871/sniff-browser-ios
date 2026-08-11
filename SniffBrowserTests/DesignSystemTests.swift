@@ -264,6 +264,7 @@ final class DesignSystemTests: XCTestCase {
     )
     XCTAssertTrue(firstFavoriteButton === retainedFavoriteButton)
     XCTAssertEqual(stack.distribution, .fillEqually)
+    XCTAssertEqual(stack.bounds.height, 88, accuracy: 0.5)
     XCTAssertTrue(buttons.allSatisfy { $0.titleLabel?.numberOfLines == 2 })
 
     firstFavoriteButton.isHighlighted = true

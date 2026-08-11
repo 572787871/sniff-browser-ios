@@ -130,6 +130,30 @@ final class TabOverviewLayoutTests: XCTestCase {
         XCTAssertEqual(state.scrollOffset(for: .privateBrowsing), 0)
     }
 
+    func testRestoredBottomTabIsMovedOnlyEnoughToBecomeFullyVisible() {
+        let offset = TabOverviewScrollRestorationGeometry.resolvedOffset(
+            savedOffset: 500,
+            minimumOffset: 0,
+            maximumOffset: 800,
+            viewportHeight: 400,
+            selectedItemFrame: CGRect(x: 0, y: 850, width: 170, height: 300)
+        )
+
+        XCTAssertEqual(offset, 766, accuracy: 0.001)
+    }
+
+    func testRestorationDoesNotJumpToASelectedTabOutsideSavedViewport() {
+        let offset = TabOverviewScrollRestorationGeometry.resolvedOffset(
+            savedOffset: 160,
+            minimumOffset: 0,
+            maximumOffset: 900,
+            viewportHeight: 400,
+            selectedItemFrame: CGRect(x: 0, y: 900, width: 170, height: 300)
+        )
+
+        XCTAssertEqual(offset, 160, accuracy: 0.001)
+    }
+
     func testTransitionImageFramesKeepOneAspectRatioAtBothEndpoints() {
         let imageSize = CGSize(width: 390, height: 844)
         let sourceFrame = TabOverviewTransitionGeometry.pageFillFrame(

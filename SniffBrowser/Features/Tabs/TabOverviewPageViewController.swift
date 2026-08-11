@@ -30,6 +30,7 @@ final class TabOverviewPageViewController: UIViewController {
     )
     private let privacyNoticeLabel = UILabel()
     private var pendingRestoredOffset: CGFloat?
+    private var restoredOffsetTarget: CGFloat?
     private var lastLaidOutSize: CGSize = .zero
 
     init(mode: TabOverviewMode) {
@@ -56,7 +57,17 @@ final class TabOverviewPageViewController: UIViewController {
            currentSize != lastLaidOutSize {
             lastLaidOutSize = currentSize
             collectionView.collectionViewLayout.invalidateLayout()
+            // Page Controller 与底部工具栏的最终约束可能晚于第一次数据
+            // 布局生效。尺寸变化时必须重新用最终 viewport 夹紧旧位置。
+            pendingRestoredOffset = restoredOffsetTarget
         }
+        restorePendingOffsetIfPossible()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        pendingRestoredOffset = restoredOffsetTarget
+        view.layoutIfNeeded()
         restorePendingOffsetIfPossible()
     }
 
@@ -76,7 +87,9 @@ final class TabOverviewPageViewController: UIViewController {
     }
 
     func restoreScrollOffset(_ offset: CGFloat) {
-        pendingRestoredOffset = max(0, offset)
+        let normalizedOffset = max(0, offset)
+        restoredOffsetTarget = normalizedOffset
+        pendingRestoredOffset = normalizedOffset
         guard isViewLoaded else { return }
         view.layoutIfNeeded()
         restorePendingOffsetIfPossible()
@@ -362,7 +375,9 @@ final class TabOverviewPageViewController: UIViewController {
             snapshot,
             animatingDifferences: animated && view.window != nil
         ) { [weak self] in
-            self?.restorePendingOffsetIfPossible()
+            guard let self else { return }
+            self.pendingRestoredOffset = self.restoredOffsetTarget
+            self.restorePendingOffsetIfPossible()
         }
 
         let isEmpty = identifiers.isEmpty
@@ -385,10 +400,24 @@ final class TabOverviewPageViewController: UIViewController {
                 - collectionView.bounds.height
                 + collectionView.adjustedContentInset.bottom
         )
+        let selectedItemFrame = items.first(where: \.isSelected)
+            .flatMap { item in
+                dataSource.indexPath(for: item.id)
+            }
+            .flatMap { indexPath in
+                collectionView.layoutAttributesForItem(at: indexPath)?.frame
+            }
+        let resolvedOffset = TabOverviewScrollRestorationGeometry.resolvedOffset(
+            savedOffset: pendingRestoredOffset,
+            minimumOffset: minimumOffset,
+            maximumOffset: maximumOffset,
+            viewportHeight: collectionView.bounds.height,
+            selectedItemFrame: selectedItemFrame
+        )
         collectionView.setContentOffset(
             CGPoint(
                 x: -collectionView.adjustedContentInset.left,
-                y: min(maximumOffset, max(minimumOffset, pendingRestoredOffset))
+                y: resolvedOffset
             ),
             animated: false
         )
@@ -414,6 +443,12 @@ final class TabOverviewPageViewController: UIViewController {
 }
 
 extension TabOverviewPageViewController: UICollectionViewDelegate {
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        // 用户开始新的滚动后，旧恢复目标已完成使命，不能继续吸附回去。
+        pendingRestoredOffset = nil
+        restoredOffsetTarget = nil
+    }
+
     func collectionView(
         _ collectionView: UICollectionView,
         didSelectItemAt indexPath: IndexPath
