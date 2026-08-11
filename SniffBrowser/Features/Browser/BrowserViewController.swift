@@ -73,9 +73,12 @@ final class BrowserViewController: UIViewController {
   private var searchSuggestionContext = BrowserSearchSuggestionContext.webPage
   private var isSearchHistoryVisible = false
   private var isSearchSuggestionsPinned = false
+  private var isWebContentKeyboardVisible = false
+  private var chromeStateBeforeWebContentKeyboard: BrowserChromeState?
   private var quickLinksHeightConstraint: NSLayoutConstraint?
   private var isWaitingToRefreshNewTabSnapshot = false
   private var activeWebViewConstraints: [NSLayoutConstraint] = []
+  private var activeWebViewTopConstraint: NSLayoutConstraint?
 
   struct TabTransitionScrollState {
     let tabID: UUID
@@ -762,6 +765,115 @@ final class BrowserViewController: UIViewController {
         }
       }
     )
+    lifecycleObservers.append(
+      center.addObserver(
+        forName: UIResponder.keyboardWillShowNotification,
+        object: nil,
+        queue: .main
+      ) { [weak self] notification in
+        Task { @MainActor in
+          self?.beginWebContentKeyboardPresentation(notification)
+        }
+      }
+    )
+    lifecycleObservers.append(
+      center.addObserver(
+        forName: UIResponder.keyboardWillHideNotification,
+        object: nil,
+        queue: .main
+      ) { [weak self] notification in
+        Task { @MainActor in
+          self?.endWebContentKeyboardPresentation(notification)
+        }
+      }
+    )
+  }
+
+  private func beginWebContentKeyboardPresentation(
+    _ notification: Notification
+  ) {
+    guard viewIfLoaded?.window != nil,
+          !addressBar.isEditing,
+          activeWebView?.isHidden == false,
+          !isWebContentKeyboardVisible
+    else { return }
+
+    isWebContentKeyboardVisible = true
+    chromeStateBeforeWebContentKeyboard = currentChromeState
+    chromeScrollController.reset(to: .expanded)
+    applyChromeState(.expanded, animated: true)
+    updateBrowserChromeVisibility()
+    updateActiveWebViewTopPlacement(
+      .belowAddressBar,
+      notification: notification
+    )
+  }
+
+  private func endWebContentKeyboardPresentation(
+    _ notification: Notification
+  ) {
+    guard isWebContentKeyboardVisible else { return }
+    isWebContentKeyboardVisible = false
+    updateActiveWebViewTopPlacement(
+      .fullBleed,
+      notification: notification
+    )
+
+    let restoredState = chromeStateBeforeWebContentKeyboard ?? .expanded
+    chromeStateBeforeWebContentKeyboard = nil
+    chromeScrollController.reset(to: restoredState)
+    applyChromeState(restoredState, animated: true)
+    updateBrowserChromeVisibility()
+  }
+
+  private func updateActiveWebViewTopPlacement(
+    _ placement: BrowserWebContentTopPlacement,
+    notification: Notification
+  ) {
+    guard let webView = activeWebView,
+          let oldConstraint = activeWebViewTopConstraint
+    else { return }
+
+    let newConstraint: NSLayoutConstraint
+    switch placement {
+    case .fullBleed:
+      newConstraint = webView.topAnchor.constraint(equalTo: contentView.topAnchor)
+    case .belowAddressBar:
+      newConstraint = webView.topAnchor.constraint(
+        equalTo: addressBar.bottomAnchor,
+        constant: AppSpacing.sm
+      )
+    }
+
+    view.layoutIfNeeded()
+    oldConstraint.isActive = false
+    newConstraint.isActive = true
+    activeWebViewTopConstraint = newConstraint
+    if let index = activeWebViewConstraints.firstIndex(where: {
+      $0 === oldConstraint
+    }) {
+      activeWebViewConstraints[index] = newConstraint
+    }
+
+    let duration = notification.userInfo?[
+      UIResponder.keyboardAnimationDurationUserInfoKey
+    ] as? NSNumber
+    let curveRawValue = notification.userInfo?[
+      UIResponder.keyboardAnimationCurveUserInfoKey
+    ] as? NSNumber
+    let options = UIView.AnimationOptions(
+      rawValue: (curveRawValue?.uintValue
+        ?? UInt(UIView.AnimationCurve.easeInOut.rawValue)) << 16
+    ).union([.beginFromCurrentState, .allowUserInteraction])
+    UIView.animate(
+      withDuration: UIAccessibility.isReduceMotionEnabled
+        ? 0
+        : (duration?.doubleValue ?? AppAppearance.quickAnimationDuration),
+      delay: 0,
+      options: options
+    ) {
+      self.view.layoutIfNeeded()
+    }
   }
 
   func refreshNewTabFavorites() {
@@ -847,6 +959,9 @@ final class BrowserViewController: UIViewController {
     activeResourceObservationToken = nil
     NSLayoutConstraint.deactivate(activeWebViewConstraints)
     activeWebViewConstraints.removeAll()
+    activeWebViewTopConstraint = nil
+    isWebContentKeyboardVisible = false
+    chromeStateBeforeWebContentKeyboard = nil
     contentView.subviews.compactMap { $0 as? WKWebView }.forEach {
       $0.layer.removeAllAnimations()
       if $0.layer.anchorPoint != CGPoint(x: 0.5, y: 0.5) {
@@ -888,10 +1003,12 @@ final class BrowserViewController: UIViewController {
     webView.scrollView.layer.removeAllAnimations()
     webView.scrollView.transform = .identity
     contentView.insertSubview(webView, at: 0)
+    let webViewTopConstraint = webView.topAnchor.constraint(
+      equalTo: contentView.topAnchor
+    )
+    activeWebViewTopConstraint = webViewTopConstraint
     activeWebViewConstraints = [
-      webView.topAnchor.constraint(
-        equalTo: contentView.topAnchor
-      ),
+      webViewTopConstraint,
       webView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
       webView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
       webView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
@@ -1109,7 +1226,10 @@ final class BrowserViewController: UIViewController {
       // WKWebView 铺到屏幕顶端，让收缩地址栏周围（包含状态栏区域）
       // 显示真实网页。顶部 inset 补回安全区，保证页面位于顶部时仍从
       // 展开的地址栏下方开始，不会被 Browser Chrome 遮挡。
-      top: BrowserWebContentLayout.expandedTopInset(
+      top: BrowserWebContentLayout.topInset(
+        placement: BrowserWebContentTopPlacement.resolved(
+          isWebContentKeyboardVisible: isWebContentKeyboardVisible
+        ),
         safeAreaTop: view.safeAreaInsets.top,
         chromeHeight: AppMetrics.addressBarHeight,
         spacing: AppSpacing.sm
@@ -1143,6 +1263,7 @@ final class BrowserViewController: UIViewController {
     let canCollapse = viewModel.state.url != nil
       && !viewModel.state.isLoading
       && !addressBar.isEditing
+      && !isWebContentKeyboardVisible
     guard let state = chromeScrollController.update(
       contentOffsetY: webView.scrollView.contentOffset.y,
       adjustedTopInset: webView.scrollView.adjustedContentInset.top,

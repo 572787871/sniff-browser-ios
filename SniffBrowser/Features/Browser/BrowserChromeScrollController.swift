@@ -12,12 +12,27 @@ enum BrowserChromeState: Equatable {
 }
 
 enum BrowserWebContentLayout {
-  static func expandedTopInset(
+  static func topInset(
+    placement: BrowserWebContentTopPlacement,
     safeAreaTop: CGFloat,
     chromeHeight: CGFloat,
     spacing: CGFloat
   ) -> CGFloat {
-    max(0, safeAreaTop) + max(0, chromeHeight) + max(0, spacing)
+    switch placement {
+    case .fullBleed:
+      return max(0, safeAreaTop) + max(0, chromeHeight) + max(0, spacing)
+    case .belowAddressBar:
+      return 0
+    }
+  }
+}
+
+enum BrowserWebContentTopPlacement: Equatable {
+  case fullBleed
+  case belowAddressBar
+
+  static func resolved(isWebContentKeyboardVisible: Bool) -> Self {
+    isWebContentKeyboardVisible ? .belowAddressBar : .fullBleed
   }
 }
 

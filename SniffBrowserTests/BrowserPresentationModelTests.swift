@@ -114,12 +114,37 @@ final class BrowserPresentationModelTests: XCTestCase {
 
   func testFullBleedWebContentPreservesExpandedChromeClearance() {
     XCTAssertEqual(
-      BrowserWebContentLayout.expandedTopInset(
+      BrowserWebContentLayout.topInset(
+        placement: .fullBleed,
         safeAreaTop: 59,
         chromeHeight: 52,
         spacing: 8
       ),
       119
+    )
+    XCTAssertEqual(
+      BrowserWebContentLayout.topInset(
+        placement: .belowAddressBar,
+        safeAreaTop: 59,
+        chromeHeight: 52,
+        spacing: 8
+      ),
+      0
+    )
+  }
+
+  func testWebPageKeyboardMovesContentBelowVisibleAddressBar() {
+    XCTAssertEqual(
+      BrowserWebContentTopPlacement.resolved(
+        isWebContentKeyboardVisible: true
+      ),
+      .belowAddressBar
+    )
+    XCTAssertEqual(
+      BrowserWebContentTopPlacement.resolved(
+        isWebContentKeyboardVisible: false
+      ),
+      .fullBleed
     )
   }
 }
