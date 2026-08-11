@@ -140,54 +140,72 @@ enum AppIconography {
     /// 应用图标的镂空版本：去掉炭黑方块底，只保留内部的扫描弧线与双信号点，
     /// 作为工具栏线条图标使用（模板色跟随 tintColor）。
     static func appIconMarkImage(
-        pointSize: CGFloat
+        pointSize: CGFloat,
+        fillRatio: CGFloat = 0.88
     ) -> UIImage {
         let size = CGSize(width: pointSize, height: pointSize)
         let renderer = UIGraphicsImageRenderer(size: size)
-        let image = renderer.image { _ in
-            let scale = pointSize / 1024
-            UIColor.black.setStroke()
-            UIColor.black.setFill()
+        // 原始图形外接框（按 1024 画布坐标）：x ∈ [248, 774]，y ∈ [194, 756]。
+        let markSize: CGFloat = 562
+        let markCenterX: CGFloat = 511
+        let markCenterY: CGFloat = 475
+        let scale = pointSize * fillRatio / markSize
+        let translateX = pointSize / 2 - markCenterX * scale
+        let translateY = pointSize / 2 - markCenterY * scale
+        let image = renderer.image { context in
+            let cgContext = context.cgContext
+            cgContext.setStrokeColor(UIColor.black.cgColor)
+            cgContext.setFillColor(UIColor.black.cgColor)
+            cgContext.saveGState()
+            cgContext.concatenate(CGAffineTransform(
+                a: scale,
+                b: 0,
+                c: 0,
+                d: scale,
+                tx: translateX,
+                ty: translateY
+            ))
 
             let arcs = UIBezierPath()
-            arcs.lineWidth = 58 * scale
+            arcs.lineWidth = 58
             arcs.lineCapStyle = .round
-            arcs.move(to: CGPoint(x: 248 * scale, y: 720 * scale))
+            arcs.move(to: CGPoint(x: 248, y: 720))
             arcs.addCurve(
-                to: CGPoint(x: 720 * scale, y: 248 * scale),
-                controlPoint1: CGPoint(x: 248 * scale, y: 459 * scale),
-                controlPoint2: CGPoint(x: 459 * scale, y: 248 * scale)
+                to: CGPoint(x: 720, y: 248),
+                controlPoint1: CGPoint(x: 248, y: 459),
+                controlPoint2: CGPoint(x: 459, y: 248)
             )
-            arcs.move(to: CGPoint(x: 360 * scale, y: 720 * scale))
+            arcs.move(to: CGPoint(x: 360, y: 720))
             arcs.addCurve(
-                to: CGPoint(x: 720 * scale, y: 360 * scale),
-                controlPoint1: CGPoint(x: 360 * scale, y: 521 * scale),
-                controlPoint2: CGPoint(x: 521 * scale, y: 360 * scale)
+                to: CGPoint(x: 720, y: 360),
+                controlPoint1: CGPoint(x: 360, y: 521),
+                controlPoint2: CGPoint(x: 521, y: 360)
             )
-            arcs.move(to: CGPoint(x: 472 * scale, y: 720 * scale))
+            arcs.move(to: CGPoint(x: 472, y: 720))
             arcs.addCurve(
-                to: CGPoint(x: 720 * scale, y: 472 * scale),
-                controlPoint1: CGPoint(x: 472 * scale, y: 583 * scale),
-                controlPoint2: CGPoint(x: 583 * scale, y: 472 * scale)
+                to: CGPoint(x: 720, y: 472),
+                controlPoint1: CGPoint(x: 472, y: 583),
+                controlPoint2: CGPoint(x: 583, y: 472)
             )
             arcs.stroke()
 
             UIBezierPath(
                 ovalIn: CGRect(
-                    x: (720 - 54) * scale,
-                    y: (248 - 54) * scale,
-                    width: 108 * scale,
-                    height: 108 * scale
+                    x: 720 - 54,
+                    y: 248 - 54,
+                    width: 108,
+                    height: 108
                 )
             ).fill()
             UIBezierPath(
                 ovalIn: CGRect(
-                    x: (720 - 36) * scale,
-                    y: (720 - 36) * scale,
-                    width: 72 * scale,
-                    height: 72 * scale
+                    x: 720 - 36,
+                    y: 720 - 36,
+                    width: 72,
+                    height: 72
                 )
             ).fill()
+            cgContext.restoreGState()
         }
         return image.withRenderingMode(.alwaysTemplate)
     }
