@@ -118,3 +118,102 @@ struct TabOverviewGridLayoutMetrics: Equatable {
         )
     }
 }
+
+/// 标签页预览与浏览器转场共用的页面取景几何。
+///
+/// 页面始终等比铺满，并固定保留网页顶部；卡片高度不足时只隐藏下方内容。
+/// 转场使用 `origin + uniform scale`，让图片在动画任意时刻都不会
+/// 非等比变形。
+enum TabOverviewTransitionGeometry {
+    struct PageImageLayout: Equatable {
+        let origin: CGPoint
+        let scale: CGFloat
+
+        func frame(contentSize: CGSize) -> CGRect {
+            CGRect(
+                origin: origin,
+                size: CGSize(
+                    width: contentSize.width * scale,
+                    height: contentSize.height * scale
+                )
+            )
+        }
+    }
+
+    static func pageFillLayout(
+        contentSize: CGSize,
+        containerSize: CGSize
+    ) -> PageImageLayout {
+        guard contentSize.width > 0,
+              contentSize.height > 0,
+              containerSize.width > 0,
+              containerSize.height > 0
+        else {
+            return PageImageLayout(origin: .zero, scale: 1)
+        }
+
+        let scale = max(
+            containerSize.width / contentSize.width,
+            containerSize.height / contentSize.height
+        )
+        let scaledWidth = contentSize.width * scale
+        return PageImageLayout(
+            origin: CGPoint(
+                x: (containerSize.width - scaledWidth) / 2,
+                y: 0
+            ),
+            scale: scale
+        )
+    }
+
+    static func pageFillFrame(
+        contentSize: CGSize,
+        containerSize: CGSize
+    ) -> CGRect {
+        guard contentSize.width > 0,
+              contentSize.height > 0,
+              containerSize.width > 0,
+              containerSize.height > 0
+        else { return CGRect(origin: .zero, size: containerSize) }
+        return pageFillLayout(
+            contentSize: contentSize,
+            containerSize: containerSize
+        ).frame(contentSize: contentSize)
+    }
+
+    /// 将完整页面的顶部锚定布局换算到隐藏地址栏和底部工具栏后的
+    /// 局部坐标。
+    static func clippedPageLayout(
+        contentSize: CGSize,
+        fullContainerFrame: CGRect,
+        clippedTo clippedFrame: CGRect
+    ) -> PageImageLayout {
+        let fullLayout = pageFillLayout(
+            contentSize: contentSize,
+            containerSize: fullContainerFrame.size
+        )
+        return PageImageLayout(
+            origin: CGPoint(
+                x: fullContainerFrame.minX
+                    + fullLayout.origin.x
+                    - clippedFrame.minX,
+                y: fullContainerFrame.minY
+                    + fullLayout.origin.y
+                    - clippedFrame.minY
+            ),
+            scale: fullLayout.scale
+        )
+    }
+
+    static func clippedPageFrame(
+        contentSize: CGSize,
+        fullContainerFrame: CGRect,
+        clippedTo clippedFrame: CGRect
+    ) -> CGRect {
+        clippedPageLayout(
+            contentSize: contentSize,
+            fullContainerFrame: fullContainerFrame,
+            clippedTo: clippedFrame
+        ).frame(contentSize: contentSize)
+    }
+}

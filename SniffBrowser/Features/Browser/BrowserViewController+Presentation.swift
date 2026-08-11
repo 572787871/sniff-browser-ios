@@ -67,17 +67,14 @@ extension BrowserViewController {
     view.layoutIfNeeded()
 
     let content = tabTransitionContentView()
-    let imageView = UIImageView(image: image)
-    imageView.frame = content.convert(content.bounds, to: contentView)
-    imageView.contentMode = .scaleAspectFill
-    imageView.backgroundColor = AppColors.surface
-    imageView.clipsToBounds = true
-    imageView.isUserInteractionEnabled = false
-    imageView.isAccessibilityElement = false
-    imageView.accessibilityIdentifier = "browser.tabTransitionCover"
-    contentView.addSubview(imageView)
+    let coverView = TabPageSnapshotView(image: image)
+    coverView.frame = content.convert(content.bounds, to: contentView)
+    coverView.backgroundColor = AppColors.surface
+    coverView.isAccessibilityElement = false
+    coverView.accessibilityIdentifier = "browser.tabTransitionCover"
+    contentView.addSubview(coverView)
 
-    tabTransitionCoverView = imageView
+    tabTransitionCoverView = coverView
     tabTransitionCoverID = UUID()
     tabTransitionRequiresPageLoad = selectedTabRequiresLoad
       || activeWebView?.isLoading == true

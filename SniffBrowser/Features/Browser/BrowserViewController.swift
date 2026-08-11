@@ -50,7 +50,7 @@ final class BrowserViewController: UIViewController {
   var lastRequestedURLs: [UUID: URL] = [:]
   weak var tabOverviewController: TabOverviewViewController?
   var isPreparingTabOverview = false
-  var tabTransitionCoverView: UIImageView?
+  var tabTransitionCoverView: TabPageSnapshotView?
   var tabTransitionCoverID: UUID?
   var tabTransitionRequiresPageLoad = false
   var pageChromeForegroundStyle: BrowserChromeForegroundStyle?

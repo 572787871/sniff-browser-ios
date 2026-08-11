@@ -406,54 +406,6 @@ extension AppCoordinator: UINavigationControllerDelegate {
   }
 }
 
-enum TabOverviewTransitionGeometry {
-  /// 等比铺满标签预览。常见的竖屏网页会完整保留宽度并只裁切上下内容；
-  /// 横屏时则自动裁切左右，保证任何方向都不会露出空白边缘。
-  static func pageFillFrame(
-    contentSize: CGSize,
-    containerSize: CGSize
-  ) -> CGRect {
-    guard contentSize.width > 0,
-          contentSize.height > 0,
-          containerSize.width > 0,
-          containerSize.height > 0
-    else { return CGRect(origin: .zero, size: containerSize) }
-    let scale = max(
-      containerSize.width / contentSize.width,
-      containerSize.height / contentSize.height
-    )
-    let size = CGSize(
-      width: contentSize.width * scale,
-      height: contentSize.height * scale
-    )
-    return CGRect(
-      x: (containerSize.width - size.width) / 2,
-      y: (containerSize.height - size.height) / 2,
-      width: size.width,
-      height: size.height
-    )
-  }
-
-  /// 将完整页面图片按 fullContainerFrame 的比例铺满，再换算到被顶部/底部
-  /// 浏览器控件裁切后的局部坐标，保证转场结束时与底层缓存遮罩像素对齐。
-  static func clippedPageFrame(
-    contentSize: CGSize,
-    fullContainerFrame: CGRect,
-    clippedTo clippedFrame: CGRect
-  ) -> CGRect {
-    let fullImageFrame = pageFillFrame(
-      contentSize: contentSize,
-      containerSize: fullContainerFrame.size
-    )
-    return CGRect(
-      x: fullContainerFrame.minX + fullImageFrame.minX - clippedFrame.minX,
-      y: fullContainerFrame.minY + fullImageFrame.minY - clippedFrame.minY,
-      width: fullImageFrame.width,
-      height: fullImageFrame.height
-    )
-  }
-}
-
 /// Keeps the browser and its tab card spatially connected in both directions.
 private final class TabOverviewNavigationAnimator: NSObject,
   UIViewControllerAnimatedTransitioning {
@@ -472,7 +424,7 @@ private final class TabOverviewNavigationAnimator: NSObject,
   func transitionDuration(
     using transitionContext: UIViewControllerContextTransitioning?
   ) -> TimeInterval {
-    UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.38
+    UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.4
   }
 
   func animateTransition(
@@ -583,16 +535,22 @@ private final class TabOverviewNavigationAnimator: NSObject,
       return
     }
 
+    let initialImageLayout = TabOverviewTransitionGeometry.clippedPageLayout(
+      contentSize: transitionImage.size,
+      fullContainerFrame: fullInitialFrame,
+      clippedTo: initialFrame
+    )
+    let targetImageLayout = TabOverviewTransitionGeometry.pageFillLayout(
+      contentSize: transitionImage.size,
+      containerSize: targetFrame.size
+    )
     let surface = transitionSurface(
       frame: initialFrame,
       cornerRadius: 0
     )
-    surface.alpha = 0
-    let movingImageView = transitionImageView(image: transitionImage)
-    movingImageView.frame = TabOverviewTransitionGeometry.clippedPageFrame(
-      contentSize: transitionImage.size,
-      fullContainerFrame: fullInitialFrame,
-      clippedTo: initialFrame
+    let movingImageView = transitionImageView(
+      image: transitionImage,
+      layout: initialImageLayout
     )
     surface.addSubview(movingImageView)
     overview.setTransitionItemHidden(itemID, hidden: true)
@@ -609,13 +567,9 @@ private final class TabOverviewNavigationAnimator: NSObject,
       animations: {
         fromView.alpha = 0
         toView.alpha = 1
-        surface.alpha = 1
-        surface.frame = targetFrame
+        self.apply(frame: targetFrame, to: surface)
         surface.layer.cornerRadius = AppRadius.card
-        movingImageView.frame = TabOverviewTransitionGeometry.pageFillFrame(
-          contentSize: transitionImage.size,
-          containerSize: targetFrame.size
-        )
+        self.apply(layout: targetImageLayout, to: movingImageView)
         navigationBar?.alpha = 1
       },
       completion: { _ in
@@ -673,14 +627,22 @@ private final class TabOverviewNavigationAnimator: NSObject,
     }
 
     browser.installTabTransitionCover(image: transitionImage)
+    let sourceImageLayout = TabOverviewTransitionGeometry.pageFillLayout(
+      contentSize: transitionImage.size,
+      containerSize: sourceFrame.size
+    )
+    let finalImageLayout = TabOverviewTransitionGeometry.clippedPageLayout(
+      contentSize: transitionImage.size,
+      fullContainerFrame: fullFinalFrame,
+      clippedTo: finalFrame
+    )
     let surface = transitionSurface(
       frame: sourceFrame,
       cornerRadius: AppRadius.card
     )
-    let movingImageView = transitionImageView(image: transitionImage)
-    movingImageView.frame = TabOverviewTransitionGeometry.pageFillFrame(
-      contentSize: transitionImage.size,
-      containerSize: sourceFrame.size
+    let movingImageView = transitionImageView(
+      image: transitionImage,
+      layout: sourceImageLayout
     )
     surface.addSubview(movingImageView)
     overview.setTransitionItemHidden(itemID, hidden: true)
@@ -697,13 +659,9 @@ private final class TabOverviewNavigationAnimator: NSObject,
       animations: {
         fromView.alpha = 0
         toView.alpha = 1
-        surface.frame = finalFrame
+        self.apply(frame: finalFrame, to: surface)
         surface.layer.cornerRadius = 0
-        movingImageView.frame = TabOverviewTransitionGeometry.clippedPageFrame(
-          contentSize: transitionImage.size,
-          fullContainerFrame: fullFinalFrame,
-          clippedTo: finalFrame
-        )
+        self.apply(layout: finalImageLayout, to: movingImageView)
         navigationBar?.alpha = 0
       },
       completion: { _ in
@@ -735,7 +693,8 @@ private final class TabOverviewNavigationAnimator: NSObject,
     frame: CGRect,
     cornerRadius: CGFloat
   ) -> UIView {
-    let surface = UIView(frame: frame)
+    let surface = UIView()
+    apply(frame: frame, to: surface)
     surface.backgroundColor = AppColors.surface
     surface.isUserInteractionEnabled = false
     surface.layer.cornerCurve = .continuous
@@ -744,12 +703,37 @@ private final class TabOverviewNavigationAnimator: NSObject,
     return surface
   }
 
-  private func transitionImageView(image: UIImage) -> UIImageView {
+  /// 图片始终保持自己的原始宽高比，只用一个等比 transform 改变尺寸；
+  /// 外层 surface 单独改变裁剪窗口，避免两个 frame 同时插值时
+  /// 出现压扁闪帧。
+  private func transitionImageView(
+    image: UIImage,
+    layout: TabOverviewTransitionGeometry.PageImageLayout
+  ) -> UIImageView {
     let imageView = UIImageView(image: image)
+    imageView.bounds = CGRect(origin: .zero, size: image.size)
+    imageView.layer.anchorPoint = .zero
     imageView.contentMode = .scaleToFill
     imageView.clipsToBounds = false
     imageView.isUserInteractionEnabled = false
+    apply(layout: layout, to: imageView)
     return imageView
+  }
+
+  private func apply(frame: CGRect, to surface: UIView) {
+    surface.bounds = CGRect(origin: .zero, size: frame.size)
+    surface.center = CGPoint(x: frame.midX, y: frame.midY)
+  }
+
+  private func apply(
+    layout: TabOverviewTransitionGeometry.PageImageLayout,
+    to imageView: UIImageView
+  ) {
+    imageView.layer.position = layout.origin
+    imageView.transform = CGAffineTransform(
+      scaleX: layout.scale,
+      y: layout.scale
+    )
   }
 }
 

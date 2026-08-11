@@ -119,7 +119,7 @@ final class TabOverviewLayoutTests: XCTestCase {
         XCTAssertEqual(state.scrollOffset(for: .privateBrowsing), 376)
     }
 
-    func testPortraitPageFillKeepsFullWidthAndOnlyCropsVertically() {
+    func testPortraitPageFillKeepsFullWidthAndCropsOnlyBelowTheVisibleTop() {
         let containerSize = CGSize(width: 170, height: 260)
         let frame = TabOverviewTransitionGeometry.pageFillFrame(
             contentSize: CGSize(width: 390, height: 844),
@@ -129,8 +129,8 @@ final class TabOverviewLayoutTests: XCTestCase {
         XCTAssertEqual(frame.minX, 0, accuracy: 0.001)
         XCTAssertEqual(frame.width, containerSize.width, accuracy: 0.001)
         XCTAssertGreaterThan(frame.height, containerSize.height)
-        XCTAssertLessThan(frame.minY, 0)
-        XCTAssertEqual(frame.midY, containerSize.height / 2, accuracy: 0.001)
+        XCTAssertEqual(frame.minY, 0, accuracy: 0.001)
+        XCTAssertGreaterThan(frame.maxY, containerSize.height)
     }
 
     func testPageFillNeverLeavesBlankEdgesForLandscapeSnapshots() {
@@ -143,7 +143,23 @@ final class TabOverviewLayoutTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(frame.width, containerSize.width)
         XCTAssertGreaterThanOrEqual(frame.height, containerSize.height)
         XCTAssertLessThanOrEqual(frame.minX, 0)
-        XCTAssertLessThanOrEqual(frame.minY, 0)
+        XCTAssertEqual(frame.minY, 0, accuracy: 0.001)
+    }
+
+    func testPageLayoutsAlwaysUseOneUniformScale() {
+        let contentSize = CGSize(width: 390, height: 844)
+        let layout = TabOverviewTransitionGeometry.pageFillLayout(
+            contentSize: contentSize,
+            containerSize: CGSize(width: 170, height: 260)
+        )
+        let frame = layout.frame(contentSize: contentSize)
+
+        XCTAssertEqual(
+            frame.width / contentSize.width,
+            frame.height / contentSize.height,
+            accuracy: 0.000_1
+        )
+        XCTAssertEqual(frame.width / contentSize.width, layout.scale, accuracy: 0.000_1)
     }
 
     func testClippedPageFrameKeepsTheSamePixelsAsTheFullBrowserCover() {

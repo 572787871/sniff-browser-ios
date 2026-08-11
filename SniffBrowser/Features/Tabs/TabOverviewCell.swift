@@ -1,5 +1,50 @@
 import UIKit
 
+/// 等比铺满并固定显示图片顶部的页面快照视图。
+@MainActor
+final class TabPageSnapshotView: UIView {
+    var image: UIImage? {
+        didSet {
+            imageView.image = image
+            setNeedsLayout()
+        }
+    }
+
+    var renderedImageFrame: CGRect {
+        imageView.frame
+    }
+
+    private let imageView = UIImageView()
+
+    init(image: UIImage? = nil) {
+        self.image = image
+        super.init(frame: .zero)
+        clipsToBounds = true
+        isUserInteractionEnabled = false
+        imageView.image = image
+        imageView.contentMode = .scaleToFill
+        imageView.isUserInteractionEnabled = false
+        imageView.isAccessibilityElement = false
+        addSubview(imageView)
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard let image else {
+            imageView.frame = bounds
+            return
+        }
+        imageView.frame = TabOverviewTransitionGeometry.pageFillFrame(
+            contentSize: image.size,
+            containerSize: bounds.size
+        )
+    }
+}
+
 @MainActor
 final class TabOverviewCell: UICollectionViewCell {
     static let reuseIdentifier = "TabOverviewCell"
@@ -26,7 +71,7 @@ final class TabOverviewCell: UICollectionViewCell {
     }()
 
     private let previewContainer = UIView()
-    private let previewImageView = UIImageView()
+    private let previewImageView = TabPageSnapshotView()
     private let placeholderImageView = UIImageView(
         image: UIImage(systemName: "globe.americas.fill")
     )
@@ -166,8 +211,6 @@ final class TabOverviewCell: UICollectionViewCell {
         previewContainer.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(previewContainer)
 
-        previewImageView.contentMode = .scaleAspectFill
-        previewImageView.clipsToBounds = true
         previewImageView.accessibilityIdentifier = "tabs.previewImage"
         previewImageView.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.addSubview(previewImageView)

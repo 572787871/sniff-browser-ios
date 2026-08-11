@@ -264,19 +264,35 @@ final class DesignSystemTests: XCTestCase {
   @MainActor
   func testTabOverviewPreviewFillsCardAndMetadataIconAlignsWithTitle() throws {
     let cell = TabOverviewCell(frame: CGRect(x: 0, y: 0, width: 173, height: 302))
-    cell.configure(with: TabOverviewItem(title: "新标签页", url: nil))
+    let image = UIGraphicsImageRenderer(
+      size: CGSize(width: 390, height: 844)
+    ).image { context in
+      UIColor.systemBlue.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 390, height: 844))
+    }
+    cell.configure(with: TabOverviewItem(
+      title: "新标签页",
+      url: nil,
+      thumbnail: image
+    ))
     cell.setNeedsLayout()
     cell.layoutIfNeeded()
 
     let preview = try XCTUnwrap(
-      try identifiedView("tabs.previewImage", in: cell) as? UIImageView
+      try identifiedView("tabs.previewImage", in: cell) as? TabPageSnapshotView
     )
     let icon = try identifiedView("tabs.metadataIcon", in: cell)
     let title = try identifiedView("tabs.title", in: cell)
     let iconFrame = icon.convert(icon.bounds, to: cell)
     let titleFrame = title.convert(title.bounds, to: cell)
 
-    XCTAssertEqual(preview.contentMode, .scaleAspectFill)
+    XCTAssertEqual(preview.renderedImageFrame.minY, 0, accuracy: 0.001)
+    XCTAssertGreaterThan(preview.renderedImageFrame.maxY, preview.bounds.maxY)
+    XCTAssertEqual(
+      preview.renderedImageFrame.width / image.size.width,
+      preview.renderedImageFrame.height / image.size.height,
+      accuracy: 0.000_1
+    )
     XCTAssertGreaterThan(iconFrame.minY, titleFrame.minY)
     XCTAssertLessThan(iconFrame.minY, titleFrame.midY)
   }
@@ -339,8 +355,8 @@ final class DesignSystemTests: XCTestCase {
     )
 
     XCTAssertTrue(cover.superview === controller.contentView)
-    XCTAssertEqual(cover.contentMode, .scaleAspectFill)
     XCTAssertEqual(cover.frame, expectedFrame)
+    XCTAssertEqual(cover.renderedImageFrame.minY, 0, accuracy: 0.001)
     XCTAssertLessThan(visibleTransitionFrame.maxY, fullTransitionFrame.maxY)
     controller.removeTabTransitionCover(animated: false)
     XCTAssertNil(controller.tabTransitionCoverView)
