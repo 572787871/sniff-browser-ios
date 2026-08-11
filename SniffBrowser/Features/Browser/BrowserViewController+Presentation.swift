@@ -114,8 +114,15 @@ extension BrowserViewController {
 
     let snapshotView: UIView
     let contentSize: CGSize
-    if tabTransitionCoverView == nil,
-       let liveSnapshot = content.snapshotView(afterScreenUpdates: false) {
+    // 原生主页包含 UIScrollView、UIButton.Configuration 和动态约束。
+    // 不把这套层级快照直接交给转场，避免主页从标签页返回时抓到
+    // Auto Layout 尚未完成的中间帧；网页仍然使用 WKWebView 的实时快照。
+    if content === newTabView,
+       let renderedNewTab = renderNewTabSnapshot() {
+      snapshotView = TabPageSnapshotView(image: renderedNewTab)
+      contentSize = renderedNewTab.size
+    } else if tabTransitionCoverView == nil,
+              let liveSnapshot = content.snapshotView(afterScreenUpdates: false) {
       snapshotView = liveSnapshot
       contentSize = content.bounds.size
     } else if let fallbackImage {
@@ -163,6 +170,26 @@ extension BrowserViewController {
       )
     }
     return frame
+  }
+
+  /// 返回当前目标主页的稳定位图，供卡片展开时遮住真实主页，直到
+  /// 转场完成。网页标签继续使用 overview 中缓存的网页缩略图。
+  func makeTabTransitionImage(
+    for tabID: UUID,
+    fallbackImage: UIImage?
+  ) -> UIImage? {
+    guard activeTab?.id == tabID,
+          activeTab?.url == nil,
+          !newTabView.isHidden
+    else {
+      return fallbackImage
+    }
+
+    view.setNeedsLayout()
+    view.layoutIfNeeded()
+    contentView.setNeedsLayout()
+    contentView.layoutIfNeeded()
+    return renderNewTabSnapshot() ?? fallbackImage
   }
 
   func setTabTransitionPageHidden(_ hidden: Bool) {
@@ -324,6 +351,10 @@ extension BrowserViewController {
   }
 
   private func renderNewTabSnapshot() -> UIImage? {
+    view.setNeedsLayout()
+    view.layoutIfNeeded()
+    contentView.setNeedsLayout()
+    contentView.layoutIfNeeded()
     guard newTabView.bounds.width > 0,
           newTabView.bounds.height > 0
     else {

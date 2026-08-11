@@ -443,6 +443,39 @@ final class DesignSystemTests: XCTestCase {
   }
 
   @MainActor
+  func testNativeNewTabTransitionUsesAStableRenderedImage() throws {
+    let controller = BrowserViewController(
+      viewModel: BrowserViewModel(),
+      tabManager: BrowserTabManager(restoresSession: false),
+      favoriteService: .shared,
+      historyService: .shared,
+      contentBlockerService: .shared,
+      resourceStore: TabResourceStore(),
+      downloadCenter: .shared
+    )
+    controller.loadViewIfNeeded()
+    controller.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+    controller.view.setNeedsLayout()
+    controller.view.layoutIfNeeded()
+
+    let tabID = try XCTUnwrap(controller.activeTab?.id)
+    let fallback = UIGraphicsImageRenderer(
+      size: CGSize(width: 390, height: 844)
+    ).image { _ in }
+    let snapshot = try XCTUnwrap(controller.makeTabTransitionSnapshot(
+      in: controller.view,
+      fallbackImage: fallback
+    ))
+    let image = try XCTUnwrap(controller.makeTabTransitionImage(
+      for: tabID,
+      fallbackImage: fallback
+    ))
+
+    XCTAssertTrue(snapshot.contentView is TabPageSnapshotView)
+    XCTAssertEqual(image.size, controller.newTabView.bounds.size)
+  }
+
+  @MainActor
   func testEveryNativeNewTabReceivesAReusableOverviewSnapshot() throws {
     let manager = BrowserTabManager(restoresSession: false)
     let controller = BrowserViewController(

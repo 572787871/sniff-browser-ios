@@ -606,8 +606,7 @@ private final class TabOverviewNavigationAnimator: NSObject,
     guard let fromView = transitionContext.view(forKey: .from),
           let toView = transitionContext.view(forKey: .to),
           let browser = transitionContext.viewController(forKey: .to)
-            as? BrowserViewController,
-          let transitionImage = overview.transitionImage(for: itemID)
+            as? BrowserViewController
     else {
       fallback(using: transitionContext)
       return
@@ -619,9 +618,14 @@ private final class TabOverviewNavigationAnimator: NSObject,
     container.insertSubview(toView, belowSubview: fromView)
     container.layoutIfNeeded()
     toView.layoutIfNeeded()
+    let transitionImage = browser.makeTabTransitionImage(
+      for: itemID,
+      fallbackImage: overview.transitionImage(for: itemID)
+    )
     let fullFinalFrame = browser.tabTransitionFullContentFrame(in: container)
     let finalFrame = browser.tabTransitionContentFrame(in: container)
-    guard fullFinalFrame.width > 0,
+    guard let transitionImage,
+          fullFinalFrame.width > 0,
           fullFinalFrame.height > 0,
           finalFrame.width > 0,
           finalFrame.height > 0,
