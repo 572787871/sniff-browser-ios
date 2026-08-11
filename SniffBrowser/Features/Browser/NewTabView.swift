@@ -741,7 +741,10 @@ private final class NewTabFavoriteButton: UIButton {
       bottom: AppSpacing.xs,
       trailing: AppSpacing.xs
     )
-    configuration.titleLineBreakMode = .byTruncatingTail
+    // Configuration uses this value while calculating its internal title
+    // layout. Word wrapping reserves two-line height; the UILabel itself is
+    // then switched to tail truncation so only the second line is shortened.
+    configuration.titleLineBreakMode = .byWordWrapping
     configuration.titleAlignment = .center
     configuration.titleTextAttributesTransformer =
       UIConfigurationTextAttributesTransformer { attributes in
@@ -776,6 +779,7 @@ private final class NewTabFavoriteButton: UIButton {
   }
 
   override func layoutSubviews() {
+    configureTitleLabel()
     super.layoutSubviews()
     configureTitleLabel()
   }
@@ -826,6 +830,18 @@ private final class NewTabFavoriteButton: UIButton {
     titleLabel?.textAlignment = .center
     titleLabel?.lineBreakMode = .byTruncatingTail
     titleLabel?.adjustsFontSizeToFitWidth = false
+    titleLabel?.setContentCompressionResistancePriority(
+      .required,
+      for: .vertical
+    )
+    if let contentInsets = configuration?.contentInsets {
+      let availableWidth = bounds.width
+        - contentInsets.leading
+        - contentInsets.trailing
+      if availableWidth > 0 {
+        titleLabel?.preferredMaxLayoutWidth = availableWidth
+      }
+    }
   }
 
   private static func preparedFavicon(_ image: UIImage) -> UIImage {
