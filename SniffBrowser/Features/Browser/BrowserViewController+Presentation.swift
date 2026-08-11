@@ -2,9 +2,30 @@ import UIKit
 
 extension BrowserViewController {
   func showTabs() {
-    captureActiveNewTabSnapshot()
-    let currentTabID = activeTab?.id
-    let shouldCaptureWebSnapshot = activeTab?.url != nil
+    guard !isPreparingTabOverview else { return }
+    refreshNewTabSnapshotsForOverview()
+
+    // 首次打开尚无缩略图的网页时，先在 WebView 仍位于屏幕上时完成截图。
+    // 这样切换到别的标签后也不会只剩空白卡片。
+    if let tab = activeTab,
+       tab.webView?.isHidden == false,
+       tab.snapshot == nil {
+      let tabID = tab.id
+      isPreparingTabOverview = true
+      Task { [weak self] in
+        guard let self else { return }
+        _ = await self.tabManager.captureSnapshot(for: tabID)
+        self.isPreparingTabOverview = false
+        guard self.activeTab?.id == tabID else { return }
+        self.presentTabOverview()
+      }
+      return
+    }
+
+    presentTabOverview()
+  }
+
+  private func presentTabOverview() {
     let controller = TabOverviewViewController(items: makeTabItems())
     tabOverviewController = controller
     configureTabOverviewActions(controller)
@@ -12,9 +33,6 @@ extension BrowserViewController {
 
     Task { [weak self, weak controller] in
       guard let self, let controller else { return }
-      if let currentTabID, shouldCaptureWebSnapshot {
-        await self.tabManager.captureSnapshot(for: currentTabID)
-      }
       for tab in self.tabManager.tabs where tab.snapshot == nil {
         _ = await self.tabManager.loadSnapshotIfAvailable(for: tab.id)
       }
@@ -23,7 +41,6 @@ extension BrowserViewController {
   }
 
   /// WKWebView 无法截取原生的新标签页，因此在进入标签页总览前直接渲染主页。
-  /// 缩略图保留完整画面比例，交给卡片以 aspect-fit 方式展示。
   func captureActiveNewTabSnapshot() {
     guard let tab = activeTab,
           tab.url == nil,
@@ -31,6 +48,48 @@ extension BrowserViewController {
           newTabView.bounds.width > 0,
           newTabView.bounds.height > 0
     else { return }
+
+    guard let image = renderNewTabSnapshot() else { return }
+    tab.updateSnapshot(image)
+  }
+
+  /// 总览打开前重绘所有原生主页标签，修复旧版本留下的空白快照，
+  /// 同时让背景、收藏入口和无痕配色始终保持最新。
+  func refreshNewTabSnapshotsForOverview() {
+    let newTabs = tabManager.tabs.filter {
+      $0.url == nil
+        && $0.webView?.url == nil
+        && lastRequestedURLs[$0.id] == nil
+    }
+    guard !newTabs.isEmpty else { return }
+
+    let activeMode = activeTab?.isPrivate == true
+    let wasHidden = newTabView.isHidden
+    refreshNewTabFavorites()
+    if wasHidden {
+      contentView.sendSubviewToBack(newTabView)
+    }
+
+    for isPrivate in [false, true]
+    where newTabs.contains(where: { $0.isPrivate == isPrivate }) {
+      newTabView.setPrivateMode(isPrivate)
+      newTabView.isHidden = false
+      guard let image = renderNewTabSnapshot() else { continue }
+      newTabs
+        .filter { $0.isPrivate == isPrivate }
+        .forEach { $0.updateSnapshot(image) }
+    }
+
+    newTabView.setPrivateMode(activeMode)
+    newTabView.isHidden = wasHidden
+  }
+
+  private func renderNewTabSnapshot() -> UIImage? {
+    guard newTabView.bounds.width > 0,
+          newTabView.bounds.height > 0
+    else {
+      return nil
+    }
 
     newTabView.setNeedsLayout()
     newTabView.layoutIfNeeded()
@@ -41,7 +100,7 @@ extension BrowserViewController {
       size: newTabView.bounds.size,
       format: format
     )
-    let image = renderer.image { context in
+    return renderer.image { context in
       let rendered = newTabView.drawHierarchy(
         in: newTabView.bounds,
         afterScreenUpdates: true
@@ -50,7 +109,6 @@ extension BrowserViewController {
         newTabView.layer.render(in: context.cgContext)
       }
     }
-    tab.updateSnapshot(image)
   }
 
   func makeTabItems() -> [TabOverviewItem] {
@@ -113,7 +171,7 @@ extension BrowserViewController {
   }
 
   func selectTab(id: UUID, returnsToBrowser: Bool) {
-    let previousID = activeTab?.id
+    captureActiveNewTabSnapshot()
     guard tabManager.selectTab(id: id) != nil else { return }
     attachSelectedTab()
     if returnsToBrowser {
@@ -121,9 +179,6 @@ extension BrowserViewController {
     }
     Task { [weak self] in
       guard let self else { return }
-      if let previousID, previousID != id {
-        await self.tabManager.captureSnapshot(for: previousID)
-      }
       await self.tabManager.enforceResidentWebViewLimit()
     }
   }

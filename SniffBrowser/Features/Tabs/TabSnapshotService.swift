@@ -29,6 +29,10 @@ final class TabSnapshotService: TabSnapshotProviding {
     }
 
     func captureAndStore(tab: BrowserTab) async -> UIImage? {
+        if tab.lifecycleState != .active, let snapshot = tab.snapshot {
+            return snapshot
+        }
+        let captureStartedWhileActive = tab.lifecycleState == .active
         guard let webView = tab.webView else {
             return tab.snapshot
         }
@@ -45,6 +49,11 @@ final class TabSnapshotService: TabSnapshotProviding {
             }
         }
         guard let image else { return tab.snapshot }
+        // 异步截图期间可能已经切换标签；离屏 WebView 的结果不可靠，
+        // 此时保留切换前的有效画面并避免把空白图写入磁盘。
+        if captureStartedWhileActive, tab.lifecycleState != .active {
+            return tab.snapshot
+        }
 
         if !tab.isPrivate,
            let data = image.jpegData(compressionQuality: 0.78) {

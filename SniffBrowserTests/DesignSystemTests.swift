@@ -258,6 +258,51 @@ final class DesignSystemTests: XCTestCase {
       ["示例一", "示例二"]
     )
     XCTAssertEqual(stack.distribution, .fillEqually)
+    XCTAssertTrue(buttons.allSatisfy { $0.titleLabel?.numberOfLines == 2 })
+  }
+
+  @MainActor
+  func testTabOverviewPreviewFillsCardAndMetadataIconAlignsWithTitle() throws {
+    let cell = TabOverviewCell(frame: CGRect(x: 0, y: 0, width: 173, height: 302))
+    cell.configure(with: TabOverviewItem(title: "新标签页", url: nil))
+    cell.setNeedsLayout()
+    cell.layoutIfNeeded()
+
+    let preview = try XCTUnwrap(
+      try identifiedView("tabs.previewImage", in: cell) as? UIImageView
+    )
+    let icon = try identifiedView("tabs.metadataIcon", in: cell)
+    let title = try identifiedView("tabs.title", in: cell)
+    let iconFrame = icon.convert(icon.bounds, to: cell)
+    let titleFrame = title.convert(title.bounds, to: cell)
+
+    XCTAssertEqual(preview.contentMode, .scaleAspectFill)
+    XCTAssertGreaterThan(iconFrame.minY, titleFrame.minY)
+    XCTAssertLessThan(iconFrame.minY, titleFrame.midY)
+  }
+
+  @MainActor
+  func testEveryNativeNewTabReceivesAReusableOverviewSnapshot() throws {
+    let manager = BrowserTabManager(restoresSession: false)
+    let controller = BrowserViewController(
+      viewModel: BrowserViewModel(),
+      tabManager: manager,
+      favoriteService: .shared,
+      historyService: .shared,
+      contentBlockerService: .shared,
+      resourceStore: TabResourceStore(),
+      downloadCenter: .shared
+    )
+    controller.loadViewIfNeeded()
+    controller.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+    controller.view.setNeedsLayout()
+    controller.view.layoutIfNeeded()
+    XCTAssertTrue(controller.openNewTab())
+
+    controller.refreshNewTabSnapshotsForOverview()
+
+    XCTAssertEqual(manager.tabs.count, 2)
+    XCTAssertTrue(manager.tabs.allSatisfy { $0.snapshot != nil })
   }
 
   @MainActor

@@ -365,13 +365,22 @@ final class BrowserTabManager {
     }
 
     private func captureSnapshot(for tab: BrowserTab) async -> UIImage? {
+        // 标签切换后 WebView 已离开视图层级，此时再次截图可能得到纯白画面。
+        // 已有可用缩略图时直接长期复用，直到该标签再次成为当前页面并完成新截图。
+        if tab.id != selectedTabID, let snapshot = tab.snapshot {
+            return snapshot
+        }
+        let previousSnapshot = tab.snapshot
         let snapshot = await snapshotService.captureAndStore(tab: tab)
         guard tabs.contains(where: { $0 === tab }) else {
             snapshotService.removeSnapshot(for: tab.id)
             return nil
         }
-        tab.updateSnapshot(snapshot)
-        return snapshot
+        let resolvedSnapshot = snapshot ?? previousSnapshot
+        if let resolvedSnapshot {
+            tab.updateSnapshot(resolvedSnapshot)
+        }
+        return resolvedSnapshot
     }
 
     private func captureAndSuspendIfInactive(_ tab: BrowserTab) async -> Bool {

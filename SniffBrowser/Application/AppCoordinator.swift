@@ -516,7 +516,7 @@ private final class TabOverviewNavigationAnimator: NSObject,
       animations: {
         surface.frame = targetFrame
         surface.layer.cornerRadius = AppRadius.card
-        movingView.frame = Self.aspectFitFrame(
+        movingView.frame = Self.aspectFillFrame(
           contentSize: initialFrame.size,
           containerSize: targetFrame.size
         )
@@ -575,7 +575,7 @@ private final class TabOverviewNavigationAnimator: NSObject,
       frame: sourceFrame,
       cornerRadius: AppRadius.card
     )
-    movingView.frame = Self.aspectFitFrame(
+    movingView.frame = Self.aspectFillFrame(
       contentSize: finalFrame.size,
       containerSize: sourceFrame.size
     )
@@ -629,7 +629,7 @@ private final class TabOverviewNavigationAnimator: NSObject,
     return surface
   }
 
-  private static func aspectFitFrame(
+  private static func aspectFillFrame(
     contentSize: CGSize,
     containerSize: CGSize
   ) -> CGRect {
@@ -638,7 +638,7 @@ private final class TabOverviewNavigationAnimator: NSObject,
           containerSize.width > 0,
           containerSize.height > 0
     else { return CGRect(origin: .zero, size: containerSize) }
-    let scale = min(
+    let scale = max(
       containerSize.width / contentSize.width,
       containerSize.height / contentSize.height
     )

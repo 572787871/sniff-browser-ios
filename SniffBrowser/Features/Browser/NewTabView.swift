@@ -382,7 +382,7 @@ final class NewTabView: UIView {
     favoritesStack.isHidden = true
     favoritesStack.accessibilityIdentifier = "newTab.favorites"
     favoritesStack.heightAnchor.constraint(
-      greaterThanOrEqualToConstant: 76
+      greaterThanOrEqualToConstant: 88
     ).isActive = true
   }
 
@@ -729,15 +729,16 @@ private final class NewTabFavoriteButton: UIButton {
       trailing: AppSpacing.xs
     )
     configuration.titleLineBreakMode = .byTruncatingTail
+    configuration.titleAlignment = .center
     configuration.titleTextAttributesTransformer =
       UIConfigurationTextAttributesTransformer { attributes in
         var attributes = attributes
         attributes.font = AppTypography.caption
         attributes.foregroundColor = AppColors.primaryText
         return attributes
-      }
+    }
     self.configuration = configuration
-    titleLabel?.numberOfLines = 1
+    configureTitleLabel()
     accessibilityLabel = "\(favorite.title)，\(favorite.host)"
     accessibilityHint = "打开收藏网页"
     loadFavicon()
@@ -766,8 +767,9 @@ private final class NewTabFavoriteButton: UIButton {
         attributes.font = AppTypography.caption
         attributes.foregroundColor = foreground
         return attributes
-      }
+    }
     self.configuration = configuration
+    configureTitleLabel()
   }
 
   private func loadFavicon() {
@@ -787,8 +789,15 @@ private final class NewTabFavoriteButton: UIButton {
       }
       configuration.image = Self.preparedFavicon(image)
       self.configuration = configuration
+      self.configureTitleLabel()
     }
     faviconRequestID = requestID
+  }
+
+  private func configureTitleLabel() {
+    titleLabel?.numberOfLines = 2
+    titleLabel?.textAlignment = .center
+    titleLabel?.lineBreakMode = .byTruncatingTail
   }
 
   private static func preparedFavicon(_ image: UIImage) -> UIImage {

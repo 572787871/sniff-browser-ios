@@ -49,6 +49,7 @@ final class BrowserViewController: UIViewController {
   var lastFailedURLs: [UUID: URL] = [:]
   var lastRequestedURLs: [UUID: URL] = [:]
   weak var tabOverviewController: TabOverviewViewController?
+  var isPreparingTabOverview = false
   var pageChromeForegroundStyle: BrowserChromeForegroundStyle?
   var elementHideInjected: [ObjectIdentifier: Bool] = [:]
   var blockedElementCounterHandler: BlockedElementCounterHandler?
@@ -237,9 +238,9 @@ final class BrowserViewController: UIViewController {
     isPrivate: Bool,
     initialURL: URL?
   ) -> Bool {
-    let previousID = activeTab?.id
+    captureActiveNewTabSnapshot()
     do {
-      let newTab = try tabManager.createTab(isPrivate: isPrivate)
+      _ = try tabManager.createTab(isPrivate: isPrivate)
       UIImpactFeedbackGenerator(style: .light).impactOccurred()
       attachSelectedTab()
       if let initialURL {
@@ -247,9 +248,6 @@ final class BrowserViewController: UIViewController {
       }
       Task { [weak self] in
         guard let self else { return }
-        if let previousID, previousID != newTab.id {
-          await self.tabManager.captureSnapshot(for: previousID)
-        }
         await self.tabManager.enforceResidentWebViewLimit()
       }
       return true
@@ -724,7 +722,9 @@ final class BrowserViewController: UIViewController {
         Task { @MainActor in
           guard let self else { return }
           self.tabManager.synchronizeSelectedTabFromWebView()
-          if let id = self.activeTab?.id {
+          if self.activeTab?.url == nil, !self.newTabView.isHidden {
+            self.captureActiveNewTabSnapshot()
+          } else if let id = self.activeTab?.id {
             await self.tabManager.captureSnapshot(for: id)
           }
           self.tabManager.persistSession()

@@ -12,11 +12,20 @@ final class TabOverviewCell: UICollectionViewCell {
             .withAlphaComponent(traits.userInterfaceStyle == .dark ? 0.42 : 0.28)
     }
 
+    /// 无痕标签只在内存中缓存网站自身的 favicon，不写入磁盘，也不查询第三方。
+    private static let ephemeralFaviconLoader: FaviconLoader = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return FaviconLoader(
+            sessionConfiguration: configuration,
+            memoryLimit: 2 * 1_024 * 1_024,
+            diskLimit: 0,
+            usesDiskCache: false
+        )
+    }()
+
     private let previewContainer = UIView()
-    private let previewBackdropImageView = UIImageView()
-    private let previewBackdropBlurView = UIVisualEffectView(
-        effect: UIBlurEffect(style: .systemUltraThinMaterial)
-    )
     private let previewImageView = UIImageView()
     private let placeholderImageView = UIImageView(
         image: UIImage(systemName: "globe.americas.fill")
@@ -29,6 +38,10 @@ final class TabOverviewCell: UICollectionViewCell {
     private let titleLabel = UILabel()
     private let domainLabel = UILabel()
     private var displaysSelection = false
+    private var displaysWebsiteLogo = false
+    private var faviconLoader: FaviconLoader?
+    private var faviconURL: URL?
+    private var faviconRequestID: UUID?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -61,8 +74,8 @@ final class TabOverviewCell: UICollectionViewCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        cancelFaviconLoad()
         onClose = nil
-        previewBackdropImageView.image = nil
         previewImageView.image = nil
         displaysSelection = false
         previewContainer.alpha = 1
@@ -72,14 +85,12 @@ final class TabOverviewCell: UICollectionViewCell {
     }
 
     func configure(with item: TabOverviewItem) {
+        cancelFaviconLoad()
         previewContainer.alpha = 1
         titleLabel.text = item.displayTitle
         domainLabel.text = item.displayDomain
-        previewBackdropImageView.image = item.thumbnail
         previewImageView.image = item.thumbnail
-        metadataIconView.image = item.url == nil
-            ? AppIconography.scanApertureImage(pointSize: 15, weight: 1.6)
-            : UIImage(systemName: "globe")
+        metadataIconView.image = UIImage(systemName: "globe")
         placeholderImageView.image = item.url == nil
             ? AppIconography.scanApertureImage(pointSize: 26, weight: 2)
             : UIImage(systemName: "globe.americas.fill")
@@ -87,6 +98,7 @@ final class TabOverviewCell: UICollectionViewCell {
         displaysSelection = item.isSelected
         selectedBadge.isHidden = !item.isSelected
         updateResolvedColors()
+        loadFavicon(for: item)
 
         accessibilityLabel = "\(item.displayTitle)，\(item.displayDomain)"
         accessibilityValue = item.isSelected ? "当前标签页" : nil
@@ -117,9 +129,13 @@ final class TabOverviewCell: UICollectionViewCell {
         previewContainer.backgroundColor = AppColors.tertiarySurface
         titleLabel.textColor = AppColors.primaryText
         domainLabel.textColor = AppColors.secondaryText
-        metadataIconView.tintColor = displaysSelection
-            ? AppColors.accent
-            : AppColors.secondaryText
+        if displaysWebsiteLogo {
+            metadataIconView.tintColor = nil
+        } else {
+            metadataIconView.tintColor = displaysSelection
+                ? AppColors.accent
+                : AppColors.secondaryText
+        }
         placeholderImageView.tintColor = AppColors.tertiaryText
         closeButton.configuration?.baseForegroundColor = AppColors.secondaryText
         closeButton.backgroundColor = AppColors.elevatedSurface.withAlphaComponent(0.86)
@@ -150,19 +166,9 @@ final class TabOverviewCell: UICollectionViewCell {
         previewContainer.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(previewContainer)
 
-        previewBackdropImageView.contentMode = .scaleAspectFill
-        previewBackdropImageView.clipsToBounds = true
-        previewBackdropImageView.alpha = 0.48
-        previewBackdropImageView.translatesAutoresizingMaskIntoConstraints = false
-        previewContainer.addSubview(previewBackdropImageView)
-
-        previewBackdropBlurView.isUserInteractionEnabled = false
-        previewBackdropBlurView.alpha = 0.82
-        previewBackdropBlurView.translatesAutoresizingMaskIntoConstraints = false
-        previewContainer.addSubview(previewBackdropBlurView)
-
-        previewImageView.contentMode = .scaleAspectFit
+        previewImageView.contentMode = .scaleAspectFill
         previewImageView.clipsToBounds = true
+        previewImageView.accessibilityIdentifier = "tabs.previewImage"
         previewImageView.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.addSubview(previewImageView)
 
@@ -218,6 +224,7 @@ final class TabOverviewCell: UICollectionViewCell {
         titleLabel.textColor = AppColors.primaryText
         titleLabel.numberOfLines = 1
         titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.accessibilityIdentifier = "tabs.title"
 
         AppTypography.configure(domainLabel, style: .caption1)
         domainLabel.textColor = AppColors.secondaryText
@@ -232,6 +239,14 @@ final class TabOverviewCell: UICollectionViewCell {
 
         metadataIconView.contentMode = .scaleAspectFit
         metadataIconView.tintColor = AppColors.secondaryText
+        metadataIconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+            pointSize: 15,
+            weight: .regular
+        )
+        metadataIconView.layer.cornerRadius = 3
+        metadataIconView.clipsToBounds = true
+        metadataIconView.transform = CGAffineTransform(translationX: 0, y: 3)
+        metadataIconView.accessibilityIdentifier = "tabs.metadataIcon"
         metadataIconView.isAccessibilityElement = false
         metadataIconView.translatesAutoresizingMaskIntoConstraints = false
 
@@ -249,32 +264,6 @@ final class TabOverviewCell: UICollectionViewCell {
             previewContainer.bottomAnchor.constraint(
                 equalTo: contentView.bottomAnchor,
                 constant: -TabOverviewGridLayoutMetrics.metadataAreaHeight
-            ),
-
-            previewBackdropImageView.topAnchor.constraint(
-                equalTo: previewContainer.topAnchor
-            ),
-            previewBackdropImageView.leadingAnchor.constraint(
-                equalTo: previewContainer.leadingAnchor
-            ),
-            previewBackdropImageView.trailingAnchor.constraint(
-                equalTo: previewContainer.trailingAnchor
-            ),
-            previewBackdropImageView.bottomAnchor.constraint(
-                equalTo: previewContainer.bottomAnchor
-            ),
-
-            previewBackdropBlurView.topAnchor.constraint(
-                equalTo: previewContainer.topAnchor
-            ),
-            previewBackdropBlurView.leadingAnchor.constraint(
-                equalTo: previewContainer.leadingAnchor
-            ),
-            previewBackdropBlurView.trailingAnchor.constraint(
-                equalTo: previewContainer.trailingAnchor
-            ),
-            previewBackdropBlurView.bottomAnchor.constraint(
-                equalTo: previewContainer.bottomAnchor
             ),
 
             previewImageView.topAnchor.constraint(equalTo: previewContainer.topAnchor),
@@ -329,9 +318,49 @@ final class TabOverviewCell: UICollectionViewCell {
                 equalTo: contentView.bottomAnchor,
                 constant: -AppSpacing.xxs
             ),
-            metadataIconView.widthAnchor.constraint(equalToConstant: 16),
-            metadataIconView.heightAnchor.constraint(equalToConstant: 16),
+            metadataIconView.widthAnchor.constraint(equalToConstant: 17),
+            metadataIconView.heightAnchor.constraint(equalToConstant: 17),
         ])
+    }
+
+    private func loadFavicon(for item: TabOverviewItem) {
+        guard let pageURL = item.url else { return }
+        let loader: FaviconLoader
+        let resolvedURL: URL?
+        if item.isPrivate {
+            loader = Self.ephemeralFaviconLoader
+            resolvedURL = FaviconLoader.directFaviconURL(for: pageURL)
+        } else {
+            loader = .shared
+            resolvedURL = FaviconLoader.faviconURL(for: pageURL)
+        }
+        guard let resolvedURL else { return }
+
+        faviconLoader = loader
+        faviconURL = resolvedURL
+        var requestID: UUID?
+        requestID = loader.load(url: resolvedURL) { [weak self] image in
+            guard let self,
+                  self.faviconRequestID == requestID,
+                  let image
+            else {
+                return
+            }
+            self.displaysWebsiteLogo = true
+            self.metadataIconView.image = image.withRenderingMode(.alwaysOriginal)
+            self.metadataIconView.tintColor = nil
+        }
+        faviconRequestID = requestID
+    }
+
+    private func cancelFaviconLoad() {
+        if let faviconLoader, let faviconURL, let faviconRequestID {
+            faviconLoader.cancel(url: faviconURL, requestID: faviconRequestID)
+        }
+        faviconLoader = nil
+        faviconURL = nil
+        faviconRequestID = nil
+        displaysWebsiteLogo = false
     }
 
     private func registerForEnvironmentChanges() {

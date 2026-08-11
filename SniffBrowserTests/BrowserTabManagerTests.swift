@@ -296,6 +296,22 @@ final class BrowserTabManagerTests: XCTestCase {
     }
 
     @MainActor
+    func testInactiveTabKeepsExistingSnapshotWithoutRecapturing() async throws {
+        let snapshotService = SnapshotServiceStub()
+        let manager = try makeManager(snapshotService: snapshotService)
+        let first = try XCTUnwrap(manager.selectedTab)
+        let capturedSnapshot = await manager.captureSnapshot(for: first.id)
+        let firstSnapshot = try XCTUnwrap(capturedSnapshot)
+        _ = try manager.createTab()
+
+        let retainedSnapshot = await manager.captureSnapshot(for: first.id)
+
+        XCTAssertTrue(retainedSnapshot === firstSnapshot)
+        XCTAssertTrue(first.snapshot === firstSnapshot)
+        XCTAssertEqual(snapshotService.capturedIDs, [first.id])
+    }
+
+    @MainActor
     func testCloseAllTabsRemovesNormalTabsAndKeepsPrivateTabs() throws {
         let manager = try makeManager()
         let normalTab = try XCTUnwrap(manager.selectedTab)

@@ -59,6 +59,23 @@ final class FaviconLoaderTests: XCTestCase {
         XCTAssertEqual(FaviconURLProtocol.requestCount, 1)
     }
 
+    func testMemoryOnlyLoaderNeverWritesFaviconToDisk() async throws {
+        FaviconURLProtocol.configure(data: Self.onePixelPNG)
+        let url = try makeURL("https://private.example/favicon.ico")
+        let loader = makeLoader(usesDiskCache: false)
+
+        let image = await load(loader, url: url)
+
+        XCTAssertNotNil(image)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: cacheDirectory
+                    .appendingPathComponent(FaviconLoader.cacheKey(for: url))
+                    .path
+            )
+        )
+    }
+
     func testConcurrentLoadsShareOneNetworkRequest() async throws {
         FaviconURLProtocol.configure(data: Self.onePixelPNG, delay: 0.3)
         let loader = makeLoader()
@@ -127,8 +144,19 @@ final class FaviconLoaderTests: XCTestCase {
             "https://www.google.com/s2/favicons?domain=example.com&sz=64"
         )
 
+        let direct = try XCTUnwrap(
+            FaviconLoader.directFaviconURL(
+                for: XCTUnwrap(URL(string: "https://example.com:8443/page"))
+            )
+        )
+        XCTAssertEqual(
+            direct.absoluteString,
+            "https://example.com:8443/favicon.ico"
+        )
+
         let fileURL = try XCTUnwrap(URL(string: "file:///tmp/page"))
         XCTAssertNil(FaviconLoader.faviconURL(for: fileURL))
+        XCTAssertNil(FaviconLoader.directFaviconURL(for: fileURL))
     }
 
     func testCacheKeyIsStableAndURLDerived() throws {
@@ -144,12 +172,14 @@ final class FaviconLoaderTests: XCTestCase {
     }
 
     private func makeLoader(
-        maximumNetworkBytes: Int = FaviconLoader.maximumNetworkBytes
+        maximumNetworkBytes: Int = FaviconLoader.maximumNetworkBytes,
+        usesDiskCache: Bool = true
     ) -> FaviconLoader {
         FaviconLoader(
             directoryURL: cacheDirectory,
             sessionConfiguration: configuration,
-            maximumNetworkBytes: maximumNetworkBytes
+            maximumNetworkBytes: maximumNetworkBytes,
+            usesDiskCache: usesDiskCache
         )
     }
 

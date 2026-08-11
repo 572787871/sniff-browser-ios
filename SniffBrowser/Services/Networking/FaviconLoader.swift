@@ -23,18 +23,21 @@ final class FaviconLoader {
     private let directoryURL: URL
     private let diskLimit: Int64
     private let maximumNetworkBytes: Int
+    private let usesDiskCache: Bool
 
     init(
         directoryURL: URL? = nil,
         sessionConfiguration: URLSessionConfiguration = .default,
         memoryLimit: Int = FaviconLoader.defaultMemoryLimit,
         diskLimit: Int64 = FaviconLoader.defaultDiskLimit,
-        maximumNetworkBytes: Int = FaviconLoader.maximumNetworkBytes
+        maximumNetworkBytes: Int = FaviconLoader.maximumNetworkBytes,
+        usesDiskCache: Bool = true
     ) {
         memoryCache.totalCostLimit = memoryLimit
         self.session = URLSession(configuration: sessionConfiguration)
         self.diskLimit = diskLimit
         self.maximumNetworkBytes = maximumNetworkBytes
+        self.usesDiskCache = usesDiskCache
         let caches = FileManager.default.urls(
             for: .cachesDirectory,
             in: .userDomainMask
@@ -43,10 +46,12 @@ final class FaviconLoader {
             "Favicons",
             isDirectory: true
         )
-        try? FileManager.default.createDirectory(
-            at: self.directoryURL,
-            withIntermediateDirectories: true
-        )
+        if usesDiskCache {
+            try? FileManager.default.createDirectory(
+                at: self.directoryURL,
+                withIntermediateDirectories: true
+            )
+        }
     }
 
     /// Loads the favicon at `url`, resolving from memory, then disk, then the
@@ -75,18 +80,20 @@ final class FaviconLoader {
 
         ioQueue.async { [weak self] in
             guard let self else { return }
-            let fileURL = self.fileURL(forKey: key)
-            if let data = try? Data(contentsOf: fileURL),
-               let image = UIImage(data: data),
-               image.size.width > 0,
-               image.size.height > 0 {
-                self.memoryCache.setObject(
-                    image,
-                    forKey: key as NSString,
-                    cost: data.count
-                )
-                self.finish(key: key, image: image)
-                return
+            if self.usesDiskCache {
+                let fileURL = self.fileURL(forKey: key)
+                if let data = try? Data(contentsOf: fileURL),
+                   let image = UIImage(data: data),
+                   image.size.width > 0,
+                   image.size.height > 0 {
+                    self.memoryCache.setObject(
+                        image,
+                        forKey: key as NSString,
+                        cost: data.count
+                    )
+                    self.finish(key: key, image: image)
+                    return
+                }
             }
             self.startNetwork(url: url, key: key)
         }
@@ -113,6 +120,7 @@ final class FaviconLoader {
 
     func clearCache() {
         memoryCache.removeAllObjects()
+        guard usesDiskCache else { return }
         ioQueue.async { [directoryURL] in
             try? FileManager.default.removeItem(at: directoryURL)
             try? FileManager.default.createDirectory(
@@ -141,9 +149,22 @@ final class FaviconLoader {
            ) {
             return googleFavicon
         }
+        return directFaviconURL(for: siteURL)
+    }
+
+    /// 无痕标签使用网站自身的标准 favicon 路径，避免向第三方服务暴露域名。
+    static func directFaviconURL(for siteURL: URL) -> URL? {
+        guard let scheme = siteURL.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              let host = siteURL.host,
+              !host.isEmpty
+        else {
+            return nil
+        }
         var components = URLComponents()
-        components.scheme = siteURL.scheme ?? "https"
+        components.scheme = scheme
         components.host = host
+        components.port = siteURL.port
         components.path = "/favicon.ico"
         return components.url
     }
@@ -176,10 +197,12 @@ final class FaviconLoader {
                 forKey: key as NSString,
                 cost: data.count
             )
-            self.ioQueue.async { [weak self] in
-                guard let self else { return }
-                try? data.write(to: self.fileURL(forKey: key), options: .atomic)
-                Self.trim(directoryURL: self.directoryURL, limit: self.diskLimit)
+            if self.usesDiskCache {
+                self.ioQueue.async { [weak self] in
+                    guard let self else { return }
+                    try? data.write(to: self.fileURL(forKey: key), options: .atomic)
+                    Self.trim(directoryURL: self.directoryURL, limit: self.diskLimit)
+                }
             }
             self.finish(key: key, image: image)
         }
