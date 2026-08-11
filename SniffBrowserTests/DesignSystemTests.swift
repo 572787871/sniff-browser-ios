@@ -81,6 +81,15 @@ final class DesignSystemTests: XCTestCase {
   }
 
   @MainActor
+  func testAppIconMarkImageRendersAtRequestedSize() {
+    let image = AppIconography.appIconMarkImage(pointSize: 24)
+
+    XCTAssertEqual(image.size.width, 24, accuracy: 0.01)
+    XCTAssertEqual(image.size.height, 24, accuracy: 0.01)
+    XCTAssertEqual(image.renderingMode, .alwaysTemplate)
+  }
+
+  @MainActor
   func testTabStackImageRendersAtRequestedSize() {
     let image = AppIconography.tabStackImage(pointSize: 22)
 

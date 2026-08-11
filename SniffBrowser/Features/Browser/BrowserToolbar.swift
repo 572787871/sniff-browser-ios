@@ -177,9 +177,8 @@ final class BrowserToolbar: UIView {
       )
     }
     sniffButton.setImage(
-      AppIconography.scanApertureImage(
-        pointSize: AppMetrics.toolbarIconSize,
-        weight: 1.8
+      AppIconography.appIconMarkImage(
+        pointSize: AppMetrics.toolbarIconSize
       ),
       for: .normal
     )

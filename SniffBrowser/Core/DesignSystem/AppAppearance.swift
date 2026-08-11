@@ -137,6 +137,61 @@ enum AppIconography {
         return image.withRenderingMode(.alwaysTemplate)
     }
 
+    /// 应用图标的镂空版本：去掉炭黑方块底，只保留内部的扫描弧线与双信号点，
+    /// 作为工具栏线条图标使用（模板色跟随 tintColor）。
+    static func appIconMarkImage(
+        pointSize: CGFloat
+    ) -> UIImage {
+        let size = CGSize(width: pointSize, height: pointSize)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let image = renderer.image { _ in
+            let scale = pointSize / 1024
+            UIColor.black.setStroke()
+            UIColor.black.setFill()
+
+            let arcs = UIBezierPath()
+            arcs.lineWidth = 58 * scale
+            arcs.lineCapStyle = .round
+            arcs.move(to: CGPoint(x: 248 * scale, y: 720 * scale))
+            arcs.addCurve(
+                to: CGPoint(x: 720 * scale, y: 248 * scale),
+                controlPoint1: CGPoint(x: 248 * scale, y: 459 * scale),
+                controlPoint2: CGPoint(x: 459 * scale, y: 248 * scale)
+            )
+            arcs.move(to: CGPoint(x: 360 * scale, y: 720 * scale))
+            arcs.addCurve(
+                to: CGPoint(x: 720 * scale, y: 360 * scale),
+                controlPoint1: CGPoint(x: 360 * scale, y: 521 * scale),
+                controlPoint2: CGPoint(x: 521 * scale, y: 360 * scale)
+            )
+            arcs.move(to: CGPoint(x: 472 * scale, y: 720 * scale))
+            arcs.addCurve(
+                to: CGPoint(x: 720 * scale, y: 472 * scale),
+                controlPoint1: CGPoint(x: 472 * scale, y: 583 * scale),
+                controlPoint2: CGPoint(x: 583 * scale, y: 472 * scale)
+            )
+            arcs.stroke()
+
+            UIBezierPath(
+                ovalIn: CGRect(
+                    x: (720 - 54) * scale,
+                    y: (248 - 54) * scale,
+                    width: 108 * scale,
+                    height: 108 * scale
+                )
+            ).fill()
+            UIBezierPath(
+                ovalIn: CGRect(
+                    x: (720 - 36) * scale,
+                    y: (720 - 36) * scale,
+                    width: 72 * scale,
+                    height: 72 * scale
+                )
+            ).fill()
+        }
+        return image.withRenderingMode(.alwaysTemplate)
+    }
+
     static func tabStackImage(
         pointSize: CGFloat,
         weight: CGFloat = 1.8
