@@ -134,6 +134,7 @@ final class BrowserViewController: UIViewController {
     configureLifecycleObservers()
     observeContentBlockerChanges()
     observeNewTabBackgroundChanges()
+    refreshNewTabFavorites()
     attachSelectedTab()
     contentBlockerService.loadIfNeeded()
   }
@@ -142,6 +143,7 @@ final class BrowserViewController: UIViewController {
     super.viewWillAppear(animated)
     // 设置页修改新标签页选项后，回到浏览器时立即生效。
     newTabView.refreshContentPreferences()
+    refreshNewTabFavorites()
     updateBrowserChromeVisibility()
   }
 
@@ -704,6 +706,17 @@ final class BrowserViewController: UIViewController {
     let center = NotificationCenter.default
     lifecycleObservers.append(
       center.addObserver(
+        forName: .favoriteItemsDidChange,
+        object: nil,
+        queue: .main
+      ) { [weak self] _ in
+        Task { @MainActor in
+          self?.refreshNewTabFavorites()
+        }
+      }
+    )
+    lifecycleObservers.append(
+      center.addObserver(
         forName: UIApplication.didEnterBackgroundNotification,
         object: nil,
         queue: .main
@@ -717,6 +730,12 @@ final class BrowserViewController: UIViewController {
           self.tabManager.persistSession()
         }
       }
+    )
+  }
+
+  func refreshNewTabFavorites() {
+    newTabView.updateFavorites(
+      (try? favoriteService.allFavorites()) ?? []
     )
   }
 
@@ -1139,6 +1158,11 @@ extension BrowserViewController: NewTabViewDelegate {
     case .history:
       router?.showHistory()
     }
+  }
+
+  func newTabView(_ view: NewTabView, didSelect favorite: FavoriteItem) {
+    guard view === newTabView else { return }
+    load(favorite.url)
   }
 }
 

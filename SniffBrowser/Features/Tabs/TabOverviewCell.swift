@@ -13,6 +13,10 @@ final class TabOverviewCell: UICollectionViewCell {
     }
 
     private let previewContainer = UIView()
+    private let previewBackdropImageView = UIImageView()
+    private let previewBackdropBlurView = UIVisualEffectView(
+        effect: UIBlurEffect(style: .systemUltraThinMaterial)
+    )
     private let previewImageView = UIImageView()
     private let placeholderImageView = UIImageView(
         image: UIImage(systemName: "globe.americas.fill")
@@ -21,6 +25,7 @@ final class TabOverviewCell: UICollectionViewCell {
     private let selectedBadge = UIImageView(
         image: UIImage(systemName: "checkmark.circle.fill")
     )
+    private let metadataIconView = UIImageView()
     private let titleLabel = UILabel()
     private let domainLabel = UILabel()
     private var displaysSelection = false
@@ -57,6 +62,7 @@ final class TabOverviewCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         onClose = nil
+        previewBackdropImageView.image = nil
         previewImageView.image = nil
         displaysSelection = false
         previewContainer.alpha = 1
@@ -69,7 +75,11 @@ final class TabOverviewCell: UICollectionViewCell {
         previewContainer.alpha = 1
         titleLabel.text = item.displayTitle
         domainLabel.text = item.displayDomain
+        previewBackdropImageView.image = item.thumbnail
         previewImageView.image = item.thumbnail
+        metadataIconView.image = item.url == nil
+            ? AppIconography.scanApertureImage(pointSize: 15, weight: 1.6)
+            : UIImage(systemName: "globe")
         placeholderImageView.image = item.url == nil
             ? AppIconography.scanApertureImage(pointSize: 26, weight: 2)
             : UIImage(systemName: "globe.americas.fill")
@@ -103,18 +113,22 @@ final class TabOverviewCell: UICollectionViewCell {
     }
 
     func updateResolvedColors() {
-        contentView.backgroundColor = AppColors.surface
+        contentView.backgroundColor = .clear
         previewContainer.backgroundColor = AppColors.tertiarySurface
         titleLabel.textColor = AppColors.primaryText
         domainLabel.textColor = AppColors.secondaryText
+        metadataIconView.tintColor = displaysSelection
+            ? AppColors.accent
+            : AppColors.secondaryText
         placeholderImageView.tintColor = AppColors.tertiaryText
         closeButton.configuration?.baseForegroundColor = AppColors.secondaryText
+        closeButton.backgroundColor = AppColors.elevatedSurface.withAlphaComponent(0.86)
         selectedBadge.tintColor = AppColors.accent
         selectedBadge.backgroundColor = AppColors.surface
-        contentView.layer.borderWidth = displaysSelection
+        previewContainer.layer.borderWidth = displaysSelection
             ? 1
             : AppMetrics.separatorHeight
-        contentView.layer.borderColor = (
+        previewContainer.layer.borderColor = (
             displaysSelection ? Self.selectedBorderColor : AppColors.separator
         )
         .resolvedColor(with: traitCollection)
@@ -125,17 +139,29 @@ final class TabOverviewCell: UICollectionViewCell {
         isAccessibilityElement = true
         accessibilityTraits = [.button]
 
-        contentView.backgroundColor = AppColors.surface
-        contentView.layer.cornerRadius = AppRadius.card
-        contentView.layer.cornerCurve = .continuous
-        contentView.layer.borderWidth = AppMetrics.separatorHeight
-        contentView.layer.masksToBounds = true
+        contentView.backgroundColor = .clear
+        contentView.layer.masksToBounds = false
 
         previewContainer.backgroundColor = AppColors.tertiarySurface
+        previewContainer.layer.cornerRadius = AppRadius.card
+        previewContainer.layer.cornerCurve = .continuous
+        previewContainer.layer.borderWidth = AppMetrics.separatorHeight
+        previewContainer.layer.masksToBounds = true
         previewContainer.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(previewContainer)
 
-        previewImageView.contentMode = .scaleAspectFill
+        previewBackdropImageView.contentMode = .scaleAspectFill
+        previewBackdropImageView.clipsToBounds = true
+        previewBackdropImageView.alpha = 0.48
+        previewBackdropImageView.translatesAutoresizingMaskIntoConstraints = false
+        previewContainer.addSubview(previewBackdropImageView)
+
+        previewBackdropBlurView.isUserInteractionEnabled = false
+        previewBackdropBlurView.alpha = 0.82
+        previewBackdropBlurView.translatesAutoresizingMaskIntoConstraints = false
+        previewContainer.addSubview(previewBackdropBlurView)
+
+        previewImageView.contentMode = .scaleAspectFit
         previewImageView.clipsToBounds = true
         previewImageView.translatesAutoresizingMaskIntoConstraints = false
         previewContainer.addSubview(previewImageView)
@@ -158,7 +184,7 @@ final class TabOverviewCell: UICollectionViewCell {
         closeConfiguration.baseForegroundColor = AppColors.secondaryText
         closeConfiguration.contentInsets = .zero
         closeButton.configuration = closeConfiguration
-        closeButton.backgroundColor = .clear
+        closeButton.backgroundColor = AppColors.elevatedSurface.withAlphaComponent(0.86)
         closeButton.layer.cornerRadius = 18
         closeButton.clipsToBounds = true
         closeButton.accessibilityLabel = "关闭标签页"
@@ -190,7 +216,7 @@ final class TabOverviewCell: UICollectionViewCell {
 
         AppTypography.configure(titleLabel, style: .headline, weight: .semibold)
         titleLabel.textColor = AppColors.primaryText
-        titleLabel.numberOfLines = 2
+        titleLabel.numberOfLines = 1
         titleLabel.lineBreakMode = .byTruncatingTail
 
         AppTypography.configure(domainLabel, style: .caption1)
@@ -203,15 +229,52 @@ final class TabOverviewCell: UICollectionViewCell {
         labels.alignment = .fill
         labels.spacing = AppSpacing.xxs
         labels.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(labels)
+
+        metadataIconView.contentMode = .scaleAspectFit
+        metadataIconView.tintColor = AppColors.secondaryText
+        metadataIconView.isAccessibilityElement = false
+        metadataIconView.translatesAutoresizingMaskIntoConstraints = false
+
+        let metadata = UIStackView(arrangedSubviews: [metadataIconView, labels])
+        metadata.axis = .horizontal
+        metadata.alignment = .top
+        metadata.spacing = AppSpacing.xs
+        metadata.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(metadata)
 
         NSLayoutConstraint.activate([
             previewContainer.topAnchor.constraint(equalTo: contentView.topAnchor),
             previewContainer.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             previewContainer.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            previewContainer.heightAnchor.constraint(
-                equalTo: contentView.heightAnchor,
-                multiplier: TabOverviewGridLayoutMetrics.previewHeightRatio
+            previewContainer.bottomAnchor.constraint(
+                equalTo: contentView.bottomAnchor,
+                constant: -TabOverviewGridLayoutMetrics.metadataAreaHeight
+            ),
+
+            previewBackdropImageView.topAnchor.constraint(
+                equalTo: previewContainer.topAnchor
+            ),
+            previewBackdropImageView.leadingAnchor.constraint(
+                equalTo: previewContainer.leadingAnchor
+            ),
+            previewBackdropImageView.trailingAnchor.constraint(
+                equalTo: previewContainer.trailingAnchor
+            ),
+            previewBackdropImageView.bottomAnchor.constraint(
+                equalTo: previewContainer.bottomAnchor
+            ),
+
+            previewBackdropBlurView.topAnchor.constraint(
+                equalTo: previewContainer.topAnchor
+            ),
+            previewBackdropBlurView.leadingAnchor.constraint(
+                equalTo: previewContainer.leadingAnchor
+            ),
+            previewBackdropBlurView.trailingAnchor.constraint(
+                equalTo: previewContainer.trailingAnchor
+            ),
+            previewBackdropBlurView.bottomAnchor.constraint(
+                equalTo: previewContainer.bottomAnchor
             ),
 
             previewImageView.topAnchor.constraint(equalTo: previewContainer.topAnchor),
@@ -250,22 +313,24 @@ final class TabOverviewCell: UICollectionViewCell {
             selectedBadge.widthAnchor.constraint(equalToConstant: 16),
             selectedBadge.heightAnchor.constraint(equalTo: selectedBadge.widthAnchor),
 
-            labels.topAnchor.constraint(
+            metadata.topAnchor.constraint(
                 equalTo: previewContainer.bottomAnchor,
                 constant: AppSpacing.xs
             ),
-            labels.leadingAnchor.constraint(
+            metadata.leadingAnchor.constraint(
                 equalTo: contentView.leadingAnchor,
-                constant: AppSpacing.sm
+                constant: AppSpacing.xxs
             ),
-            labels.trailingAnchor.constraint(
+            metadata.trailingAnchor.constraint(
                 equalTo: contentView.trailingAnchor,
-                constant: -AppSpacing.sm
+                constant: -AppSpacing.xxs
             ),
-            labels.bottomAnchor.constraint(
+            metadata.bottomAnchor.constraint(
                 equalTo: contentView.bottomAnchor,
-                constant: -AppSpacing.xs
-            )
+                constant: -AppSpacing.xxs
+            ),
+            metadataIconView.widthAnchor.constraint(equalToConstant: 16),
+            metadataIconView.heightAnchor.constraint(equalToConstant: 16),
         ])
     }
 
@@ -303,7 +368,8 @@ final class TabOverviewCell: UICollectionViewCell {
             options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]
         ) {
             self.closeButton.transform = .identity
-            self.closeButton.backgroundColor = .clear
+            self.closeButton.backgroundColor = AppColors.elevatedSurface
+                .withAlphaComponent(0.86)
         }
     }
 

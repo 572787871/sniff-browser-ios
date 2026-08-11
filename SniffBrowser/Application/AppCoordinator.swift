@@ -464,8 +464,15 @@ private final class TabOverviewNavigationAnimator: NSObject,
   ) {
     guard let fromView = transitionContext.view(forKey: .from),
           let toView = transitionContext.view(forKey: .to),
-          let toViewController = transitionContext.viewController(forKey: .to),
-          let movingView = fromView.snapshotView(afterScreenUpdates: false)
+          let fromViewController = transitionContext.viewController(forKey: .from),
+          let toViewController = transitionContext.viewController(forKey: .to)
+    else {
+      fallback(using: transitionContext)
+      return
+    }
+    let movingSource = (fromViewController as? BrowserViewController)?.contentView
+      ?? fromView
+    guard let movingView = movingSource.snapshotView(afterScreenUpdates: false)
     else {
       fallback(using: transitionContext)
       return
@@ -487,7 +494,7 @@ private final class TabOverviewNavigationAnimator: NSObject,
       return
     }
 
-    let initialFrame = container.convert(fromView.bounds, from: fromView)
+    let initialFrame = container.convert(movingSource.bounds, from: movingSource)
     let surface = transitionSurface(
       frame: initialFrame,
       cornerRadius: 0
@@ -495,10 +502,6 @@ private final class TabOverviewNavigationAnimator: NSObject,
     movingView.frame = surface.bounds
     movingView.autoresizingMask = []
     surface.addSubview(movingView)
-    surface.layer.maskedCorners = [
-      .layerMinXMinYCorner,
-      .layerMaxXMinYCorner,
-    ]
     overview.setTransitionItemHidden(itemID, hidden: true)
     let navigationBar = overview.navigationController?.navigationBar
     navigationBar?.alpha = 0
@@ -513,7 +516,7 @@ private final class TabOverviewNavigationAnimator: NSObject,
       animations: {
         surface.frame = targetFrame
         surface.layer.cornerRadius = AppRadius.card
-        movingView.frame = Self.aspectFillFrame(
+        movingView.frame = Self.aspectFitFrame(
           contentSize: initialFrame.size,
           containerSize: targetFrame.size
         )
@@ -552,29 +555,32 @@ private final class TabOverviewNavigationAnimator: NSObject,
       for: itemID,
       in: container,
       ensureVisible: false
-    ), sourceFrame.width > 0, sourceFrame.height > 0,
-       let movingView = toView.snapshotView(afterScreenUpdates: true)
+    ), sourceFrame.width > 0, sourceFrame.height > 0
+    else {
+      toView.removeFromSuperview()
+      fallback(using: transitionContext)
+      return
+    }
+    let movingSource = (toViewController as? BrowserViewController)?.contentView
+      ?? toView
+    guard let movingView = movingSource.snapshotView(afterScreenUpdates: true)
     else {
       toView.removeFromSuperview()
       fallback(using: transitionContext)
       return
     }
 
-    let finalFrame = container.convert(toView.bounds, from: toView)
+    let finalFrame = container.convert(movingSource.bounds, from: movingSource)
     let surface = transitionSurface(
       frame: sourceFrame,
       cornerRadius: AppRadius.card
     )
-    movingView.frame = Self.aspectFillFrame(
+    movingView.frame = Self.aspectFitFrame(
       contentSize: finalFrame.size,
       containerSize: sourceFrame.size
     )
     movingView.autoresizingMask = []
     surface.addSubview(movingView)
-    surface.layer.maskedCorners = [
-      .layerMinXMinYCorner,
-      .layerMaxXMinYCorner,
-    ]
     overview.setTransitionItemHidden(itemID, hidden: true)
     let navigationBar = overview.navigationController?.navigationBar
     navigationBar?.alpha = 1
@@ -623,7 +629,7 @@ private final class TabOverviewNavigationAnimator: NSObject,
     return surface
   }
 
-  private static func aspectFillFrame(
+  private static func aspectFitFrame(
     contentSize: CGSize,
     containerSize: CGSize
   ) -> CGRect {
@@ -632,7 +638,7 @@ private final class TabOverviewNavigationAnimator: NSObject,
           containerSize.width > 0,
           containerSize.height > 0
     else { return CGRect(origin: .zero, size: containerSize) }
-    let scale = max(
+    let scale = min(
       containerSize.width / contentSize.width,
       containerSize.height / contentSize.height
     )

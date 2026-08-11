@@ -225,6 +225,42 @@ final class DesignSystemTests: XCTestCase {
   }
 
   @MainActor
+  func testNewTabFavoritesUseTheSameFourColumnRhythmAsQuickActions() throws {
+    let view = NewTabView()
+    let favorites = [
+      FavoriteItem(
+        title: "示例一",
+        url: try XCTUnwrap(URL(string: "about:blank")),
+        host: "example.test"
+      ),
+      FavoriteItem(
+        title: "示例二",
+        url: try XCTUnwrap(URL(string: "about:srcdoc")),
+        host: "second.test"
+      ),
+    ]
+    view.updateFavorites(favorites)
+    let host = fixedSizeHost(containing: view)
+    host.layoutIfNeeded()
+
+    let title = try identifiedView("newTab.favoritesTitle", in: view)
+    let stack = try XCTUnwrap(
+      try identifiedView("newTab.favorites", in: view) as? UIStackView
+    )
+    let buttons = stack.arrangedSubviews.compactMap { $0 as? UIButton }
+
+    XCTAssertFalse(title.isHidden)
+    XCTAssertFalse(stack.isHidden)
+    XCTAssertEqual(stack.arrangedSubviews.count, 4)
+    XCTAssertEqual(buttons.count, 2)
+    XCTAssertEqual(
+      buttons.compactMap { $0.configuration?.title },
+      ["示例一", "示例二"]
+    )
+    XCTAssertEqual(stack.distribution, .fillEqually)
+  }
+
+  @MainActor
   func testBrowserConfigurationAllowsScriptedPlaybackContinuation() {
     let configurations = [
       BrowserConfiguration.makeWebViewConfiguration(isPrivate: false),

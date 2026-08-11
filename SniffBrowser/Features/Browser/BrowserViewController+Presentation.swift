@@ -2,7 +2,9 @@ import UIKit
 
 extension BrowserViewController {
   func showTabs() {
+    captureActiveNewTabSnapshot()
     let currentTabID = activeTab?.id
+    let shouldCaptureWebSnapshot = activeTab?.url != nil
     let controller = TabOverviewViewController(items: makeTabItems())
     tabOverviewController = controller
     configureTabOverviewActions(controller)
@@ -10,7 +12,7 @@ extension BrowserViewController {
 
     Task { [weak self, weak controller] in
       guard let self, let controller else { return }
-      if let currentTabID {
+      if let currentTabID, shouldCaptureWebSnapshot {
         await self.tabManager.captureSnapshot(for: currentTabID)
       }
       for tab in self.tabManager.tabs where tab.snapshot == nil {
@@ -18,6 +20,37 @@ extension BrowserViewController {
       }
       controller.update(items: self.makeTabItems())
     }
+  }
+
+  /// WKWebView 无法截取原生的新标签页，因此在进入标签页总览前直接渲染主页。
+  /// 缩略图保留完整画面比例，交给卡片以 aspect-fit 方式展示。
+  func captureActiveNewTabSnapshot() {
+    guard let tab = activeTab,
+          tab.url == nil,
+          !newTabView.isHidden,
+          newTabView.bounds.width > 0,
+          newTabView.bounds.height > 0
+    else { return }
+
+    newTabView.setNeedsLayout()
+    newTabView.layoutIfNeeded()
+    let format = UIGraphicsImageRendererFormat.preferred()
+    format.scale = 1
+    format.opaque = true
+    let renderer = UIGraphicsImageRenderer(
+      size: newTabView.bounds.size,
+      format: format
+    )
+    let image = renderer.image { context in
+      let rendered = newTabView.drawHierarchy(
+        in: newTabView.bounds,
+        afterScreenUpdates: true
+      )
+      if !rendered {
+        newTabView.layer.render(in: context.cgContext)
+      }
+    }
+    tab.updateSnapshot(image)
   }
 
   func makeTabItems() -> [TabOverviewItem] {
@@ -222,6 +255,7 @@ extension BrowserViewController {
       case .removed:
         message = "已从收藏夹移除"
       }
+      refreshNewTabFavorites()
       UINotificationFeedbackGenerator().notificationOccurred(.success)
       UIAccessibility.post(
         notification: .announcement,
@@ -316,6 +350,7 @@ extension BrowserViewController {
       case .removed:
         message = "已从收藏夹移除"
       }
+      refreshNewTabFavorites()
       UINotificationFeedbackGenerator().notificationOccurred(.success)
       showTransientBrowserFeedback(message)
     } catch {

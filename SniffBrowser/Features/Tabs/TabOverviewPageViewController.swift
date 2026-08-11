@@ -113,7 +113,17 @@ final class TabOverviewPageViewController: UIViewController {
             as? TabOverviewCell {
             return cell.transitionPreviewFrame(in: coordinateSpace)
         }
-        return collectionView.convert(attributes.frame, to: coordinateSpace)
+        let previewFrame = CGRect(
+            x: attributes.frame.minX,
+            y: attributes.frame.minY,
+            width: attributes.frame.width,
+            height: max(
+                1,
+                attributes.frame.height
+                    - TabOverviewGridLayoutMetrics.metadataAreaHeight
+            )
+        )
+        return collectionView.convert(previewFrame, to: coordinateSpace)
     }
 
     func setTransitionItemHidden(_ itemID: UUID, hidden: Bool) {

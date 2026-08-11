@@ -11,7 +11,8 @@ struct TabOverviewGridLayoutMetrics: Equatable {
     static let topInset: CGFloat = 8
     static let bottomInset: CGFloat = 16
     static let landscapeFourColumnThreshold: CGFloat = 840
-    static let previewHeightRatio: CGFloat = 0.69
+    static let metadataAreaHeight: CGFloat = 60
+    static let minimumPortraitPreviewHeightToWidthRatio: CGFloat = 1.34
     static let portraitMinimumItemHeight: CGFloat = 180
     static let portraitMaximumItemHeight: CGFloat = 340
 
@@ -21,6 +22,13 @@ struct TabOverviewGridLayoutMetrics: Equatable {
 
     var firstViewportCapacity: Int {
         columnCount * viewportRowCount
+    }
+
+    var previewSize: CGSize {
+        CGSize(
+            width: itemSize.width,
+            height: max(1, itemSize.height - Self.metadataAreaHeight)
+        )
     }
 
     var firstViewportContentHeight: CGFloat {
@@ -64,9 +72,17 @@ struct TabOverviewGridLayoutMetrics: Equatable {
                         - interRowSpacing
                 ) / 2
             )
+            let aspectPreservingItemHeight = ceil(
+                itemWidth * minimumPortraitPreviewHeightToWidthRatio
+                    + metadataAreaHeight
+            )
             let itemHeight = min(
                 portraitMaximumItemHeight,
-                max(portraitMinimumItemHeight, fittingItemHeight)
+                max(
+                    portraitMinimumItemHeight,
+                    fittingItemHeight,
+                    aspectPreservingItemHeight
+                )
             )
             return TabOverviewGridLayoutMetrics(
                 columnCount: columns,

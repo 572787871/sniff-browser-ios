@@ -35,12 +35,13 @@ final class TabOverviewLayoutTests: XCTestCase {
         )
         XCTAssertFalse(metrics.requiresVerticalScrolling(itemCount: 4))
         XCTAssertGreaterThanOrEqual(
-            TabOverviewGridLayoutMetrics.previewHeightRatio,
-            0.68
+            metrics.previewSize.height / metrics.previewSize.width,
+            TabOverviewGridLayoutMetrics.minimumPortraitPreviewHeightToWidthRatio
         )
-        XCTAssertLessThanOrEqual(
-            TabOverviewGridLayoutMetrics.previewHeightRatio,
-            0.72
+        XCTAssertEqual(
+            metrics.itemSize.height - metrics.previewSize.height,
+            TabOverviewGridLayoutMetrics.metadataAreaHeight,
+            accuracy: 0.001
         )
     }
 

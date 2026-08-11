@@ -30,6 +30,7 @@ protocol NewTabViewDelegate: AnyObject {
   func newTabViewDidBeginEditing(_ view: NewTabView)
   func newTabView(_ view: NewTabView, didSubmit text: String)
   func newTabView(_ view: NewTabView, didSelect action: NewTabQuickAction)
+  func newTabView(_ view: NewTabView, didSelect favorite: FavoriteItem)
 }
 
 final class NewTabView: UIView {
@@ -45,6 +46,8 @@ final class NewTabView: UIView {
   private let dateLabel = UILabel()
   private let quickActionsTitleLabel = UILabel()
   private let quickActionsStack = UIStackView()
+  private let favoritesTitleLabel = UILabel()
+  private let favoritesStack = UIStackView()
   private let scrollView = UIScrollView()
   private let contentContainer = UIView()
   private let contentStack = UIStackView()
@@ -57,6 +60,7 @@ final class NewTabView: UIView {
   private let submitButton = UIButton(type: .system)
   private var isPrivateMode = false
   private var hasCustomBackground = false
+  private var displayedFavorites: [FavoriteItem] = []
   private var backgroundChangeObserver: NSObjectProtocol?
 
   override init(frame: CGRect) {
@@ -100,6 +104,38 @@ final class NewTabView: UIView {
     delegate?.newTabViewDidBeginEditing(self)
   }
 
+  func updateFavorites(_ favorites: [FavoriteItem]) {
+    displayedFavorites = Array(favorites.prefix(4))
+    favoritesStack.arrangedSubviews.forEach {
+      favoritesStack.removeArrangedSubview($0)
+      $0.removeFromSuperview()
+    }
+
+    displayedFavorites.forEach { favorite in
+      let button = NewTabFavoriteButton(favorite: favorite)
+      button.addTarget(
+        self,
+        action: #selector(favoritePressed(_:)),
+        for: .touchUpInside
+      )
+      favoritesStack.addArrangedSubview(button)
+    }
+    for _ in displayedFavorites.count..<4 {
+      let spacer = UIView()
+      spacer.isAccessibilityElement = false
+      favoritesStack.addArrangedSubview(spacer)
+    }
+
+    let isEmpty = displayedFavorites.isEmpty
+    favoritesTitleLabel.isHidden = isEmpty
+    favoritesStack.isHidden = isEmpty
+    contentStack.setCustomSpacing(
+      isEmpty ? AppSpacing.md : AppSpacing.lg,
+      after: quickActionsStack
+    )
+    updateResolvedColors()
+  }
+
   func setPrivateMode(_ isPrivate: Bool) {
     isPrivateMode = isPrivate
     overrideUserInterfaceStyle = .unspecified
@@ -135,6 +171,7 @@ final class NewTabView: UIView {
     configureHeader()
     configureSearch()
     configureQuickActions()
+    configureFavorites()
     configureDate()
     configureHierarchy()
     observeBackgroundChanges()
@@ -330,6 +367,25 @@ final class NewTabView: UIView {
     quickActionsStack.heightAnchor.constraint(greaterThanOrEqualToConstant: 76).isActive = true
   }
 
+  private func configureFavorites() {
+    favoritesTitleLabel.text = "收藏网页"
+    favoritesTitleLabel.font = AppTypography.headline
+    favoritesTitleLabel.textColor = AppColors.primaryText
+    favoritesTitleLabel.adjustsFontForContentSizeCategory = true
+    favoritesTitleLabel.accessibilityIdentifier = "newTab.favoritesTitle"
+    favoritesTitleLabel.isHidden = true
+
+    favoritesStack.axis = .horizontal
+    favoritesStack.alignment = .fill
+    favoritesStack.distribution = .fillEqually
+    favoritesStack.spacing = AppSpacing.xs
+    favoritesStack.isHidden = true
+    favoritesStack.accessibilityIdentifier = "newTab.favorites"
+    favoritesStack.heightAnchor.constraint(
+      greaterThanOrEqualToConstant: 76
+    ).isActive = true
+  }
+
   private func configureDate() {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "zh_CN")
@@ -381,6 +437,10 @@ final class NewTabView: UIView {
     contentStack.setCustomSpacing(AppSpacing.sm, after: quickActionsTitleLabel)
     contentStack.addArrangedSubview(quickActionsStack)
     contentStack.setCustomSpacing(AppSpacing.md, after: quickActionsStack)
+    contentStack.addArrangedSubview(favoritesTitleLabel)
+    contentStack.setCustomSpacing(AppSpacing.sm, after: favoritesTitleLabel)
+    contentStack.addArrangedSubview(favoritesStack)
+    contentStack.setCustomSpacing(AppSpacing.md, after: favoritesStack)
     contentStack.addArrangedSubview(dateLabel)
     contentContainer.addSubview(contentStack)
 
@@ -453,6 +513,7 @@ final class NewTabView: UIView {
         ? AppColors.privateBrowsingDescription.withAlphaComponent(0.92)
         : UIColor.white.withAlphaComponent(0.88)
       quickActionsTitleLabel.textColor = .white
+      favoritesTitleLabel.textColor = .white
       dateLabel.textColor = UIColor.white.withAlphaComponent(0.76)
     } else {
       titleLabel.textColor = isPrivateMode
@@ -462,9 +523,16 @@ final class NewTabView: UIView {
         ? AppColors.privateBrowsingDescription.withAlphaComponent(0.86)
         : AppColors.secondaryText
       quickActionsTitleLabel.textColor = AppColors.primaryText
+      favoritesTitleLabel.textColor = AppColors.primaryText
       dateLabel.textColor = AppColors.tertiaryText
     }
-    [titleLabel, welcomeLabel, quickActionsTitleLabel, dateLabel].forEach {
+    [
+      titleLabel,
+      welcomeLabel,
+      quickActionsTitleLabel,
+      favoritesTitleLabel,
+      dateLabel,
+    ].forEach {
       $0.layer.shadowColor = UIColor.black.cgColor
       $0.layer.shadowOpacity = hasCustomBackground ? 0.38 : 0
       $0.layer.shadowRadius = hasCustomBackground ? 3 : 0
@@ -498,6 +566,9 @@ final class NewTabView: UIView {
     quickActionsStack.arrangedSubviews
       .compactMap { $0 as? NewTabQuickActionButton }
       .forEach { $0.updateAppearance(overPhoto: hasCustomBackground) }
+    favoritesStack.arrangedSubviews
+      .compactMap { $0 as? NewTabFavoriteButton }
+      .forEach { $0.updateAppearance(overPhoto: hasCustomBackground) }
   }
 
   private func updateContentTopInset() {
@@ -526,6 +597,11 @@ final class NewTabView: UIView {
     guard let action = NewTabQuickAction(rawValue: sender.tag) else { return }
     UIImpactFeedbackGenerator(style: .light).impactOccurred()
     delegate?.newTabView(self, didSelect: action)
+  }
+
+  @objc private func favoritePressed(_ sender: NewTabFavoriteButton) {
+    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+    delegate?.newTabView(self, didSelect: sender.favorite)
   }
 
   @objc private func submit() {
@@ -618,6 +694,141 @@ private final class NewTabLogoView: UIView {
       symbolView.trailingAnchor.constraint(equalTo: trailingAnchor),
       symbolView.bottomAnchor.constraint(equalTo: bottomAnchor),
     ])
+  }
+}
+
+private final class NewTabFavoriteButton: UIButton {
+  let favorite: FavoriteItem
+
+  private var faviconURL: URL?
+  private var faviconRequestID: UUID?
+
+  init(favorite: FavoriteItem) {
+    self.favorite = favorite
+    super.init(frame: .zero)
+    translatesAutoresizingMaskIntoConstraints = false
+
+    var configuration = UIButton.Configuration.filled()
+    configuration.image = UIImage(
+      systemName: "star.fill",
+      withConfiguration: UIImage.SymbolConfiguration(
+        pointSize: 20,
+        weight: .medium
+      )
+    )
+    configuration.title = favorite.title
+    configuration.imagePlacement = .top
+    configuration.imagePadding = AppSpacing.xs
+    configuration.baseForegroundColor = AppColors.primaryText
+    configuration.baseBackgroundColor = AppColors.secondarySurface
+    configuration.cornerStyle = .medium
+    configuration.contentInsets = NSDirectionalEdgeInsets(
+      top: AppSpacing.sm,
+      leading: AppSpacing.xs,
+      bottom: AppSpacing.xs,
+      trailing: AppSpacing.xs
+    )
+    configuration.titleLineBreakMode = .byTruncatingTail
+    configuration.titleTextAttributesTransformer =
+      UIConfigurationTextAttributesTransformer { attributes in
+        var attributes = attributes
+        attributes.font = AppTypography.caption
+        attributes.foregroundColor = AppColors.primaryText
+        return attributes
+      }
+    self.configuration = configuration
+    titleLabel?.numberOfLines = 1
+    accessibilityLabel = "\(favorite.title)，\(favorite.host)"
+    accessibilityHint = "打开收藏网页"
+    loadFavicon()
+  }
+
+  required init?(coder: NSCoder) {
+    return nil
+  }
+
+  deinit {
+    if let faviconURL, let faviconRequestID {
+      FaviconLoader.shared.cancel(url: faviconURL, requestID: faviconRequestID)
+    }
+  }
+
+  func updateAppearance(overPhoto: Bool) {
+    guard var configuration else { return }
+    let foreground = overPhoto ? UIColor.white : AppColors.primaryText
+    configuration.baseForegroundColor = foreground
+    configuration.baseBackgroundColor = overPhoto
+      ? UIColor.black.withAlphaComponent(0.34)
+      : AppColors.secondarySurface
+    configuration.titleTextAttributesTransformer =
+      UIConfigurationTextAttributesTransformer { attributes in
+        var attributes = attributes
+        attributes.font = AppTypography.caption
+        attributes.foregroundColor = foreground
+        return attributes
+      }
+    self.configuration = configuration
+  }
+
+  private func loadFavicon() {
+    let resolvedURL = favorite.faviconURL
+      ?? FaviconLoader.faviconURL(for: favorite.url)
+    guard let resolvedURL else { return }
+    faviconURL = resolvedURL
+    var requestID: UUID?
+    requestID = FaviconLoader.shared.load(url: resolvedURL) {
+      [weak self] image in
+      guard let self,
+            self.faviconRequestID == requestID,
+            let image,
+            var configuration = self.configuration
+      else {
+        return
+      }
+      configuration.image = Self.preparedFavicon(image)
+      self.configuration = configuration
+    }
+    faviconRequestID = requestID
+  }
+
+  private static func preparedFavicon(_ image: UIImage) -> UIImage {
+    let size = CGSize(width: 24, height: 24)
+    let format = UIGraphicsImageRendererFormat.preferred()
+    format.opaque = false
+    return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+      let scale = min(size.width / image.size.width, size.height / image.size.height)
+      let fittedSize = CGSize(
+        width: image.size.width * scale,
+        height: image.size.height * scale
+      )
+      image.draw(in: CGRect(
+        x: (size.width - fittedSize.width) / 2,
+        y: (size.height - fittedSize.height) / 2,
+        width: fittedSize.width,
+        height: fittedSize.height
+      ))
+    }.withRenderingMode(.alwaysOriginal)
+  }
+
+  override var isHighlighted: Bool {
+    didSet {
+      let changes = {
+        self.alpha = self.isHighlighted ? 0.72 : 1
+        self.transform = self.isHighlighted
+          ? CGAffineTransform(scaleX: 0.97, y: 0.97)
+          : .identity
+      }
+      guard !UIAccessibility.isReduceMotionEnabled else {
+        changes()
+        return
+      }
+      UIView.animate(
+        withDuration: 0.14,
+        delay: 0,
+        options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut],
+        animations: changes
+      )
+    }
   }
 }
 
