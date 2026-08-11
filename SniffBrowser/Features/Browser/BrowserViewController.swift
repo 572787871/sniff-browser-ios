@@ -828,6 +828,16 @@ final class BrowserViewController: UIViewController {
     NSLayoutConstraint.deactivate(activeWebViewConstraints)
     activeWebViewConstraints.removeAll()
     contentView.subviews.compactMap { $0 as? WKWebView }.forEach {
+      $0.layer.removeAllAnimations()
+      if $0.layer.anchorPoint != CGPoint(x: 0.5, y: 0.5) {
+        let position = $0.layer.position
+        $0.layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        $0.layer.position = position
+      }
+      $0.transform = .identity
+      $0.layer.transform = CATransform3DIdentity
+      $0.scrollView.layer.removeAllAnimations()
+      $0.scrollView.transform = .identity
       $0.removeFromSuperview()
     }
 
@@ -852,6 +862,11 @@ final class BrowserViewController: UIViewController {
       )
     }
     webView.translatesAutoresizingMaskIntoConstraints = false
+    webView.layer.removeAllAnimations()
+    webView.transform = .identity
+    webView.layer.transform = CATransform3DIdentity
+    webView.scrollView.layer.removeAllAnimations()
+    webView.scrollView.transform = .identity
     contentView.insertSubview(webView, at: 0)
     activeWebViewConstraints = [
       webView.topAnchor.constraint(

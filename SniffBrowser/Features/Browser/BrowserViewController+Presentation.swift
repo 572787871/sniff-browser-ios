@@ -549,7 +549,13 @@ extension BrowserViewController {
   }
 
   func selectTab(id: UUID, returnsToBrowser: Bool) {
-    captureActiveNewTabSnapshot()
+    // The overview already froze every native home tab before navigation.
+    // Capturing again here runs while the overview is still on screen and can
+    // store an intermediate Auto Layout frame as the next transition image,
+    // especially when selecting the already-active tab repeatedly.
+    if !returnsToBrowser {
+      captureActiveNewTabSnapshot()
+    }
     let requiresPageReload = tabManager.tabs.first {
       $0.id == id
     }.map {

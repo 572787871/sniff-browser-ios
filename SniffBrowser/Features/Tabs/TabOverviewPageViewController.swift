@@ -138,6 +138,35 @@ final class TabOverviewPageViewController: UIViewController {
         cell.setTransitionPreviewHidden(hidden)
     }
 
+    func resetTransitionPresentationState() {
+        collectionView.visibleCells
+            .compactMap { $0 as? TabOverviewCell }
+            .forEach { $0.resetTransitionPresentationState() }
+    }
+
+    func debugLogTransitionState(
+        _ phase: String,
+        itemID: UUID,
+        in coordinateSpace: UIView
+    ) {
+        #if DEBUG
+        guard let indexPath = dataSource.indexPath(for: itemID),
+              let cell = collectionView.cellForItem(at: indexPath)
+                as? TabOverviewCell
+        else {
+            AppLogger(.navigation).debug(
+                "\(phase) item=\(itemID.uuidString) cell=nil"
+            )
+            return
+        }
+        cell.debugLogTransitionState(
+            phase,
+            itemID: itemID,
+            in: coordinateSpace
+        )
+        #endif
+    }
+
     private func configureView() {
         overrideUserInterfaceStyle = .unspecified
         view.backgroundColor = .clear
@@ -384,6 +413,8 @@ extension TabOverviewPageViewController: UICollectionViewDelegate {
         didSelectItemAt indexPath: IndexPath
     ) {
         guard let itemID = dataSource.itemIdentifier(for: indexPath) else { return }
+        (collectionView.cellForItem(at: indexPath) as? TabOverviewCell)?
+            .resetTransitionPresentationState()
         onSelectItem?(itemID)
     }
 

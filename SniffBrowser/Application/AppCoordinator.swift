@@ -15,6 +15,7 @@ final class AppCoordinator: NSObject, BrowserRouting {
   private var downloadChangeObserver: NSObjectProtocol?
   private let popInteraction = NavigationPopInteraction()
   private let popGesture = UIScreenEdgePanGestureRecognizer()
+  private var tabOpenTransitionSequence = 0
 
   init(window: UIWindow) {
     self.window = window
@@ -369,9 +370,11 @@ extension AppCoordinator: UINavigationControllerDelegate {
     if toVC === browserViewController,
        let overview = fromVC as? TabOverviewViewController {
       overview.captureCurrentTransitionFrameIfNeeded()
+      tabOpenTransitionSequence += 1
       return TabOverviewNavigationAnimator(
         operation: .pop,
-        overview: overview
+        overview: overview,
+        sequence: tabOpenTransitionSequence
       )
     }
     return PlainHorizontalNavigationAnimator(operation: operation)
@@ -415,15 +418,23 @@ private final class TabOverviewNavigationAnimator: NSObject,
   UIViewControllerAnimatedTransitioning {
   private let operation: UINavigationController.Operation
   private weak var overview: TabOverviewViewController?
+  private let sequence: Int?
   private var propertyAnimator: UIViewPropertyAnimator?
 
   init(
     operation: UINavigationController.Operation,
-    overview: TabOverviewViewController
+    overview: TabOverviewViewController,
+    sequence: Int? = nil
   ) {
     self.operation = operation
     self.overview = overview
+    self.sequence = sequence
     super.init()
+  }
+
+  deinit {
+    propertyAnimator?.stopAnimation(true)
+    propertyAnimator = nil
   }
 
   func transitionDuration(
@@ -591,7 +602,7 @@ private final class TabOverviewNavigationAnimator: NSObject,
           targetFrame: targetFrame,
           in: transitionWindow
         )
-        surface.removeFromSuperview()
+        self.disposeTransitionSurface(surface)
         fromView.alpha = 1
         toView.alpha = 1
         overview.completeSpatialTransition()
@@ -659,6 +670,12 @@ private final class TabOverviewNavigationAnimator: NSObject,
       return
     }
 
+    let openLabel = sequence.map { "OPEN #\($0)" } ?? "OPEN"
+    overview.debugLogTransitionState(
+      "\(openLabel) START",
+      itemID: itemID,
+      in: transitionWindow
+    )
     browser.installTabTransitionCover(image: transitionImage)
     let surface = transitionSurface(
       frame: sourceFrame,
@@ -670,6 +687,11 @@ private final class TabOverviewNavigationAnimator: NSObject,
     )
     overview.prepareSpatialTransition(enteringOverview: false)
     overview.setTransitionItemHidden(itemID, hidden: true)
+    overview.debugLogTransitionState(
+      "\(openLabel) CELL AFTER RESET",
+      itemID: itemID,
+      in: transitionWindow
+    )
     browser.setTabTransitionChromeAlpha(0)
     let navigationBar = overview.navigationController?.navigationBar
     navigationBar?.alpha = 1
@@ -701,7 +723,7 @@ private final class TabOverviewNavigationAnimator: NSObject,
           targetFrame: finalFrame,
           in: transitionWindow
         )
-        surface.removeFromSuperview()
+        self.disposeTransitionSurface(surface)
         fromView.alpha = 1
         toView.alpha = 1
         toView.frame = finalBrowserFrame
@@ -714,6 +736,11 @@ private final class TabOverviewNavigationAnimator: NSObject,
           in: transitionWindow
         )
         overview.completeSpatialTransition()
+        overview.debugLogTransitionState(
+          "\(openLabel) FINISH \(completed ? "success" : "cancelled")",
+          itemID: itemID,
+          in: transitionWindow
+        )
         if completed {
           browser.completeTabTransitionCover()
         } else {
@@ -730,6 +757,8 @@ private final class TabOverviewNavigationAnimator: NSObject,
   ) {
     (transitionContext.viewController(forKey: .from) as? BrowserViewController)?
       .discardTabTransitionSnapshot()
+    (transitionContext.viewController(forKey: .from)
+      as? TabOverviewViewController)?.completeSpatialTransition()
     PlainHorizontalNavigationAnimator(operation: operation)
       .animateTransition(using: transitionContext)
   }
@@ -739,6 +768,16 @@ private final class TabOverviewNavigationAnimator: NSObject,
     animations: @escaping () -> Void,
     completion: @escaping (Bool) -> Void
   ) {
+    // A transition animator is normally one-shot. Keep this guard defensive
+    // so an interrupted attempt can never be extended with a second set of
+    // animations or a stale fractionComplete value.
+#if DEBUG
+    AppLogger(.navigation).debug(
+      "TAB PROPERTY ANIMATOR START existing=\(propertyAnimator != nil)"
+    )
+#endif
+    propertyAnimator?.stopAnimation(true)
+    propertyAnimator = nil
     let timing = UISpringTimingParameters(
       dampingRatio: 0.88,
       initialVelocity: CGVector(dx: 0, dy: 0)
@@ -751,7 +790,9 @@ private final class TabOverviewNavigationAnimator: NSObject,
     animator.addCompletion { position in
       let completed = position == .end
         && !transitionContext.transitionWasCancelled
-      self.propertyAnimator = nil
+      if self.propertyAnimator === animator {
+        self.propertyAnimator = nil
+      }
       completion(completed)
     }
     propertyAnimator = animator
@@ -773,6 +814,19 @@ private final class TabOverviewNavigationAnimator: NSObject,
     surface.layer.cornerRadius = cornerRadius
     surface.layer.masksToBounds = true
     return surface
+  }
+
+  private func disposeTransitionSurface(_ surface: UIView) {
+    surface.layer.removeAllAnimations()
+    surface.transform = .identity
+    surface.layer.transform = CATransform3DIdentity
+    surface.subviews.forEach { child in
+      child.layer.removeAllAnimations()
+      child.transform = .identity
+      child.layer.transform = CATransform3DIdentity
+      child.removeFromSuperview()
+    }
+    surface.removeFromSuperview()
   }
 
   /// 快照本身不参加缩放。外层窗口只改变 bounds/center，内部页面图像

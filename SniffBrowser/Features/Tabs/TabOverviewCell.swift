@@ -123,15 +123,16 @@ final class TabOverviewCell: UICollectionViewCell {
         onClose = nil
         previewImageView.image = nil
         displaysSelection = false
-        previewContainer.alpha = 1
-        contentView.alpha = 1
-        contentView.transform = .identity
+        resetTransitionPresentationState()
         accessibilityCustomActions = nil
     }
 
     func configure(with item: TabOverviewItem) {
         cancelFaviconLoad()
-        previewContainer.alpha = 1
+        // Diffable data sources may configure a still-visible cell without
+        // calling prepareForReuse. Always start from a clean presentation
+        // state so a previous press/transition cannot leak into this tab.
+        resetTransitionPresentationState()
         titleLabel.text = item.displayTitle
         domainLabel.text = item.displayDomain
         previewImageView.image = item.thumbnail
@@ -166,7 +167,53 @@ final class TabOverviewCell: UICollectionViewCell {
     }
 
     func setTransitionPreviewHidden(_ hidden: Bool) {
+        // The cell is only a source of geometry. The transition surface is a
+        // separate, freshly-created view, so the cell must never carry any
+        // presentation state into the next overview.
+        resetTransitionPresentationState()
         previewContainer.alpha = hidden ? 0 : 1
+    }
+
+    func resetTransitionPresentationState() {
+        resetLayerState(for: self)
+        resetLayerState(for: contentView)
+        resetLayerState(for: previewContainer)
+        resetLayerState(for: previewImageView)
+        resetLayerState(for: closeButton)
+        resetLayerState(for: selectedBadge)
+
+        alpha = 1
+        contentView.alpha = 1
+        previewContainer.alpha = 1
+        previewImageView.alpha = 1
+        closeButton.alpha = 1
+        selectedBadge.alpha = 1
+    }
+
+    func debugLogTransitionState(
+        _ phase: String,
+        itemID: UUID,
+        in coordinateSpace: UIView
+    ) {
+        #if DEBUG
+        let previewFrame = previewContainer.convert(
+            previewContainer.bounds,
+            to: coordinateSpace
+        )
+        AppLogger(.navigation).debug(
+            "\(phase) item=\(itemID.uuidString) "
+                + "cell=\(ObjectIdentifier(self)) "
+                + "preview=\(ObjectIdentifier(previewImageView)) "
+                + "cellFrame=\(frame) cellBounds=\(bounds) "
+                + "cellTransform=\(transform) "
+                + "cellLayerTransform=\(layer.transform) "
+                + "contentTransform=\(contentView.transform) "
+                + "previewFrame=\(previewFrame) "
+                + "previewBounds=\(previewImageView.bounds) "
+                + "previewTransform=\(previewImageView.transform) "
+                + "previewLayerTransform=\(previewImageView.layer.transform)"
+        )
+        #endif
     }
 
     func updateResolvedColors() {
@@ -404,6 +451,17 @@ final class TabOverviewCell: UICollectionViewCell {
         faviconURL = nil
         faviconRequestID = nil
         displaysWebsiteLogo = false
+    }
+
+    private func resetLayerState(for view: UIView) {
+        view.layer.removeAllAnimations()
+        if view.layer.anchorPoint != CGPoint(x: 0.5, y: 0.5) {
+            let position = view.layer.position
+            view.layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+            view.layer.position = position
+        }
+        view.transform = .identity
+        view.layer.transform = CATransform3DIdentity
     }
 
     private func registerForEnvironmentChanges() {

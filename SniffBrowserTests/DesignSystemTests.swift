@@ -306,6 +306,51 @@ final class DesignSystemTests: XCTestCase {
   }
 
   @MainActor
+  func testTabOverviewCellClearsTransitionPresentationStateBeforeReuse() throws {
+    let cell = TabOverviewCell(frame: CGRect(x: 0, y: 0, width: 173, height: 302))
+    let image = UIGraphicsImageRenderer(
+      size: CGSize(width: 390, height: 844)
+    ).image { context in
+      UIColor.systemBlue.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 390, height: 844))
+    }
+    cell.configure(with: TabOverviewItem(
+      title: "示例网页",
+      url: URL(string: "https://example.com"),
+      thumbnail: image
+    ))
+    cell.setNeedsLayout()
+    cell.layoutIfNeeded()
+
+    let preview = try XCTUnwrap(
+      try identifiedView("tabs.previewImage", in: cell) as? TabPageSnapshotView
+    )
+    cell.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
+    cell.layer.transform = CATransform3DMakeScale(0.5, 0.5, 1)
+    cell.contentView.transform = CGAffineTransform(translationX: 12, y: 8)
+    preview.transform = CGAffineTransform(scaleX: 0.4, y: 0.4)
+    preview.layer.transform = CATransform3DMakeScale(0.4, 0.4, 1)
+    cell.setTransitionPreviewHidden(true)
+
+    XCTAssertEqual(cell.transform, .identity)
+    XCTAssertTrue(CATransform3DIsIdentity(cell.layer.transform))
+    XCTAssertEqual(cell.contentView.transform, .identity)
+    XCTAssertEqual(preview.transform, .identity)
+    XCTAssertTrue(CATransform3DIsIdentity(preview.layer.transform))
+    XCTAssertEqual(cell.alpha, 1)
+    XCTAssertEqual(cell.contentView.alpha, 1)
+    XCTAssertEqual(preview.alpha, 1)
+
+    cell.prepareForReuse()
+
+    XCTAssertEqual(cell.transform, .identity)
+    XCTAssertTrue(CATransform3DIsIdentity(cell.layer.transform))
+    XCTAssertEqual(cell.contentView.transform, .identity)
+    XCTAssertEqual(cell.alpha, 1)
+    XCTAssertEqual(cell.contentView.alpha, 1)
+  }
+
+  @MainActor
   func testTransitionSnapshotResizeKeepsIdentityAndImageAspect() {
     let image = UIGraphicsImageRenderer(
       size: CGSize(width: 390, height: 844)

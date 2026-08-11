@@ -154,6 +154,27 @@ final class TabOverviewViewController: BaseViewController {
             .setTransitionItemHidden(itemID, hidden: hidden)
     }
 
+    func debugLogTransitionState(
+        _ phase: String,
+        itemID: UUID,
+        in coordinateSpace: UIView
+    ) {
+        #if DEBUG
+        guard let item = allItems.first(where: { $0.id == itemID }) else {
+            AppLogger(.navigation).debug(
+                "\(phase) item=\(itemID.uuidString) overviewItem=nil"
+            )
+            return
+        }
+        page(for: item.isPrivate ? .privateBrowsing : .standard)
+            .debugLogTransitionState(
+                phase,
+                itemID: itemID,
+                in: coordinateSpace
+            )
+        #endif
+    }
+
     /// 在导航控制器改变安全区之前保存用户实际点击位置。
     func captureCurrentTransitionFrameIfNeeded() {
         guard selectedTransitionFrameInWindow == nil,
@@ -187,6 +208,8 @@ final class TabOverviewViewController: BaseViewController {
     func prepareSpatialTransition(enteringOverview: Bool) {
         loadViewIfNeeded()
         view.layoutIfNeeded()
+        standardPage.resetTransitionPresentationState()
+        privatePage.resetTransitionPresentationState()
         view.backgroundColor = .clear
         privacyTintView.backgroundColor = AppColors.background
         privacyTintView.alpha = enteringOverview ? 0 : 1
@@ -212,6 +235,8 @@ final class TabOverviewViewController: BaseViewController {
         pageViewController.view.alpha = 1
         bottomBar.alpha = 1
         bottomBar.transform = .identity
+        standardPage.resetTransitionPresentationState()
+        privatePage.resetTransitionPresentationState()
         selectedTransitionFrameInWindow = nil
         selectedTransitionItemID = nil
     }
@@ -437,7 +462,7 @@ final class TabOverviewViewController: BaseViewController {
         controller.onSelectItem = { [weak self] itemID in
             guard let self else { return }
             self.usesSpatialTransition = true
-            self.selectedTransitionItemID = itemID
+            self.beginSpatialTransition(for: itemID)
             self.captureTransitionFrame(for: itemID)
             self.onSelectTab?(itemID)
         }
@@ -456,6 +481,14 @@ final class TabOverviewViewController: BaseViewController {
             self?.pagingState.saveScrollOffset(offset, for: mode)
         }
         return controller
+    }
+
+    private func beginSpatialTransition(for itemID: UUID) {
+        // A controller normally performs one navigation transition before it
+        // is removed. Clear any stale context anyway so a cancelled/fallback
+        // transition cannot donate its frame to a later selection.
+        selectedTransitionFrameInWindow = nil
+        selectedTransitionItemID = itemID
     }
 
     private func page(
