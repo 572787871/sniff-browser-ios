@@ -51,6 +51,9 @@ final class BrowserViewController: UIViewController {
   weak var tabOverviewController: TabOverviewViewController?
   var isPreparingTabOverview = false
   var pendingTabTransitionSnapshot: BrowserTabTransitionSnapshot?
+  /// 已经在进入总览前完成的 WKWebView 视口截图。只缓存 UIImage，绝不
+  /// 复用参与过动画的 UIView，保证黑色页面和重复转场都从冻结画面开始。
+  var pendingTabTransitionImage: UIImage?
   var tabTransitionCoverView: TabPageSnapshotView?
   var tabTransitionCoverID: UUID?
   var tabTransitionRequiresPageLoad = false
@@ -67,6 +70,17 @@ final class BrowserViewController: UIViewController {
   private var quickLinksHeightConstraint: NSLayoutConstraint?
   private var isWaitingToRefreshNewTabSnapshot = false
   private var activeWebViewConstraints: [NSLayoutConstraint] = []
+
+  struct TabTransitionScrollState {
+    let tabID: UUID
+    let contentOffset: CGPoint
+    let contentInset: UIEdgeInsets
+    let adjustedContentInset: UIEdgeInsets
+  }
+
+  /// 点击标签卡片时暂存目标 WebView 的可视文档位置。重新挂载或 Chrome
+  /// 布局可能短暂改变 adjustedContentInset，交接前会按文档坐标恢复。
+  var tabTransitionScrollState: TabTransitionScrollState?
 
   var activeTab: BrowserTab? {
     tabManager.selectedTab
@@ -1092,16 +1106,22 @@ final class BrowserViewController: UIViewController {
       right: 0
     )
     guard scrollView.contentInset != target else { return }
-    let wasAtTop = scrollView.contentOffset.y
-      <= -scrollView.adjustedContentInset.top + 2
+    let oldOffset = scrollView.contentOffset
+    let oldAdjustedTopInset = scrollView.adjustedContentInset.top
+    let wasAtTop = oldOffset.y <= -oldAdjustedTopInset + 2
+    let documentY = oldOffset.y + oldAdjustedTopInset
     scrollView.contentInset = target
     scrollView.verticalScrollIndicatorInsets = target
-    if wasAtTop {
-      scrollView.setContentOffset(
-        CGPoint(x: scrollView.contentOffset.x, y: -target.top),
-        animated: false
-      )
-    }
+    // contentInset 变化会让 UIKit 自动修正 contentOffset。顶部页面继续
+    // 停在顶部；已经滚动的页面则按 adjusted inset 换算回同一文档位置，
+    // 避免标签切换/Chrome 布局期间出现“向上跳一下”的视觉跳变。
+    let targetY = wasAtTop
+      ? -scrollView.adjustedContentInset.top
+      : documentY - scrollView.adjustedContentInset.top
+    scrollView.setContentOffset(
+      CGPoint(x: oldOffset.x, y: targetY),
+      animated: false
+    )
   }
 
   private func handleScroll(in webView: WKWebView) {

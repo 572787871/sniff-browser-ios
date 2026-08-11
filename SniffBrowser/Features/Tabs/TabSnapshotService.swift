@@ -38,6 +38,10 @@ final class TabSnapshotService: TabSnapshotProviding {
         }
 
         let configuration = WKSnapshotConfiguration()
+        // 明确截取当前可视 viewport，而不是依赖 WebKit 的默认区域。
+        // 这样离屏标签的缓存图与转场使用的冻结画面拥有相同的顶部锚点。
+        configuration.rect = webView.bounds
+        configuration.afterScreenUpdates = true
         if webView.bounds.width > 0 {
             configuration.snapshotWidth = NSNumber(
                 value: Double(min(webView.bounds.width, 360))

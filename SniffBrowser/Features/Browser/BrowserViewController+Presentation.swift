@@ -1,4 +1,5 @@
 import UIKit
+import WebKit
 
 /// 在导航状态改变前冻结的当前网页视觉与坐标。
 /// 快照视图只作为转场替身，不会移动或重挂真正的 WKWebView。
@@ -49,21 +50,36 @@ extension BrowserViewController {
       return
     }
 
-    // 网页稳定时刷新当前快照，使动画终点卡片与用户刚看到的滚动位置一致。
-    // 页面仍在加载且已有可用图时直接使用旧图，避免等待不完整的截图。
+    // 先在真实 WKWebView 仍然可见时完成当前视口截图，再开始导航转场。
+    // snapshotView(afterScreenUpdates:) 可能只截到 WKWebView 的独立渲染层，
+    // 深色网页会因此短暂变成黑色矩形；这里只把完成的 UIImage 交给现有
+    // 空间转场，真实 WebView 在截图完成前始终不隐藏。
     if let tab = activeTab,
        let webView = tab.webView,
        !webView.isHidden,
        webView.bounds.width > 0,
-       webView.bounds.height > 0,
-       (tab.snapshot == nil || !webView.isLoading) {
+       webView.bounds.height > 0 {
       let tabID = tab.id
+      let previousImage = tab.snapshot
       isPreparingTabOverview = true
-      Task { [weak self] in
+      Task { [weak self, weak webView] in
         guard let self else { return }
-        _ = await self.tabManager.captureSnapshot(for: tabID)
+        var image: UIImage?
+        if let webView {
+          image = await self.captureTransitionViewportImage(from: webView)
+        }
+        // 失败时只使用最近一次有效 UIImage；如果没有，就让管理器再尝试
+        // 一次同样基于 WKWebView 的截图。绝不创建黑色占位视图。
+        image = image ?? previousImage
+        if image == nil {
+          image = await self.tabManager.captureSnapshot(for: tabID)
+        }
         self.isPreparingTabOverview = false
         guard self.activeTab?.id == tabID else { return }
+        if let image {
+          self.activeTab?.updateSnapshot(image)
+        }
+        self.pendingTabTransitionImage = image
         self.presentTabOverview()
       }
       return
@@ -72,13 +88,34 @@ extension BrowserViewController {
     presentTabOverview()
   }
 
+  /// 截取当前 WebView 的可视 viewport。该 UIImage 是一次转场的唯一视觉
+  /// 来源，动画期间不会再回到 WKWebView 的渲染层读取内容。
+  private func captureTransitionViewportImage(
+    from webView: WKWebView
+  ) async -> UIImage? {
+    let rect = webView.bounds
+    guard rect.width > 0, rect.height > 0 else { return nil }
+
+    let configuration = WKSnapshotConfiguration()
+    configuration.rect = rect
+    configuration.afterScreenUpdates = true
+    return await withCheckedContinuation { continuation in
+      webView.takeSnapshot(with: configuration) { image, _ in
+        continuation.resume(returning: image)
+      }
+    }
+  }
+
   /// 在 push 导航改变安全区之前冻结网页，确保动画从用户点击时看到的
   /// 原始位置开始，而不是从导航栏布局完成后的新位置开始。
   func prepareTabTransitionSnapshot() {
     guard let coordinateSpace = view.window ?? view else { return }
+    let transitionImage = pendingTabTransitionImage
+    pendingTabTransitionImage = nil
     pendingTabTransitionSnapshot = makeTabTransitionSnapshot(
       in: coordinateSpace,
-      fallbackImage: tabTransitionCoverView?.image ?? activeTab?.snapshot
+      fallbackImage: tabTransitionCoverView?.image ?? activeTab?.snapshot,
+      preferredImage: transitionImage
     )
   }
 
@@ -95,11 +132,13 @@ extension BrowserViewController {
 
   func discardTabTransitionSnapshot() {
     pendingTabTransitionSnapshot = nil
+    pendingTabTransitionImage = nil
   }
 
   func makeTabTransitionSnapshot(
     in coordinateSpace: UIView,
-    fallbackImage: UIImage?
+    fallbackImage: UIImage?,
+    preferredImage: UIImage? = nil
   ) -> BrowserTabTransitionSnapshot? {
     view.layoutIfNeeded()
     let content = tabTransitionContentView()
@@ -112,38 +151,22 @@ extension BrowserViewController {
           visibleFrame.height > 0
     else { return nil }
 
-    let snapshotView: UIView
-    let contentSize: CGSize
-    // 原生主页包含 UIScrollView、UIButton.Configuration 和动态约束。
-    // 不把这套层级快照直接交给转场，避免主页从标签页返回时抓到
-    // Auto Layout 尚未完成的中间帧；网页仍然使用 WKWebView 的实时快照。
-    if content === newTabView,
-       let stableNewTabImage = activeTab?.snapshot
+    let stableImage: UIImage?
+    if let preferredImage {
+      stableImage = preferredImage
+    } else if content === newTabView {
+      stableImage = activeTab?.snapshot
         ?? fallbackImage
-        ?? renderNewTabSnapshot() {
-      // 进入总览前已经把主页渲染到 activeTab.snapshot。优先复用这张图，
-      // 让正在缩小的网页和落点卡片使用同一份像素，避免 favicon 或布局
-      // 在转场中途发生跳变。
-      snapshotView = TabPageSnapshotView(image: stableNewTabImage)
-      contentSize = stableNewTabImage.size
-    } else if tabTransitionCoverView == nil,
-              let liveSnapshot = content.snapshotView(afterScreenUpdates: false),
-              let renderedImage = renderTransitionSnapshotImage(
-                from: liveSnapshot,
-                scale: coordinateSpace.window?.screen.scale
-                  ?? UIScreen.main.scale
-              ) {
-      // The transition container is resized during the animation. Keep the
-      // page as a raster image inside the container so UIKit never stretches
-      // a snapshot view's layer when the container changes aspect ratio.
-      snapshotView = TabPageSnapshotView(image: renderedImage)
-      contentSize = renderedImage.size
-    } else if let fallbackImage {
-      snapshotView = TabPageSnapshotView(image: fallbackImage)
-      contentSize = fallbackImage.size
+        ?? renderNewTabSnapshot()
     } else {
-      return nil
+      // WKWebView 的实时渲染层不能作为转场快照来源。这里没有有效图片
+      // 时宁可回退到普通导航，也不显示可能是纯黑的占位图。
+      stableImage = fallbackImage
     }
+    guard let stableImage else { return nil }
+
+    let snapshotView = TabPageSnapshotView(image: stableImage)
+    let contentSize = stableImage.size
 
     snapshotView.backgroundColor = AppColors.surface
     snapshotView.isUserInteractionEnabled = false
@@ -156,32 +179,6 @@ extension BrowserViewController {
       visibleFrame: visibleFrame,
       sourceCoordinateSpace: coordinateSpace
     )
-  }
-
-  private func renderTransitionSnapshotImage(
-    from snapshot: UIView,
-    scale: CGFloat
-  ) -> UIImage? {
-    guard snapshot.bounds.width > 0,
-          snapshot.bounds.height > 0
-    else { return nil }
-
-    let format = UIGraphicsImageRendererFormat.preferred()
-    format.scale = max(1, scale)
-    format.opaque = true
-    let renderer = UIGraphicsImageRenderer(
-      size: snapshot.bounds.size,
-      format: format
-    )
-    return renderer.image { context in
-      let rendered = snapshot.drawHierarchy(
-        in: snapshot.bounds,
-        afterScreenUpdates: false
-      )
-      if !rendered {
-        snapshot.layer.render(in: context.cgContext)
-      }
-    }
   }
 
   /// 返回缓存图对应的完整页面区域，用于让转场图和底层遮罩保持同一缩放比例。
@@ -276,6 +273,60 @@ extension BrowserViewController {
     contentView.layoutIfNeeded()
     activeWebView?.setNeedsLayout()
     activeWebView?.layoutIfNeeded()
+    restoreTabTransitionScrollPosition()
+  }
+
+  /// 保存标签卡片对应 WebView 的真实文档位置。坐标使用 adjusted inset
+  /// 修正后再恢复，因此地址栏/安全区短暂变化不会把页面内容向顶部拉动。
+  func captureTabTransitionScrollState(
+    for tabID: UUID
+  ) -> TabTransitionScrollState? {
+    guard let tab = tabManager.tabs.first(where: { $0.id == tabID }),
+          let webView = tab.webView
+    else {
+      return nil
+    }
+    let scrollView = webView.scrollView
+    return TabTransitionScrollState(
+      tabID: tabID,
+      contentOffset: scrollView.contentOffset,
+      contentInset: scrollView.contentInset,
+      adjustedContentInset: scrollView.adjustedContentInset
+    )
+  }
+
+  /// attachSelectedTab 和 Chrome 布局完成后调用。只修正被布局改变的
+  /// contentOffset，不在动画中滚动网页，也不强制把页面回到顶部。
+  func restoreTabTransitionScrollPosition() {
+    guard let state = tabTransitionScrollState,
+          activeTab?.id == state.tabID,
+          let scrollView = activeWebView?.scrollView
+    else {
+      return
+    }
+
+    view.layoutIfNeeded()
+    activeWebView?.layoutIfNeeded()
+    let wasAtTop = state.contentOffset.y
+      <= -state.adjustedContentInset.top + 2
+    let documentY = state.contentOffset.y + state.adjustedContentInset.top
+    let targetY = wasAtTop
+      ? -scrollView.adjustedContentInset.top
+      : documentY - scrollView.adjustedContentInset.top
+    let targetOffset = CGPoint(
+      x: state.contentOffset.x,
+      y: targetY
+    )
+    guard abs(scrollView.contentOffset.x - targetOffset.x) > 0.1
+      || abs(scrollView.contentOffset.y - targetOffset.y) > 0.1
+    else {
+      return
+    }
+    scrollView.setContentOffset(targetOffset, animated: false)
+  }
+
+  func clearTabTransitionScrollState() {
+    tabTransitionScrollState = nil
   }
 
   /// 仅在 DEBUG 构建输出转场前后的真实坐标，便于对比“完成”和卡片点击
@@ -294,13 +345,18 @@ extension BrowserViewController {
       activeWebView?.bounds ?? .zero,
       to: coordinateSpace
     )
+    let scrollView = activeWebView?.scrollView
     AppLogger(.navigation).debug(
       "\(phase) browser=\(browserFrame) container=\(containerFrame) "
         + "web=\(String(describing: webFrame)) "
         + "browserTransform=\(view.transform) "
         + "containerTransform=\(contentView.transform) "
         + "webTransform=\(String(describing: activeWebView?.transform)) "
-        + "safeArea=\(view.safeAreaInsets)"
+        + "safeArea=\(view.safeAreaInsets) "
+        + "offset=\(String(describing: scrollView?.contentOffset)) "
+        + "inset=\(String(describing: scrollView?.contentInset)) "
+        + "adjustedInset=\(String(describing: scrollView?.adjustedContentInset)) "
+        + "scrollBounds=\(String(describing: scrollView?.bounds))"
     )
     #endif
   }
@@ -561,11 +617,19 @@ extension BrowserViewController {
     }.map {
       $0.url != nil && $0.webView == nil
     } ?? false
-    guard tabManager.selectTab(id: id) != nil else { return }
+    let preservedScrollState = captureTabTransitionScrollState(for: id)
+    guard tabManager.selectTab(id: id) != nil else {
+      clearTabTransitionScrollState()
+      return
+    }
+    tabTransitionScrollState = preservedScrollState
     attachSelectedTab()
+    restoreTabTransitionScrollPosition()
     tabTransitionRequiresPageLoad = requiresPageReload
     if returnsToBrowser {
       router?.returnToBrowser()
+    } else {
+      clearTabTransitionScrollState()
     }
     Task { [weak self] in
       guard let self else { return }

@@ -580,6 +580,10 @@ private final class TabOverviewNavigationAnimator: NSObject,
       targetFrame: targetFrame,
       in: transitionWindow
     )
+    browser.debugLogTabTransitionState(
+      "TAB TRANSITION START",
+      in: transitionWindow
+    )
     browser.setTabTransitionPageHidden(true)
 
     startPropertyAnimator(
@@ -730,11 +734,17 @@ private final class TabOverviewNavigationAnimator: NSObject,
         toView.transform = .identity
         toView.layer.transform = CATransform3DIdentity
         browser.normalizeTabTransitionBrowserState()
+        browser.restoreTabTransitionScrollPosition()
         browser.setTabTransitionChromeAlpha(1)
+        browser.debugLogTabTransitionState(
+          "TAB TRANSITION BEFORE HANDOFF",
+          in: transitionWindow
+        )
         browser.debugLogTabTransitionState(
           "TAB OPEN FINISH \(completed ? "success" : "cancelled")",
           in: transitionWindow
         )
+        browser.clearTabTransitionScrollState()
         overview.completeSpatialTransition()
         overview.debugLogTransitionState(
           "\(openLabel) FINISH \(completed ? "success" : "cancelled")",
@@ -755,6 +765,8 @@ private final class TabOverviewNavigationAnimator: NSObject,
   private func fallback(
     using transitionContext: UIViewControllerContextTransitioning
   ) {
+    (transitionContext.viewController(forKey: .to) as? BrowserViewController)?
+      .clearTabTransitionScrollState()
     (transitionContext.viewController(forKey: .from) as? BrowserViewController)?
       .discardTabTransitionSnapshot()
     (transitionContext.viewController(forKey: .from)
