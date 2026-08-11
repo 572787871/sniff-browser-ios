@@ -118,4 +118,53 @@ final class TabOverviewLayoutTests: XCTestCase {
         XCTAssertEqual(state.scrollOffset(for: .standard), 128)
         XCTAssertEqual(state.scrollOffset(for: .privateBrowsing), 376)
     }
+
+    func testPortraitPageFillKeepsFullWidthAndOnlyCropsVertically() {
+        let containerSize = CGSize(width: 170, height: 260)
+        let frame = TabOverviewTransitionGeometry.pageFillFrame(
+            contentSize: CGSize(width: 390, height: 844),
+            containerSize: containerSize
+        )
+
+        XCTAssertEqual(frame.minX, 0, accuracy: 0.001)
+        XCTAssertEqual(frame.width, containerSize.width, accuracy: 0.001)
+        XCTAssertGreaterThan(frame.height, containerSize.height)
+        XCTAssertLessThan(frame.minY, 0)
+        XCTAssertEqual(frame.midY, containerSize.height / 2, accuracy: 0.001)
+    }
+
+    func testPageFillNeverLeavesBlankEdgesForLandscapeSnapshots() {
+        let containerSize = CGSize(width: 250, height: 170)
+        let frame = TabOverviewTransitionGeometry.pageFillFrame(
+            contentSize: CGSize(width: 844, height: 390),
+            containerSize: containerSize
+        )
+
+        XCTAssertGreaterThanOrEqual(frame.width, containerSize.width)
+        XCTAssertGreaterThanOrEqual(frame.height, containerSize.height)
+        XCTAssertLessThanOrEqual(frame.minX, 0)
+        XCTAssertLessThanOrEqual(frame.minY, 0)
+    }
+
+    func testClippedPageFrameKeepsTheSamePixelsAsTheFullBrowserCover() {
+        let fullFrame = CGRect(x: 0, y: 50, width: 390, height: 794)
+        let clippedFrame = CGRect(x: 0, y: 130, width: 390, height: 620)
+        let fullImageFrame = TabOverviewTransitionGeometry.pageFillFrame(
+            contentSize: CGSize(width: 390, height: 844),
+            containerSize: fullFrame.size
+        )
+        let clippedImageFrame = TabOverviewTransitionGeometry.clippedPageFrame(
+            contentSize: CGSize(width: 390, height: 844),
+            fullContainerFrame: fullFrame,
+            clippedTo: clippedFrame
+        )
+
+        XCTAssertEqual(clippedImageFrame.width, fullImageFrame.width, accuracy: 0.001)
+        XCTAssertEqual(clippedImageFrame.height, fullImageFrame.height, accuracy: 0.001)
+        XCTAssertEqual(
+            clippedFrame.minY + clippedImageFrame.minY,
+            fullFrame.minY + fullImageFrame.minY,
+            accuracy: 0.001
+        )
+    }
 }

@@ -118,6 +118,7 @@ extension BrowserViewController: WKNavigationDelegate {
     WebPageThemeColorService.requestCurrentTheme(in: webView)
     resourceSniffingService.requestIncrementalScan(tabID: tab.id, reason: "didFinish")
     if webView === activeWebView {
+      removeTabTransitionCover(animated: true)
       synchronizeActiveState()
       Task { [weak self] in
         await self?.tabManager.captureSnapshot(for: tab.id)
@@ -258,6 +259,7 @@ extension BrowserViewController: WKNavigationDelegate {
       failingURL ?? lastRequestedURLs[tab.id] ?? webView.url
 
     guard webView === activeWebView else { return }
+    removeTabTransitionCover(animated: false)
     errorView.apply(BrowserErrorMapper.map(error))
     errorView.isHidden = false
   }

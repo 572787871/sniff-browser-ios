@@ -406,6 +406,54 @@ extension AppCoordinator: UINavigationControllerDelegate {
   }
 }
 
+enum TabOverviewTransitionGeometry {
+  /// 等比铺满标签预览。常见的竖屏网页会完整保留宽度并只裁切上下内容；
+  /// 横屏时则自动裁切左右，保证任何方向都不会露出空白边缘。
+  static func pageFillFrame(
+    contentSize: CGSize,
+    containerSize: CGSize
+  ) -> CGRect {
+    guard contentSize.width > 0,
+          contentSize.height > 0,
+          containerSize.width > 0,
+          containerSize.height > 0
+    else { return CGRect(origin: .zero, size: containerSize) }
+    let scale = max(
+      containerSize.width / contentSize.width,
+      containerSize.height / contentSize.height
+    )
+    let size = CGSize(
+      width: contentSize.width * scale,
+      height: contentSize.height * scale
+    )
+    return CGRect(
+      x: (containerSize.width - size.width) / 2,
+      y: (containerSize.height - size.height) / 2,
+      width: size.width,
+      height: size.height
+    )
+  }
+
+  /// 将完整页面图片按 fullContainerFrame 的比例铺满，再换算到被顶部/底部
+  /// 浏览器控件裁切后的局部坐标，保证转场结束时与底层缓存遮罩像素对齐。
+  static func clippedPageFrame(
+    contentSize: CGSize,
+    fullContainerFrame: CGRect,
+    clippedTo clippedFrame: CGRect
+  ) -> CGRect {
+    let fullImageFrame = pageFillFrame(
+      contentSize: contentSize,
+      containerSize: fullContainerFrame.size
+    )
+    return CGRect(
+      x: fullContainerFrame.minX + fullImageFrame.minX - clippedFrame.minX,
+      y: fullContainerFrame.minY + fullImageFrame.minY - clippedFrame.minY,
+      width: fullImageFrame.width,
+      height: fullImageFrame.height
+    )
+  }
+}
+
 /// Keeps the browser and its tab card spatially connected in both directions.
 private final class TabOverviewNavigationAnimator: NSObject,
   UIViewControllerAnimatedTransitioning {
@@ -424,18 +472,25 @@ private final class TabOverviewNavigationAnimator: NSObject,
   func transitionDuration(
     using transitionContext: UIViewControllerContextTransitioning?
   ) -> TimeInterval {
-    UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.42
+    UIAccessibility.isReduceMotionEnabled ? 0.15 : 0.38
   }
 
   func animateTransition(
     using transitionContext: UIViewControllerContextTransitioning
   ) {
-    guard !UIAccessibility.isReduceMotionEnabled,
-          let overview,
+    guard let overview,
           let itemID = overview.transitionItemID
     else {
       PlainHorizontalNavigationAnimator(operation: operation)
         .animateTransition(using: transitionContext)
+      return
+    }
+    if UIAccessibility.isReduceMotionEnabled {
+      animateReducedMotion(
+        itemID: itemID,
+        overview: overview,
+        transitionContext: transitionContext
+      )
       return
     }
 
@@ -457,6 +512,35 @@ private final class TabOverviewNavigationAnimator: NSObject,
     }
   }
 
+  private func animateReducedMotion(
+    itemID: UUID,
+    overview: TabOverviewViewController,
+    transitionContext: UIViewControllerContextTransitioning
+  ) {
+    var browserWithCover: BrowserViewController?
+    if operation == .pop,
+       let browser = transitionContext.viewController(forKey: .to)
+        as? BrowserViewController,
+       let image = overview.transitionImage(for: itemID),
+       let toView = transitionContext.view(forKey: .to) {
+      toView.frame = transitionContext.finalFrame(for: browser)
+      toView.setNeedsLayout()
+      toView.layoutIfNeeded()
+      browser.installTabTransitionCover(image: image)
+      browserWithCover = browser
+    }
+
+    PlainHorizontalNavigationAnimator(operation: operation)
+      .animateTransition(using: transitionContext)
+    if let browserWithCover {
+      DispatchQueue.main.asyncAfter(
+        deadline: .now() + transitionDuration(using: transitionContext)
+      ) {
+        browserWithCover.completeTabTransitionCover()
+      }
+    }
+  }
+
   private func animateShrink(
     itemID: UUID,
     overview: TabOverviewViewController,
@@ -464,15 +548,10 @@ private final class TabOverviewNavigationAnimator: NSObject,
   ) {
     guard let fromView = transitionContext.view(forKey: .from),
           let toView = transitionContext.view(forKey: .to),
-          let fromViewController = transitionContext.viewController(forKey: .from),
-          let toViewController = transitionContext.viewController(forKey: .to)
-    else {
-      fallback(using: transitionContext)
-      return
-    }
-    let movingSource = (fromViewController as? BrowserViewController)?.contentView
-      ?? fromView
-    guard let movingView = movingSource.snapshotView(afterScreenUpdates: false)
+          let browser = transitionContext.viewController(forKey: .from)
+            as? BrowserViewController,
+          let toViewController = transitionContext.viewController(forKey: .to),
+          let transitionImage = overview.transitionImage(for: itemID)
     else {
       fallback(using: transitionContext)
       return
@@ -480,28 +559,42 @@ private final class TabOverviewNavigationAnimator: NSObject,
 
     let container = transitionContext.containerView
     toView.frame = transitionContext.finalFrame(for: toViewController)
-    container.addSubview(toView)
+    toView.alpha = 0
+    container.insertSubview(toView, belowSubview: fromView)
     container.layoutIfNeeded()
     toView.layoutIfNeeded()
-    guard let targetFrame = overview.transitionFrame(
-      for: itemID,
-      in: container,
-      ensureVisible: true
-    ), targetFrame.width > 0, targetFrame.height > 0
+    let fullInitialFrame = browser.tabTransitionFullContentFrame(in: container)
+    let initialFrame = browser.tabTransitionContentFrame(in: container)
+    guard fullInitialFrame.width > 0,
+          fullInitialFrame.height > 0,
+          initialFrame.width > 0,
+          initialFrame.height > 0,
+          let targetFrame = overview.transitionFrame(
+            for: itemID,
+            in: container,
+            ensureVisible: true
+          ),
+          targetFrame.width > 0,
+          targetFrame.height > 0
     else {
+      toView.alpha = 1
       toView.removeFromSuperview()
       fallback(using: transitionContext)
       return
     }
 
-    let initialFrame = container.convert(movingSource.bounds, from: movingSource)
     let surface = transitionSurface(
       frame: initialFrame,
       cornerRadius: 0
     )
-    movingView.frame = surface.bounds
-    movingView.autoresizingMask = []
-    surface.addSubview(movingView)
+    surface.alpha = 0
+    let movingImageView = transitionImageView(image: transitionImage)
+    movingImageView.frame = TabOverviewTransitionGeometry.clippedPageFrame(
+      contentSize: transitionImage.size,
+      fullContainerFrame: fullInitialFrame,
+      clippedTo: initialFrame
+    )
+    surface.addSubview(movingImageView)
     overview.setTransitionItemHidden(itemID, hidden: true)
     let navigationBar = overview.navigationController?.navigationBar
     navigationBar?.alpha = 0
@@ -514,10 +607,13 @@ private final class TabOverviewNavigationAnimator: NSObject,
       initialSpringVelocity: 0,
       options: [.beginFromCurrentState, .allowUserInteraction],
       animations: {
+        fromView.alpha = 0
+        toView.alpha = 1
+        surface.alpha = 1
         surface.frame = targetFrame
         surface.layer.cornerRadius = AppRadius.card
-        movingView.frame = Self.aspectFillFrame(
-          contentSize: initialFrame.size,
+        movingImageView.frame = TabOverviewTransitionGeometry.pageFillFrame(
+          contentSize: transitionImage.size,
           containerSize: targetFrame.size
         )
         navigationBar?.alpha = 1
@@ -529,6 +625,8 @@ private final class TabOverviewNavigationAnimator: NSObject,
         surface.removeFromSuperview()
         if !completed { toView.removeFromSuperview() }
         transitionContext.completeTransition(completed)
+        fromView.alpha = 1
+        toView.alpha = 1
       }
     )
   }
@@ -540,47 +638,51 @@ private final class TabOverviewNavigationAnimator: NSObject,
   ) {
     guard let fromView = transitionContext.view(forKey: .from),
           let toView = transitionContext.view(forKey: .to),
-          let toViewController = transitionContext.viewController(forKey: .to)
+          let browser = transitionContext.viewController(forKey: .to)
+            as? BrowserViewController,
+          let transitionImage = overview.transitionImage(for: itemID)
     else {
       fallback(using: transitionContext)
       return
     }
 
     let container = transitionContext.containerView
-    toView.frame = transitionContext.finalFrame(for: toViewController)
+    toView.frame = transitionContext.finalFrame(for: browser)
+    toView.alpha = 0
     container.insertSubview(toView, belowSubview: fromView)
     container.layoutIfNeeded()
     toView.layoutIfNeeded()
-    guard let sourceFrame = overview.transitionFrame(
-      for: itemID,
-      in: container,
-      ensureVisible: false
-    ), sourceFrame.width > 0, sourceFrame.height > 0
+    let fullFinalFrame = browser.tabTransitionFullContentFrame(in: container)
+    let finalFrame = browser.tabTransitionContentFrame(in: container)
+    guard fullFinalFrame.width > 0,
+          fullFinalFrame.height > 0,
+          finalFrame.width > 0,
+          finalFrame.height > 0,
+          let sourceFrame = overview.transitionFrame(
+            for: itemID,
+            in: container,
+            ensureVisible: false
+          ),
+          sourceFrame.width > 0,
+          sourceFrame.height > 0
     else {
-      toView.removeFromSuperview()
-      fallback(using: transitionContext)
-      return
-    }
-    let movingSource = (toViewController as? BrowserViewController)?.contentView
-      ?? toView
-    guard let movingView = movingSource.snapshotView(afterScreenUpdates: true)
-    else {
+      toView.alpha = 1
       toView.removeFromSuperview()
       fallback(using: transitionContext)
       return
     }
 
-    let finalFrame = container.convert(movingSource.bounds, from: movingSource)
+    browser.installTabTransitionCover(image: transitionImage)
     let surface = transitionSurface(
       frame: sourceFrame,
       cornerRadius: AppRadius.card
     )
-    movingView.frame = Self.aspectFillFrame(
-      contentSize: finalFrame.size,
+    let movingImageView = transitionImageView(image: transitionImage)
+    movingImageView.frame = TabOverviewTransitionGeometry.pageFillFrame(
+      contentSize: transitionImage.size,
       containerSize: sourceFrame.size
     )
-    movingView.autoresizingMask = []
-    surface.addSubview(movingView)
+    surface.addSubview(movingImageView)
     overview.setTransitionItemHidden(itemID, hidden: true)
     let navigationBar = overview.navigationController?.navigationBar
     navigationBar?.alpha = 1
@@ -593,9 +695,15 @@ private final class TabOverviewNavigationAnimator: NSObject,
       initialSpringVelocity: 0,
       options: [.beginFromCurrentState, .allowUserInteraction],
       animations: {
+        fromView.alpha = 0
+        toView.alpha = 1
         surface.frame = finalFrame
         surface.layer.cornerRadius = 0
-        movingView.frame = CGRect(origin: .zero, size: finalFrame.size)
+        movingImageView.frame = TabOverviewTransitionGeometry.clippedPageFrame(
+          contentSize: transitionImage.size,
+          fullContainerFrame: fullFinalFrame,
+          clippedTo: finalFrame
+        )
         navigationBar?.alpha = 0
       },
       completion: { _ in
@@ -603,8 +711,15 @@ private final class TabOverviewNavigationAnimator: NSObject,
         navigationBar?.alpha = 1
         overview.setTransitionItemHidden(itemID, hidden: false)
         surface.removeFromSuperview()
-        if !completed { toView.removeFromSuperview() }
+        if completed {
+          browser.completeTabTransitionCover()
+        } else {
+          browser.removeTabTransitionCover(animated: false)
+          toView.removeFromSuperview()
+        }
         transitionContext.completeTransition(completed)
+        fromView.alpha = 1
+        toView.alpha = 1
       }
     )
   }
@@ -629,29 +744,12 @@ private final class TabOverviewNavigationAnimator: NSObject,
     return surface
   }
 
-  private static func aspectFillFrame(
-    contentSize: CGSize,
-    containerSize: CGSize
-  ) -> CGRect {
-    guard contentSize.width > 0,
-          contentSize.height > 0,
-          containerSize.width > 0,
-          containerSize.height > 0
-    else { return CGRect(origin: .zero, size: containerSize) }
-    let scale = max(
-      containerSize.width / contentSize.width,
-      containerSize.height / contentSize.height
-    )
-    let size = CGSize(
-      width: contentSize.width * scale,
-      height: contentSize.height * scale
-    )
-    return CGRect(
-      x: (containerSize.width - size.width) / 2,
-      y: (containerSize.height - size.height) / 2,
-      width: size.width,
-      height: size.height
-    )
+  private func transitionImageView(image: UIImage) -> UIImageView {
+    let imageView = UIImageView(image: image)
+    imageView.contentMode = .scaleToFill
+    imageView.clipsToBounds = false
+    imageView.isUserInteractionEnabled = false
+    return imageView
   }
 }
 

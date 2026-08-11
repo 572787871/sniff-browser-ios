@@ -282,6 +282,71 @@ final class DesignSystemTests: XCTestCase {
   }
 
   @MainActor
+  func testTabTransitionUsesTheStoredPreviewImageInBothDirections() throws {
+    let image = UIGraphicsImageRenderer(
+      size: CGSize(width: 390, height: 844)
+    ).image { context in
+      UIColor.systemGreen.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 390, height: 844))
+    }
+    let itemID = UUID()
+    let controller = TabOverviewViewController(items: [
+      TabOverviewItem(
+        id: itemID,
+        title: "示例网页",
+        url: URL(string: "https://example.com"),
+        thumbnail: image,
+        isSelected: true
+      )
+    ])
+
+    XCTAssertTrue(controller.transitionImage(for: itemID) === image)
+    XCTAssertEqual(controller.transitionItemID, itemID)
+    controller.disableNextSpatialTransition()
+    XCTAssertNil(controller.transitionItemID)
+  }
+
+  @MainActor
+  func testBrowserTransitionCoverMatchesTheNativePageContentFrame() throws {
+    let controller = BrowserViewController(
+      viewModel: BrowserViewModel(),
+      tabManager: BrowserTabManager(restoresSession: false),
+      favoriteService: .shared,
+      historyService: .shared,
+      contentBlockerService: .shared,
+      resourceStore: TabResourceStore(),
+      downloadCenter: .shared
+    )
+    controller.loadViewIfNeeded()
+    controller.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+    controller.view.setNeedsLayout()
+    controller.view.layoutIfNeeded()
+    let image = UIGraphicsImageRenderer(
+      size: CGSize(width: 390, height: 844)
+    ).image { _ in }
+
+    controller.installTabTransitionCover(image: image)
+    let cover = try XCTUnwrap(controller.tabTransitionCoverView)
+    let expectedFrame = controller.newTabView.convert(
+      controller.newTabView.bounds,
+      to: controller.contentView
+    )
+    let fullTransitionFrame = controller.tabTransitionFullContentFrame(
+      in: controller.view
+    )
+    let visibleTransitionFrame = controller.tabTransitionContentFrame(
+      in: controller.view
+    )
+
+    XCTAssertTrue(cover.superview === controller.contentView)
+    XCTAssertEqual(cover.contentMode, .scaleAspectFill)
+    XCTAssertEqual(cover.frame, expectedFrame)
+    XCTAssertLessThan(visibleTransitionFrame.maxY, fullTransitionFrame.maxY)
+    controller.removeTabTransitionCover(animated: false)
+    XCTAssertNil(controller.tabTransitionCoverView)
+  }
+
+  @MainActor
   func testEveryNativeNewTabReceivesAReusableOverviewSnapshot() throws {
     let manager = BrowserTabManager(restoresSession: false)
     let controller = BrowserViewController(

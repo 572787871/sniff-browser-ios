@@ -5,10 +5,18 @@ extension BrowserViewController {
     guard !isPreparingTabOverview else { return }
     refreshNewTabSnapshotsForOverview()
 
-    // 首次打开尚无缩略图的网页时，先在 WebView 仍位于屏幕上时完成截图。
-    // 这样切换到别的标签后也不会只剩空白卡片。
+    // 放大转场仍在用缓存图遮住重新加载的 WebView 时，继续复用这张有效图，
+    // 避免截取到遮罩下方尚未渲染的白页。
+    if tabTransitionCoverView != nil {
+      presentTabOverview()
+      return
+    }
+
+    // 首次没有缩略图时才等待 WebView 截图；已有有效图直接开始转场，
+    // 避免每次点击都被截图和磁盘写入延迟阻塞。
     if let tab = activeTab,
-       tab.webView?.isHidden == false,
+       let webView = tab.webView,
+       !webView.isHidden,
        tab.snapshot == nil {
       let tabID = tab.id
       isPreparingTabOverview = true
@@ -23,6 +31,123 @@ extension BrowserViewController {
     }
 
     presentTabOverview()
+  }
+
+  /// 返回缓存图对应的完整页面区域，用于让转场图和底层遮罩保持同一缩放比例。
+  func tabTransitionFullContentFrame(in coordinateSpace: UIView) -> CGRect {
+    view.layoutIfNeeded()
+    let content = tabTransitionContentView()
+    return content.convert(content.bounds, to: coordinateSpace)
+  }
+
+  /// 返回实际参与缩放的可见网页区域；顶部地址栏和底部工具栏留给
+  /// 页面间交叉淡化，不会被网页图片突然覆盖。
+  func tabTransitionContentFrame(in coordinateSpace: UIView) -> CGRect {
+    var frame = tabTransitionFullContentFrame(in: coordinateSpace)
+    if !addressBar.isHidden {
+      let addressFrame = addressBar.convert(addressBar.bounds, to: coordinateSpace)
+      let visibleTop = min(frame.maxY, max(frame.minY, addressFrame.maxY))
+      frame.size.height = max(1, frame.maxY - visibleTop)
+      frame.origin.y = visibleTop
+    }
+    if !toolbar.isHidden {
+      let toolbarFrame = toolbar.convert(toolbar.bounds, to: coordinateSpace)
+      frame.size.height = max(
+        1,
+        min(frame.maxY, toolbarFrame.minY) - frame.minY
+      )
+    }
+    return frame
+  }
+
+  /// 在恢复中的 WKWebView 上方保留标签页缓存图，直到网页完成渲染。
+  func installTabTransitionCover(image: UIImage) {
+    let selectedTabRequiresLoad = tabTransitionRequiresPageLoad
+    removeTabTransitionCover(animated: false)
+    view.layoutIfNeeded()
+
+    let content = tabTransitionContentView()
+    let imageView = UIImageView(image: image)
+    imageView.frame = content.convert(content.bounds, to: contentView)
+    imageView.contentMode = .scaleAspectFill
+    imageView.backgroundColor = AppColors.surface
+    imageView.clipsToBounds = true
+    imageView.isUserInteractionEnabled = false
+    imageView.isAccessibilityElement = false
+    imageView.accessibilityIdentifier = "browser.tabTransitionCover"
+    contentView.addSubview(imageView)
+
+    tabTransitionCoverView = imageView
+    tabTransitionCoverID = UUID()
+    tabTransitionRequiresPageLoad = selectedTabRequiresLoad
+      || activeWebView?.isLoading == true
+  }
+
+  /// 已经驻留并完成显示的页面可以立即淡出缓存图；重新创建的 WebView
+  /// 则等待 didFinish，超时后也会自动释放，避免永久遮挡错误页面。
+  func completeTabTransitionCover() {
+    guard tabTransitionCoverView != nil else { return }
+    if !newTabView.isHidden {
+      DispatchQueue.main.async { [weak self] in
+        self?.removeTabTransitionCover(animated: true)
+      }
+      return
+    }
+    if !tabTransitionRequiresPageLoad,
+       let webView = activeWebView,
+       webView.url != nil,
+       !webView.isLoading {
+      DispatchQueue.main.async { [weak self] in
+        self?.removeTabTransitionCover(animated: true)
+      }
+      return
+    }
+
+    let expectedID = tabTransitionCoverID
+    DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+      guard let self,
+            self.tabTransitionCoverID == expectedID
+      else { return }
+      self.removeTabTransitionCover(animated: true)
+    }
+  }
+
+  func removeTabTransitionCover(animated: Bool) {
+    guard let cover = tabTransitionCoverView else {
+      tabTransitionCoverID = nil
+      tabTransitionRequiresPageLoad = false
+      return
+    }
+    tabTransitionCoverView = nil
+    tabTransitionCoverID = nil
+    tabTransitionRequiresPageLoad = false
+
+    let remove = {
+      cover.removeFromSuperview()
+    }
+    guard animated, view.window != nil else {
+      remove()
+      return
+    }
+    UIView.animate(
+      withDuration: 0.16,
+      delay: 0,
+      options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut],
+      animations: {
+        cover.alpha = 0
+      },
+      completion: { _ in remove() }
+    )
+  }
+
+  private func tabTransitionContentView() -> UIView {
+    if let webView = activeWebView, !webView.isHidden {
+      return webView
+    }
+    if !newTabView.isHidden {
+      return newTabView
+    }
+    return contentView
   }
 
   private func presentTabOverview() {
@@ -131,12 +256,13 @@ extension BrowserViewController {
     controller.onCloseTab = { [weak self] id in
       self?.closeTab(id: id)
     }
-    controller.onNewTab = { [weak self] isPrivate in
+    controller.onNewTab = { [weak self, weak controller] isPrivate in
       guard let self,
             self.openNewTab(isPrivate: isPrivate)
       else {
         return
       }
+      controller?.disableNextSpatialTransition()
       self.router?.returnToBrowser()
     }
     controller.onCloseOtherTabs = { [weak self] id in
@@ -172,8 +298,14 @@ extension BrowserViewController {
 
   func selectTab(id: UUID, returnsToBrowser: Bool) {
     captureActiveNewTabSnapshot()
+    let requiresPageReload = tabManager.tabs.first {
+      $0.id == id
+    }.map {
+      $0.url != nil && $0.webView == nil
+    } ?? false
     guard tabManager.selectTab(id: id) != nil else { return }
     attachSelectedTab()
+    tabTransitionRequiresPageLoad = requiresPageReload
     if returnsToBrowser {
       router?.returnToBrowser()
     }

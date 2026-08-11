@@ -50,6 +50,9 @@ final class BrowserViewController: UIViewController {
   var lastRequestedURLs: [UUID: URL] = [:]
   weak var tabOverviewController: TabOverviewViewController?
   var isPreparingTabOverview = false
+  var tabTransitionCoverView: UIImageView?
+  var tabTransitionCoverID: UUID?
+  var tabTransitionRequiresPageLoad = false
   var pageChromeForegroundStyle: BrowserChromeForegroundStyle?
   var elementHideInjected: [ObjectIdentifier: Bool] = [:]
   var blockedElementCounterHandler: BlockedElementCounterHandler?
@@ -722,10 +725,12 @@ final class BrowserViewController: UIViewController {
         Task { @MainActor in
           guard let self else { return }
           self.tabManager.synchronizeSelectedTabFromWebView()
-          if self.activeTab?.url == nil, !self.newTabView.isHidden {
-            self.captureActiveNewTabSnapshot()
-          } else if let id = self.activeTab?.id {
-            await self.tabManager.captureSnapshot(for: id)
+          if self.tabTransitionCoverView == nil {
+            if self.activeTab?.url == nil, !self.newTabView.isHidden {
+              self.captureActiveNewTabSnapshot()
+            } else if let id = self.activeTab?.id {
+              await self.tabManager.captureSnapshot(for: id)
+            }
           }
           self.tabManager.persistSession()
         }
@@ -786,6 +791,7 @@ final class BrowserViewController: UIViewController {
   }
 
   func attachSelectedTab() {
+    removeTabTransitionCover(animated: false)
     observations.removeAll()
     resourceStore.removeObserver(activeResourceObservationToken)
     activeResourceObservationToken = nil

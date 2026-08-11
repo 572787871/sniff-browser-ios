@@ -27,6 +27,7 @@ final class TabOverviewViewController: BaseViewController {
     private var isPageTransitionInFlight = false
     private var queuedTransition: PendingTransition?
     private var selectedTransitionItemID: UUID?
+    private var usesSpatialTransition = true
 
     private let privacyTintView = UIView()
     private let modeControl = UISegmentedControl(
@@ -102,8 +103,17 @@ final class TabOverviewViewController: BaseViewController {
     }
 
     var transitionItemID: UUID? {
-        selectedTransitionItemID
+        guard usesSpatialTransition else { return nil }
+        return selectedTransitionItemID
             ?? allItems.first(where: \.isSelected)?.id
+    }
+
+    func disableNextSpatialTransition() {
+        usesSpatialTransition = false
+    }
+
+    func transitionImage(for itemID: UUID) -> UIImage? {
+        allItems.first(where: { $0.id == itemID })?.thumbnail
     }
 
     func transitionFrame(
@@ -350,6 +360,7 @@ final class TabOverviewViewController: BaseViewController {
     ) -> TabOverviewPageViewController {
         let controller = TabOverviewPageViewController(mode: mode)
         controller.onSelectItem = { [weak self] itemID in
+            self?.usesSpatialTransition = true
             self?.selectedTransitionItemID = itemID
             self?.onSelectTab?(itemID)
         }
