@@ -3,6 +3,12 @@ import CoreGraphics
 enum BrowserChromeState: Equatable {
   case expanded
   case compact
+
+  /// 展开时顶部 Chrome 使用网页主题色承托地址栏；收缩后只保留地址栏
+  /// 自身的材质，让网页像 Safari 一样铺满其余顶部区域。
+  var showsTopBackdrop: Bool {
+    self == .expanded
+  }
 }
 
 /// A direction-and-threshold state machine that avoids per-frame constraint

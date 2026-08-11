@@ -106,4 +106,9 @@ final class BrowserPresentationModelTests: XCTestCase {
       .expanded
     )
   }
+
+  func testCompactChromeLeavesOnlyFloatingAddressBarBackdrop() {
+    XCTAssertTrue(BrowserChromeState.expanded.showsTopBackdrop)
+    XCTAssertFalse(BrowserChromeState.compact.showsTopBackdrop)
+  }
 }

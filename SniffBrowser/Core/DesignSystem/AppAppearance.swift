@@ -27,8 +27,11 @@ enum AppAppearance {
 
     private static func applyNavigationAppearance() {
         let navigationAppearance = UINavigationBarAppearance()
-        navigationAppearance.configureWithOpaqueBackground()
-        navigationAppearance.backgroundColor = AppColors.background
+        navigationAppearance.configureWithTransparentBackground()
+        navigationAppearance.backgroundEffect = UIBlurEffect(
+            style: .systemThinMaterial
+        )
+        navigationAppearance.backgroundColor = AppColors.elevatedSurface
         navigationAppearance.shadowColor = AppColors.separator
         navigationAppearance.titleTextAttributes = [
             .foregroundColor: AppColors.primaryText,

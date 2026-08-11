@@ -79,4 +79,28 @@ final class NewTabBackgroundStoreTests: XCTestCase {
     XCTAssertEqual(restoredStore.selection, .none)
     XCTAssertNil(restoredStore.image())
   }
+
+  @MainActor
+  func testSharedPageBackgroundUsesTheSelectedNewTabImage() throws {
+    let suiteName = "AppPageBackgroundTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    let directoryURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("AppPageBackgroundTests-\(UUID().uuidString)")
+    defer {
+      try? FileManager.default.removeItem(at: directoryURL)
+      defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    let store = NewTabBackgroundStore(
+      directoryURL: directoryURL,
+      userDefaults: defaults
+    )
+    let backgroundView = AppPageBackgroundView(store: store)
+    XCTAssertFalse(backgroundView.isShowingImage)
+
+    store.selectPreset(.ocean)
+    backgroundView.reloadBackground()
+
+    XCTAssertTrue(backgroundView.isShowingImage)
+  }
 }

@@ -37,7 +37,7 @@ final class BrowserViewController: UIViewController {
   let topChromeBackgroundView = UIView()
   let newTabView = NewTabView()
   let errorView = BrowserErrorView()
-  private let searchOverlayBackgroundView = UIView()
+  private let searchOverlayBackgroundView = AppPageBackgroundView()
   private let quickLinksScrollView = UIScrollView()
   private let quickLinksStack = UIStackView()
   private let searchHistoryTableView = UITableView(frame: .zero, style: .plain)
@@ -62,6 +62,8 @@ final class BrowserViewController: UIViewController {
   var standardTabOverviewScrollOffset: CGFloat = 0
   var privateTabOverviewScrollOffset: CGFloat = 0
   var pageChromeForegroundStyle: BrowserChromeForegroundStyle?
+  private var currentChromeState: BrowserChromeState = .expanded
+  private var resolvedPageChromeBackgroundColor: UIColor = AppColors.background
   var elementHideInjected: [ObjectIdentifier: Bool] = [:]
   var blockedElementCounterHandler: BlockedElementCounterHandler?
   private var lifecycleObservers: [NSObjectProtocol] = []
@@ -309,7 +311,6 @@ final class BrowserViewController: UIViewController {
     topChromeBackgroundView.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(topChromeBackgroundView)
     view.addSubview(addressBar)
-    searchOverlayBackgroundView.backgroundColor = AppColors.browserCanvas
     searchOverlayBackgroundView.isUserInteractionEnabled = false
     searchOverlayBackgroundView.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(searchOverlayBackgroundView)
@@ -434,7 +435,7 @@ final class BrowserViewController: UIViewController {
 
   private func configureQuickLinksView() {
     quickLinksScrollView.translatesAutoresizingMaskIntoConstraints = false
-    quickLinksScrollView.backgroundColor = AppColors.browserCanvas
+    quickLinksScrollView.backgroundColor = .clear
     quickLinksScrollView.showsHorizontalScrollIndicator = false
     quickLinksScrollView.alwaysBounceHorizontal = true
     quickLinksScrollView.accessibilityIdentifier = "browser.searchFavorites"
@@ -478,7 +479,7 @@ final class BrowserViewController: UIViewController {
 
   private func configureSearchHistoryView() {
     searchHistoryTableView.translatesAutoresizingMaskIntoConstraints = false
-    searchHistoryTableView.backgroundColor = AppColors.browserCanvas
+    searchHistoryTableView.backgroundColor = .clear
     searchHistoryTableView.separatorColor = AppColors.browserChromeSeparator
     searchHistoryTableView.separatorInset = UIEdgeInsets(
       top: 0,
@@ -1025,10 +1026,12 @@ final class BrowserViewController: UIViewController {
     let resolvedBackground = isSearchOverlayActive
       ? AppColors.browserCanvas
       : (effectivePageTheme?.uiColor ?? AppColors.background)
+    resolvedPageChromeBackgroundColor = resolvedBackground
 
     let changes = {
       self.view.backgroundColor = resolvedBackground
-      self.topChromeBackgroundView.backgroundColor = resolvedBackground
+      self.topChromeBackgroundView.backgroundColor = self.currentChromeState
+        .showsTopBackdrop ? resolvedBackground : .clear
       self.activeWebView?.backgroundColor = resolvedBackground
       self.activeWebView?.scrollView.backgroundColor = resolvedBackground
       self.activeWebView?.underPageBackgroundColor = resolvedBackground
@@ -1147,8 +1150,24 @@ final class BrowserViewController: UIViewController {
     animated: Bool
   ) {
     let isCompact = state == .compact
+    currentChromeState = state
+    let changes = {
+      self.topChromeBackgroundView.backgroundColor = state.showsTopBackdrop
+        ? self.resolvedPageChromeBackgroundColor
+        : .clear
+    }
     addressBar.setCompact(isCompact, animated: animated)
     toolbar.setCollapsed(isCompact, animated: animated)
+    guard animated, !UIAccessibility.isReduceMotionEnabled else {
+      changes()
+      return
+    }
+    UIView.animate(
+      withDuration: 0.20,
+      delay: 0,
+      options: [.allowUserInteraction, .beginFromCurrentState, .curveEaseOut],
+      animations: changes
+    )
   }
 
   @objc private func contentTapped() {
