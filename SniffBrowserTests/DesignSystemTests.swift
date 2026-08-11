@@ -453,10 +453,15 @@ final class DesignSystemTests: XCTestCase {
       resourceStore: TabResourceStore(),
       downloadCenter: .shared
     )
-    controller.loadViewIfNeeded()
-    controller.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-    controller.view.setNeedsLayout()
-    controller.view.layoutIfNeeded()
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+    window.rootViewController = controller
+    window.makeKeyAndVisible()
+    window.setNeedsLayout()
+    window.layoutIfNeeded()
+    defer {
+      window.isHidden = true
+      window.rootViewController = nil
+    }
 
     let tabID = try XCTUnwrap(controller.activeTab?.id)
     let fallback = UIGraphicsImageRenderer(
