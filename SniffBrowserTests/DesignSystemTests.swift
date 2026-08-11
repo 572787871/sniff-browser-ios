@@ -299,8 +299,44 @@ final class DesignSystemTests: XCTestCase {
       preview.renderedImageFrame.height / image.size.height,
       accuracy: 0.000_1
     )
+    XCTAssertEqual(preview.transform, .identity)
+    XCTAssertTrue(CATransform3DIsIdentity(preview.layer.transform))
     XCTAssertGreaterThan(iconFrame.minY, titleFrame.minY)
     XCTAssertLessThan(iconFrame.minY, titleFrame.midY)
+  }
+
+  @MainActor
+  func testTransitionSnapshotResizeKeepsIdentityAndImageAspect() {
+    let image = UIGraphicsImageRenderer(
+      size: CGSize(width: 390, height: 844)
+    ).image { context in
+      UIColor.systemBlue.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 390, height: 844))
+    }
+    let snapshot = TabPageSnapshotView(image: image)
+    snapshot.translatesAutoresizingMaskIntoConstraints = true
+    snapshot.bounds = CGRect(
+      origin: .zero,
+      size: CGSize(width: 170, height: 260)
+    )
+    snapshot.center = CGPoint(x: 85, y: 130)
+    snapshot.layoutIfNeeded()
+
+    snapshot.bounds = CGRect(
+      origin: .zero,
+      size: CGSize(width: 390, height: 620)
+    )
+    snapshot.center = CGPoint(x: 195, y: 310)
+    snapshot.layoutIfNeeded()
+
+    XCTAssertEqual(snapshot.transform, .identity)
+    XCTAssertTrue(CATransform3DIsIdentity(snapshot.layer.transform))
+    XCTAssertTrue(snapshot.constraints.isEmpty)
+    XCTAssertEqual(
+      snapshot.renderedImageFrame.width / image.size.width,
+      snapshot.renderedImageFrame.height / image.size.height,
+      accuracy: 0.000_1
+    )
   }
 
   @MainActor

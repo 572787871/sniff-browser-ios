@@ -127,9 +127,17 @@ extension BrowserViewController {
       snapshotView = TabPageSnapshotView(image: stableNewTabImage)
       contentSize = stableNewTabImage.size
     } else if tabTransitionCoverView == nil,
-              let liveSnapshot = content.snapshotView(afterScreenUpdates: false) {
-      snapshotView = liveSnapshot
-      contentSize = content.bounds.size
+              let liveSnapshot = content.snapshotView(afterScreenUpdates: false),
+              let renderedImage = renderTransitionSnapshotImage(
+                from: liveSnapshot,
+                scale: coordinateSpace.window?.screen.scale
+                  ?? UIScreen.main.scale
+              ) {
+      // The transition container is resized during the animation. Keep the
+      // page as a raster image inside the container so UIKit never stretches
+      // a snapshot view's layer when the container changes aspect ratio.
+      snapshotView = TabPageSnapshotView(image: renderedImage)
+      contentSize = renderedImage.size
     } else if let fallbackImage {
       snapshotView = TabPageSnapshotView(image: fallbackImage)
       contentSize = fallbackImage.size
@@ -148,6 +156,32 @@ extension BrowserViewController {
       visibleFrame: visibleFrame,
       sourceCoordinateSpace: coordinateSpace
     )
+  }
+
+  private func renderTransitionSnapshotImage(
+    from snapshot: UIView,
+    scale: CGFloat
+  ) -> UIImage? {
+    guard snapshot.bounds.width > 0,
+          snapshot.bounds.height > 0
+    else { return nil }
+
+    let format = UIGraphicsImageRendererFormat.preferred()
+    format.scale = max(1, scale)
+    format.opaque = true
+    let renderer = UIGraphicsImageRenderer(
+      size: snapshot.bounds.size,
+      format: format
+    )
+    return renderer.image { context in
+      let rendered = snapshot.drawHierarchy(
+        in: snapshot.bounds,
+        afterScreenUpdates: false
+      )
+      if !rendered {
+        snapshot.layer.render(in: context.cgContext)
+      }
+    }
   }
 
   /// 返回缓存图对应的完整页面区域，用于让转场图和底层遮罩保持同一缩放比例。
