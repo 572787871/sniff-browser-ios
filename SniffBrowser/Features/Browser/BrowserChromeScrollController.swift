@@ -11,6 +11,16 @@ enum BrowserChromeState: Equatable {
   }
 }
 
+enum BrowserWebContentLayout {
+  static func expandedTopInset(
+    safeAreaTop: CGFloat,
+    chromeHeight: CGFloat,
+    spacing: CGFloat
+  ) -> CGFloat {
+    max(0, safeAreaTop) + max(0, chromeHeight) + max(0, spacing)
+  }
+}
+
 /// A direction-and-threshold state machine that avoids per-frame constraint
 /// mutations while a web page scrolls.
 struct BrowserChromeScrollController {

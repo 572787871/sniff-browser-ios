@@ -37,7 +37,7 @@ final class BrowserViewController: UIViewController {
   let topChromeBackgroundView = UIView()
   let newTabView = NewTabView()
   let errorView = BrowserErrorView()
-  private let searchOverlayBackgroundView = AppPageBackgroundView()
+  private let searchOverlayBackgroundView = UIView()
   private let quickLinksScrollView = UIScrollView()
   private let quickLinksStack = UIStackView()
   private let searchHistoryTableView = UITableView(frame: .zero, style: .plain)
@@ -311,6 +311,7 @@ final class BrowserViewController: UIViewController {
     topChromeBackgroundView.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(topChromeBackgroundView)
     view.addSubview(addressBar)
+    searchOverlayBackgroundView.backgroundColor = AppColors.browserCanvas
     searchOverlayBackgroundView.isUserInteractionEnabled = false
     searchOverlayBackgroundView.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(searchOverlayBackgroundView)
@@ -435,7 +436,7 @@ final class BrowserViewController: UIViewController {
 
   private func configureQuickLinksView() {
     quickLinksScrollView.translatesAutoresizingMaskIntoConstraints = false
-    quickLinksScrollView.backgroundColor = .clear
+    quickLinksScrollView.backgroundColor = AppColors.browserCanvas
     quickLinksScrollView.showsHorizontalScrollIndicator = false
     quickLinksScrollView.alwaysBounceHorizontal = true
     quickLinksScrollView.accessibilityIdentifier = "browser.searchFavorites"
@@ -479,7 +480,7 @@ final class BrowserViewController: UIViewController {
 
   private func configureSearchHistoryView() {
     searchHistoryTableView.translatesAutoresizingMaskIntoConstraints = false
-    searchHistoryTableView.backgroundColor = .clear
+    searchHistoryTableView.backgroundColor = AppColors.browserCanvas
     searchHistoryTableView.separatorColor = AppColors.browserChromeSeparator
     searchHistoryTableView.separatorInset = UIEdgeInsets(
       top: 0,
@@ -889,7 +890,7 @@ final class BrowserViewController: UIViewController {
     contentView.insertSubview(webView, at: 0)
     activeWebViewConstraints = [
       webView.topAnchor.constraint(
-        equalTo: contentView.safeAreaLayoutGuide.topAnchor
+        equalTo: contentView.topAnchor
       ),
       webView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
       webView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
@@ -1105,7 +1106,14 @@ final class BrowserViewController: UIViewController {
   private func updateActiveWebViewInsets() {
     guard let scrollView = activeWebView?.scrollView else { return }
     let target = UIEdgeInsets(
-      top: AppMetrics.addressBarHeight + AppSpacing.sm,
+      // WKWebView 铺到屏幕顶端，让收缩地址栏周围（包含状态栏区域）
+      // 显示真实网页。顶部 inset 补回安全区，保证页面位于顶部时仍从
+      // 展开的地址栏下方开始，不会被 Browser Chrome 遮挡。
+      top: BrowserWebContentLayout.expandedTopInset(
+        safeAreaTop: view.safeAreaInsets.top,
+        chromeHeight: AppMetrics.addressBarHeight,
+        spacing: AppSpacing.sm
+      ),
       left: 0,
       bottom: AppMetrics.toolbarHeight
         + view.safeAreaInsets.bottom

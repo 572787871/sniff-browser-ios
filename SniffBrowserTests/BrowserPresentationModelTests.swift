@@ -111,4 +111,15 @@ final class BrowserPresentationModelTests: XCTestCase {
     XCTAssertTrue(BrowserChromeState.expanded.showsTopBackdrop)
     XCTAssertFalse(BrowserChromeState.compact.showsTopBackdrop)
   }
+
+  func testFullBleedWebContentPreservesExpandedChromeClearance() {
+    XCTAssertEqual(
+      BrowserWebContentLayout.expandedTopInset(
+        safeAreaTop: 59,
+        chromeHeight: 52,
+        spacing: 8
+      ),
+      119
+    )
+  }
 }

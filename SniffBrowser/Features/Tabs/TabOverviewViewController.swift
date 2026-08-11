@@ -221,8 +221,7 @@ final class TabOverviewViewController: BaseViewController {
         standardPage.resetTransitionPresentationState()
         privatePage.resetTransitionPresentationState()
         view.backgroundColor = .clear
-        privacyTintView.backgroundColor = .clear
-        appBackgroundView.alpha = enteringOverview ? 0 : 1
+        privacyTintView.backgroundColor = AppColors.background
         privacyTintView.alpha = enteringOverview ? 0 : 1
         pageViewController.view.alpha = enteringOverview ? 0 : 1
         bottomBar.alpha = enteringOverview ? 0 : 1
@@ -232,7 +231,6 @@ final class TabOverviewViewController: BaseViewController {
     }
 
     func animateSpatialTransition(enteringOverview: Bool) {
-        appBackgroundView.alpha = enteringOverview ? 1 : 0
         privacyTintView.alpha = enteringOverview ? 1 : 0
         pageViewController.view.alpha = enteringOverview ? 1 : 0
         bottomBar.alpha = enteringOverview ? 1 : 0
@@ -242,8 +240,7 @@ final class TabOverviewViewController: BaseViewController {
     }
 
     func completeSpatialTransition() {
-        view.backgroundColor = .clear
-        appBackgroundView.alpha = 1
+        view.backgroundColor = AppColors.background
         privacyTintView.alpha = 0
         pageViewController.view.alpha = 1
         bottomBar.alpha = 1
@@ -379,7 +376,7 @@ final class TabOverviewViewController: BaseViewController {
     }
 
     private func configureBackground() {
-        privacyTintView.backgroundColor = .clear
+        privacyTintView.backgroundColor = AppColors.background
         privacyTintView.accessibilityIdentifier = "tabs.transitionBackground"
         privacyTintView.isUserInteractionEnabled = false
         privacyTintView.translatesAutoresizingMaskIntoConstraints = false
@@ -657,9 +654,8 @@ final class TabOverviewViewController: BaseViewController {
         )
 
         let navAppearance = UINavigationBarAppearance()
-        navAppearance.configureWithTransparentBackground()
-        navAppearance.backgroundEffect = UIBlurEffect(style: .systemThinMaterial)
-        navAppearance.backgroundColor = AppColors.elevatedSurface
+        navAppearance.configureWithOpaqueBackground()
+        navAppearance.backgroundColor = AppColors.background
         navAppearance.shadowColor = AppColors.separator
         navAppearance.titleTextAttributes = [
             .foregroundColor: AppColors.primaryText,

@@ -103,7 +103,6 @@ final class BrowserMoreMenuViewController: UIViewController {
   var onSelectDestination: ((BrowserMenuDestination) -> Void)?
 
   private let state: BrowserMoreMenuState
-  private let appBackgroundView = AppPageBackgroundView()
   private let tableView = UITableView(frame: .zero, style: .insetGrouped)
   private let quickActionsView = BrowserQuickActionsView()
   private let quickActionsHeader = UIView()
@@ -120,21 +119,9 @@ final class BrowserMoreMenuViewController: UIViewController {
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    view.backgroundColor = .clear
-    configureBackground()
+    view.backgroundColor = AppColors.background
     configureHeader()
     configureTable()
-  }
-
-  private func configureBackground() {
-    appBackgroundView.translatesAutoresizingMaskIntoConstraints = false
-    view.addSubview(appBackgroundView)
-    NSLayoutConstraint.activate([
-      appBackgroundView.topAnchor.constraint(equalTo: view.topAnchor),
-      appBackgroundView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-      appBackgroundView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-      appBackgroundView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-    ])
   }
 
   override func viewDidLayoutSubviews() {
@@ -271,9 +258,8 @@ final class BrowserMoreNavigationController: UINavigationController,
     navigationBar.prefersLargeTitles = true
     navigationBar.tintColor = AppColors.accent
     let appearance = UINavigationBarAppearance()
-    appearance.configureWithTransparentBackground()
-    appearance.backgroundEffect = UIBlurEffect(style: .systemThinMaterial)
-    appearance.backgroundColor = AppColors.elevatedSurface
+    appearance.configureWithOpaqueBackground()
+    appearance.backgroundColor = AppColors.background
     appearance.shadowColor = .clear
     appearance.titleTextAttributes = [
       .foregroundColor: AppColors.primaryText,

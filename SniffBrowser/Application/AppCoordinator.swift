@@ -392,9 +392,8 @@ extension AppCoordinator: UINavigationControllerDelegate {
       appearance.configureWithTransparentBackground()
       appearance.shadowColor = .clear
     } else {
-      appearance.configureWithTransparentBackground()
-      appearance.backgroundEffect = UIBlurEffect(style: .systemThinMaterial)
-      appearance.backgroundColor = AppColors.elevatedSurface
+      appearance.configureWithOpaqueBackground()
+      appearance.backgroundColor = AppColors.background
       appearance.shadowColor = .clear
       appearance.titleTextAttributes = [
         .foregroundColor: AppColors.primaryText,
