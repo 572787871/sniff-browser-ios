@@ -66,6 +66,7 @@ final class BrowserViewController: UIViewController {
   private var isSearchSuggestionsPinned = false
   private var quickLinksHeightConstraint: NSLayoutConstraint?
   private var isWaitingToRefreshNewTabSnapshot = false
+  private var activeWebViewConstraints: [NSLayoutConstraint] = []
 
   var activeTab: BrowserTab? {
     tabManager.selectedTab
@@ -824,6 +825,8 @@ final class BrowserViewController: UIViewController {
     observations.removeAll()
     resourceStore.removeObserver(activeResourceObservationToken)
     activeResourceObservationToken = nil
+    NSLayoutConstraint.deactivate(activeWebViewConstraints)
+    activeWebViewConstraints.removeAll()
     contentView.subviews.compactMap { $0 as? WKWebView }.forEach {
       $0.removeFromSuperview()
     }
@@ -850,14 +853,15 @@ final class BrowserViewController: UIViewController {
     }
     webView.translatesAutoresizingMaskIntoConstraints = false
     contentView.insertSubview(webView, at: 0)
-    NSLayoutConstraint.activate([
+    activeWebViewConstraints = [
       webView.topAnchor.constraint(
         equalTo: contentView.safeAreaLayoutGuide.topAnchor
       ),
       webView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
       webView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
       webView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-    ])
+    ]
+    NSLayoutConstraint.activate(activeWebViewConstraints)
 
     bindActiveWebView(webView)
     newTabView.setPrivateMode(tab.isPrivate)

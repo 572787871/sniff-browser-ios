@@ -613,11 +613,21 @@ private final class TabOverviewNavigationAnimator: NSObject,
     }
 
     let container = transitionContext.containerView
-    toView.frame = transitionContext.finalFrame(for: browser)
+    let finalBrowserFrame = transitionContext.finalFrame(for: browser)
+    fromView.transform = .identity
+    fromView.layer.transform = CATransform3DIdentity
+    toView.frame = finalBrowserFrame
+    toView.transform = .identity
+    toView.layer.transform = CATransform3DIdentity
     toView.alpha = 1
     container.insertSubview(toView, belowSubview: fromView)
     container.layoutIfNeeded()
     toView.layoutIfNeeded()
+    // Card selection reattaches the selected WebView while the browser is
+    // still off-screen. Normalize that state before reading the target frame;
+    // the real WebView is never used as the animated surface.
+    browser.normalizeTabTransitionBrowserState()
+    browser.debugLogTabTransitionState("TAB OPEN START", in: container)
     let transitionImage = browser.makeTabTransitionImage(
       for: itemID,
       fallbackImage: overview.transitionImage(for: itemID)
@@ -685,16 +695,23 @@ private final class TabOverviewNavigationAnimator: NSObject,
         surface.removeFromSuperview()
         fromView.alpha = 1
         toView.alpha = 1
+        toView.frame = finalBrowserFrame
+        toView.transform = .identity
+        toView.layer.transform = CATransform3DIdentity
+        browser.normalizeTabTransitionBrowserState()
+        browser.setTabTransitionChromeAlpha(1)
+        browser.debugLogTabTransitionState(
+          "TAB OPEN FINISH \(completed ? "success" : "cancelled")",
+          in: container
+        )
+        overview.completeSpatialTransition()
         if completed {
-          transitionContext.completeTransition(true)
-          overview.completeSpatialTransition()
           browser.completeTabTransitionCover()
         } else {
-          overview.completeSpatialTransition()
           browser.removeTabTransitionCover(animated: false)
           toView.removeFromSuperview()
-          transitionContext.completeTransition(false)
         }
+        transitionContext.completeTransition(completed)
       }
     )
   }

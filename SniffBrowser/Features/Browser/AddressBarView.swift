@@ -115,11 +115,12 @@ final class AddressBarView: UIView {
   }
 
   func setCompact(_ compact: Bool, animated: Bool) {
-    guard compact != isCompact else { return }
     if compact, textField.isFirstResponder {
       return
     }
-    isCompact = compact
+    if compact != isCompact {
+      isCompact = compact
+    }
     let changes = {
       self.materialView.transform = compact
         && !UIAccessibility.isReduceMotionEnabled

@@ -118,8 +118,9 @@ final class BrowserToolbar: UIView {
   }
 
   func setCollapsed(_ collapsed: Bool, animated: Bool) {
-    guard collapsed != isCollapsed else { return }
-    isCollapsed = collapsed
+    if collapsed != isCollapsed {
+      isCollapsed = collapsed
+    }
     accessibilityElementsHidden = collapsed
     isUserInteractionEnabled = !collapsed
     let changes = {

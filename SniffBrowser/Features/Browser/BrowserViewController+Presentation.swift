@@ -209,6 +209,68 @@ extension BrowserViewController {
     toolbar.alpha = alpha
   }
 
+  /// 卡片展开只允许转场快照参与缩放。目标浏览器始终保持 Auto Layout
+  /// 的最终尺寸；在卡片路径重新挂载 WebView 后，再统一清掉可能被打断的
+  /// 页面/Chrome 临时状态，保证它和“完成”返回路径落到同一个状态。
+  func normalizeTabTransitionBrowserState() {
+    view.transform = .identity
+    view.layer.transform = CATransform3DIdentity
+    contentView.transform = .identity
+    contentView.layer.transform = CATransform3DIdentity
+    addressBar.transform = .identity
+    addressBar.layer.transform = CATransform3DIdentity
+    toolbar.transform = .identity
+    toolbar.layer.transform = CATransform3DIdentity
+    newTabView.transform = .identity
+    newTabView.layer.transform = CATransform3DIdentity
+
+    if let webView = activeWebView {
+      webView.transform = .identity
+      webView.layer.transform = CATransform3DIdentity
+      webView.scrollView.transform = .identity
+    }
+
+    // These setters are intentionally idempotent: they also restore the
+    // internal material transform when an earlier chrome animation was
+    // interrupted after updating its state flag.
+    applyChromeState(.expanded, animated: false)
+    chromeScrollController.reset()
+
+    view.setNeedsLayout()
+    view.layoutIfNeeded()
+    contentView.setNeedsLayout()
+    contentView.layoutIfNeeded()
+    activeWebView?.setNeedsLayout()
+    activeWebView?.layoutIfNeeded()
+  }
+
+  /// 仅在 DEBUG 构建输出转场前后的真实坐标，便于对比“完成”和卡片点击
+  /// 两条路径；正式构建不会产生额外日志。
+  func debugLogTabTransitionState(
+    _ phase: String,
+    in coordinateSpace: UIView
+  ) {
+    #if DEBUG
+    let browserFrame = view.convert(view.bounds, to: coordinateSpace)
+    let containerFrame = contentView.convert(
+      contentView.bounds,
+      to: coordinateSpace
+    )
+    let webFrame = activeWebView?.convert(
+      activeWebView?.bounds ?? .zero,
+      to: coordinateSpace
+    )
+    AppLogger(.navigation).debug(
+      "\(phase) browser=\(browserFrame) container=\(containerFrame) "
+        + "web=\(String(describing: webFrame)) "
+        + "browserTransform=\(view.transform) "
+        + "containerTransform=\(contentView.transform) "
+        + "webTransform=\(String(describing: activeWebView?.transform)) "
+        + "safeArea=\(view.safeAreaInsets)"
+    )
+    #endif
+  }
+
   /// 在恢复中的 WKWebView 上方保留标签页缓存图，直到网页完成渲染。
   func installTabTransitionCover(image: UIImage) {
     let selectedTabRequiresLoad = tabTransitionRequiresPageLoad

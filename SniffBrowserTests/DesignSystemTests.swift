@@ -449,6 +449,90 @@ final class DesignSystemTests: XCTestCase {
   }
 
   @MainActor
+  func testReattachingSelectedWebViewDoesNotAccumulateConstraints() throws {
+    let controller = BrowserViewController(
+      viewModel: BrowserViewModel(),
+      tabManager: BrowserTabManager(restoresSession: false),
+      favoriteService: .shared,
+      historyService: .shared,
+      contentBlockerService: .shared,
+      resourceStore: TabResourceStore(),
+      downloadCenter: .shared
+    )
+    controller.loadViewIfNeeded()
+    controller.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+
+    let webView = try XCTUnwrap(controller.activeWebView)
+    for _ in 0..<10 {
+      controller.attachSelectedTab()
+    }
+    controller.view.setNeedsLayout()
+    controller.view.layoutIfNeeded()
+
+    let constraints = controller.contentView.constraints.filter { constraint in
+      (constraint.firstItem as AnyObject?) === webView
+        || (constraint.secondItem as AnyObject?) === webView
+    }
+    XCTAssertEqual(constraints.count, 4)
+    XCTAssertTrue(webView.superview === controller.contentView)
+  }
+
+  @MainActor
+  func testTabTransitionNormalizationRestoresTheRealBrowserLayout() throws {
+    let controller = BrowserViewController(
+      viewModel: BrowserViewModel(),
+      tabManager: BrowserTabManager(restoresSession: false),
+      favoriteService: .shared,
+      historyService: .shared,
+      contentBlockerService: .shared,
+      resourceStore: TabResourceStore(),
+      downloadCenter: .shared
+    )
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+    window.rootViewController = controller
+    window.makeKeyAndVisible()
+    window.layoutIfNeeded()
+    defer {
+      window.isHidden = true
+      window.rootViewController = nil
+    }
+
+    let webView = try XCTUnwrap(controller.activeWebView)
+    controller.view.transform = CGAffineTransform(scaleX: 0.42, y: 0.42)
+    controller.contentView.transform = CGAffineTransform(
+      translationX: -24,
+      y: 18
+    )
+    webView.transform = CGAffineTransform(scaleX: 0.5, y: 0.5)
+    webView.scrollView.transform = CGAffineTransform(translationX: 12, y: 0)
+    controller.addressBar.setCompact(true, animated: false)
+    controller.toolbar.setCollapsed(true, animated: false)
+
+    controller.normalizeTabTransitionBrowserState()
+
+    XCTAssertEqual(controller.view.transform, .identity)
+    XCTAssertTrue(CATransform3DIsIdentity(controller.view.layer.transform))
+    XCTAssertEqual(controller.contentView.transform, .identity)
+    XCTAssertTrue(
+      CATransform3DIsIdentity(controller.contentView.layer.transform)
+    )
+    XCTAssertEqual(webView.transform, .identity)
+    XCTAssertTrue(CATransform3DIsIdentity(webView.layer.transform))
+    XCTAssertEqual(webView.scrollView.transform, .identity)
+    XCTAssertEqual(
+      webView.frame.width,
+      controller.contentView.bounds.width,
+      accuracy: 0.5
+    )
+    XCTAssertEqual(
+      webView.frame.height,
+      controller.contentView.bounds.height
+        - webView.frame.minY,
+      accuracy: 0.5
+    )
+  }
+
+  @MainActor
   func testNativeNewTabTransitionUsesAStableRenderedImage() throws {
     let controller = BrowserViewController(
       viewModel: BrowserViewModel(),
