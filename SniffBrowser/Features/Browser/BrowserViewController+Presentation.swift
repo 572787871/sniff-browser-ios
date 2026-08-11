@@ -118,9 +118,14 @@ extension BrowserViewController {
     // 不把这套层级快照直接交给转场，避免主页从标签页返回时抓到
     // Auto Layout 尚未完成的中间帧；网页仍然使用 WKWebView 的实时快照。
     if content === newTabView,
-       let renderedNewTab = renderNewTabSnapshot() {
-      snapshotView = TabPageSnapshotView(image: renderedNewTab)
-      contentSize = renderedNewTab.size
+       let stableNewTabImage = activeTab?.snapshot
+        ?? fallbackImage
+        ?? renderNewTabSnapshot() {
+      // 进入总览前已经把主页渲染到 activeTab.snapshot。优先复用这张图，
+      // 让正在缩小的网页和落点卡片使用同一份像素，避免 favicon 或布局
+      // 在转场中途发生跳变。
+      snapshotView = TabPageSnapshotView(image: stableNewTabImage)
+      contentSize = stableNewTabImage.size
     } else if tabTransitionCoverView == nil,
               let liveSnapshot = content.snapshotView(afterScreenUpdates: false) {
       snapshotView = liveSnapshot
@@ -173,17 +178,18 @@ extension BrowserViewController {
   }
 
   /// 返回当前目标主页的稳定位图，供卡片展开时遮住真实主页，直到
-  /// 转场完成。网页标签继续使用 overview 中缓存的网页缩略图。
+  /// 转场完成。已有总览缩略图时必须复用它，保证卡片与网页内容连续。
   func makeTabTransitionImage(
     for tabID: UUID,
     fallbackImage: UIImage?
   ) -> UIImage? {
+    if let fallbackImage {
+      return fallbackImage
+    }
     guard activeTab?.id == tabID,
           activeTab?.url == nil,
           !newTabView.isHidden
-    else {
-      return fallbackImage
-    }
+    else { return nil }
 
     view.setNeedsLayout()
     view.layoutIfNeeded()
@@ -364,7 +370,12 @@ extension BrowserViewController {
     newTabView.setNeedsLayout()
     newTabView.layoutIfNeeded()
     let format = UIGraphicsImageRendererFormat.preferred()
-    format.scale = 1
+    // 主页截图会同时用于卡片缩略图和卡片→网页的放大转场。
+    // 固定 1x 会让文字和 favicon 在放大到全屏时出现明显模糊。
+    format.scale = max(
+      1,
+      newTabView.window?.screen.scale ?? UIScreen.main.scale
+    )
     format.opaque = true
     let renderer = UIGraphicsImageRenderer(
       size: newTabView.bounds.size,

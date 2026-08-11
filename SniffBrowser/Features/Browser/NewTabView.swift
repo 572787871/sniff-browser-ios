@@ -35,6 +35,7 @@ protocol NewTabViewDelegate: AnyObject {
 
 final class NewTabView: UIView {
   weak var delegate: NewTabViewDelegate?
+  var onVisualContentDidChange: (() -> Void)?
 
   private let backgroundImageView = UIImageView()
   private let backgroundScrimView = NewTabPhotoScrimView()
@@ -105,7 +106,15 @@ final class NewTabView: UIView {
   }
 
   func updateFavorites(_ favorites: [FavoriteItem]) {
-    displayedFavorites = Array(favorites.prefix(4))
+    let nextFavorites = Array(favorites.prefix(4))
+    // 保留现有按钮，尤其是已经异步加载完成的 favicon。每次回到浏览器
+    // 或进入标签页总览时重建按钮，会先短暂显示星标，再切换成网站图标，
+    // 导致主页、缩略图和空间转场使用不同的视觉状态。
+    guard nextFavorites != displayedFavorites else {
+      updateResolvedColors()
+      return
+    }
+    displayedFavorites = nextFavorites
     favoritesStack.arrangedSubviews.forEach {
       favoritesStack.removeArrangedSubview($0)
       $0.removeFromSuperview()
@@ -113,6 +122,9 @@ final class NewTabView: UIView {
 
     displayedFavorites.forEach { favorite in
       let button = NewTabFavoriteButton(favorite: favorite)
+      button.onFaviconLoaded = { [weak self] in
+        self?.onVisualContentDidChange?()
+      }
       button.addTarget(
         self,
         action: #selector(favoritePressed(_:)),
@@ -699,6 +711,7 @@ private final class NewTabLogoView: UIView {
 
 private final class NewTabFavoriteButton: UIButton {
   let favorite: FavoriteItem
+  var onFaviconLoaded: (() -> Void)?
 
   private var faviconURL: URL?
   private var faviconRequestID: UUID?
@@ -790,6 +803,7 @@ private final class NewTabFavoriteButton: UIButton {
       configuration.image = Self.preparedFavicon(image)
       self.configuration = configuration
       self.configureTitleLabel()
+      self.onFaviconLoaded?()
     }
     faviconRequestID = requestID
   }

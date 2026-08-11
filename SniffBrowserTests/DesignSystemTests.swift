@@ -257,6 +257,12 @@ final class DesignSystemTests: XCTestCase {
       buttons.compactMap { $0.configuration?.title },
       ["示例一", "示例二"]
     )
+    let firstFavoriteButton = try XCTUnwrap(buttons.first)
+    view.updateFavorites(favorites)
+    let retainedFavoriteButton = try XCTUnwrap(
+      stack.arrangedSubviews.first as? UIButton
+    )
+    XCTAssertTrue(firstFavoriteButton === retainedFavoriteButton)
     XCTAssertEqual(stack.distribution, .fillEqually)
     XCTAssertTrue(buttons.allSatisfy { $0.titleLabel?.numberOfLines == 2 })
   }

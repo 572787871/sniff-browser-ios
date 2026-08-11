@@ -65,6 +65,7 @@ final class BrowserViewController: UIViewController {
   private var isSearchHistoryVisible = false
   private var isSearchSuggestionsPinned = false
   private var quickLinksHeightConstraint: NSLayoutConstraint?
+  private var isWaitingToRefreshNewTabSnapshot = false
 
   var activeTab: BrowserTab? {
     tabManager.selectedTab
@@ -684,6 +685,9 @@ final class BrowserViewController: UIViewController {
     toolbar.toolbarDelegate = self
     toolbar.setSnifferState(resourceCount: 0, activationState: .disabled)
     newTabView.delegate = self
+    newTabView.onVisualContentDidChange = { [weak self] in
+      self?.refreshNewTabSnapshotAfterVisualUpdate()
+    }
     errorView.onRetry = { [weak self] in
       self?.retryLastRequest()
     }
@@ -743,6 +747,30 @@ final class BrowserViewController: UIViewController {
     newTabView.updateFavorites(
       (try? favoriteService.allFavorites()) ?? []
     )
+  }
+
+  private func refreshNewTabSnapshotAfterVisualUpdate() {
+    guard activeTab?.url == nil,
+          !newTabView.isHidden
+    else {
+      return
+    }
+
+    // favicon 回调可能恰好落在标签页空间转场的中间帧。等转场结束后
+    // 再刷新缩略图，避免总览卡片在动画过程中重新布局或替换图标。
+    if let coordinator = navigationController?.transitionCoordinator {
+      guard !isWaitingToRefreshNewTabSnapshot else { return }
+      isWaitingToRefreshNewTabSnapshot = true
+      coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+        guard let self else { return }
+        self.isWaitingToRefreshNewTabSnapshot = false
+        self.refreshNewTabSnapshotAfterVisualUpdate()
+      }
+      return
+    }
+
+    refreshNewTabSnapshotsForOverview()
+    refreshTabOverview()
   }
 
   func configureWebView(_ webView: WKWebView) {
