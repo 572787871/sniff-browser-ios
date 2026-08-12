@@ -251,6 +251,8 @@ final class AppCoordinator: NSObject, BrowserRouting {
       guard let self else { return }
       Task { @MainActor in
         await self.websiteDataManager.clearAllWebsiteData()
+        ResourceThumbnailLoader.shared.clearCache()
+        FaviconLoader.shared.clearCache()
         self.browserViewController?.reloadActivePageAfterClearingWebsiteData()
         controller?.showBrowsingDataClearCompleted()
       }

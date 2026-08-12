@@ -35,6 +35,7 @@ final class WebResourceSniffingService: ResourceSniffingService {
     let store: TabResourceStore
 
     private var contexts: [UUID: TabContext] = [:]
+    private var activationOperations: [UUID: UUID] = [:]
     private var pendingScans: [UUID: PendingScan] = [:]
     private var timeoutTasks: [UUID: Task<Void, Never>] = [:]
     private var nextMessageSequence = 0
@@ -62,6 +63,7 @@ final class WebResourceSniffingService: ResourceSniffingService {
     }
 
     func tabClosed(tabID: UUID) {
+        activationOperations[tabID] = nil
         if let webView = contexts[tabID]?.webView.value {
             webView.evaluateJavaScript(
                 "(() => window.\(ResourceSniffingScriptProvider.bridgeName)?.dispose?.() === true)();"
@@ -84,7 +86,12 @@ final class WebResourceSniffingService: ResourceSniffingService {
         pageURL: URL?,
         isPrivate: Bool
     ) {
+        activationOperations[tabID] = nil
         contexts[tabID]?.expectedPageURL = pageURL
+        let scans = pendingScans.filter { $0.value.tabID == tabID }.map(\.key)
+        scans.forEach {
+            finishPendingScan(scanID: $0, result: .failure(CancellationError()))
+        }
         store.beginNavigation(
             tabID: tabID,
             pageURL: pageURL,
@@ -107,28 +114,48 @@ final class WebResourceSniffingService: ResourceSniffingService {
         if store.activationState(for: tabID) == .active {
             return
         }
+        if store.activationState(for: tabID) == .starting {
+            return
+        }
 
+        let operationID = UUID()
+        activationOperations[tabID] = operationID
         store.beginActivation(tabID: tabID)
         do {
+            try Task.checkCancellation()
             let enabled = try await evaluateBoolean(
                 ResourceSniffingScriptProvider.enableInvocation,
                 in: webView
             )
-            guard enabled else {
+            guard enabled, activationOperations[tabID] == operationID else {
                 throw ResourceSniffingError.scriptUnavailable
             }
+            try Task.checkCancellation()
             _ = try await scanResources(for: tabID)
+            guard activationOperations[tabID] == operationID else {
+                throw CancellationError()
+            }
+            activationOperations[tabID] = nil
             store.completeActivation(tabID: tabID)
         } catch {
-            store.failActivation(
-                tabID: tabID,
-                message: error.localizedDescription
-            )
+            guard activationOperations[tabID] == operationID else {
+                throw error
+            }
+            activationOperations[tabID] = nil
+            if error is CancellationError {
+                store.completeStopping(tabID: tabID)
+            } else {
+                store.failActivation(
+                    tabID: tabID,
+                    message: error.localizedDescription
+                )
+            }
             throw error
         }
     }
 
     func disableSniffing(for tabID: UUID) async {
+        activationOperations[tabID] = nil
         guard store.activationState(for: tabID) != .disabled else { return }
         store.beginStopping(tabID: tabID)
         if let webView = contexts[tabID]?.webView.value {
@@ -142,26 +169,6 @@ final class WebResourceSniffingService: ResourceSniffingService {
             finishPendingScan(scanID: $0, result: .failure(CancellationError()))
         }
         store.completeStopping(tabID: tabID)
-    }
-
-    func restoreActiveSniffingAfterNavigation(tabID: UUID) {
-        guard store.activationState(for: tabID).isEnabled,
-              let webView = contexts[tabID]?.webView.value
-        else { return }
-        webView.evaluateJavaScript(
-            ResourceSniffingScriptProvider.enableAndIncrementalScanInvocation(
-                reason: "navigation"
-            )
-        ) { [weak self] value, error in
-            guard error != nil || (value as? Bool) != true else { return }
-            Task { @MainActor [weak self] in
-                self?.store.failActivation(
-                    tabID: tabID,
-                    message: ResourceSniffingError.scriptUnavailable
-                        .localizedDescription
-                )
-            }
-        }
     }
 
     func requestIncrementalScan(tabID: UUID, reason: String) {

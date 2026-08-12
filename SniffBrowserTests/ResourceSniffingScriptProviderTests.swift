@@ -18,5 +18,7 @@ final class ResourceSniffingScriptProviderTests: XCTestCase {
     XCTAssertTrue(source.contains("parentTag === \"picture\""))
     XCTAssertTrue(source.contains("...lazyImageURLAttributes"))
     XCTAssertTrue(source.contains("...lazyImageSrcsetAttributes"))
+    XCTAssertTrue(source.contains("data:image/"))
+    XCTAssertTrue(source.contains("backgroundImage"))
   }
 }

@@ -77,6 +77,51 @@ enum ResourceScanState: String, Codable, Equatable, Sendable {
     }
 }
 
+enum ImageResourceFormat: String, CaseIterable, Codable, Hashable, Sendable {
+    case all
+    case jpeg
+    case png
+    case gif
+    case webp
+    case svg
+    case other
+
+    var title: String {
+        switch self {
+        case .all: return "全部图片"
+        case .jpeg: return "JPG / JPEG"
+        case .png: return "PNG"
+        case .gif: return "GIF 动图"
+        case .webp: return "WebP"
+        case .svg: return "SVG"
+        case .other: return "其他格式"
+        }
+    }
+
+    func matches(_ resource: DetectedResource) -> Bool {
+        guard resource.resourceType == .image else { return false }
+        guard self != .all else { return true }
+        let mime = resource.mimeType.flatMap { value in
+            value.split(separator: ";", maxSplits: 1)
+                .first
+                .map(String.init)
+        }?.lowercased()
+        let ext = resource.fileExtension?.lowercased()
+        switch self {
+        case .all: return true
+        case .jpeg: return mime == "image/jpeg" || ext == "jpg" || ext == "jpeg"
+        case .png: return mime == "image/png" || ext == "png"
+        case .gif: return mime == "image/gif" || ext == "gif"
+        case .webp: return mime == "image/webp" || ext == "webp"
+        case .svg: return mime == "image/svg+xml" || ext == "svg"
+        case .other:
+            return ![.jpeg, .png, .gif, .webp, .svg].contains {
+                $0.matches(resource)
+            }
+        }
+    }
+}
+
 enum SniffingActivationState: String, Codable, Equatable, Sendable {
     case disabled
     case starting
@@ -171,6 +216,8 @@ struct TabResourceSnapshot: Equatable, Sendable {
     let lastScanAt: Date?
     let errorMessage: String?
     let activationState: SniffingActivationState
+    let hasStarted: Bool
+    let imageFilters: Set<ImageResourceFormat>
 }
 
 enum ResourceSniffingError: LocalizedError, Equatable {

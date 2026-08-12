@@ -86,6 +86,26 @@ final class ResourceMessageDecoderTests: XCTestCase {
         )
     }
 
+    func testInlineImageDataURLIsAcceptedAndClassifiedAsImage() throws {
+        let dataURL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        let batch = try decode([
+            "kind": "batch",
+            "pageURL": "https://example.com/page",
+            "candidates": [[
+                "url": dataURL,
+                "mimeType": "image/png",
+                "elementType": "img"
+            ]]
+        ])
+
+        let candidate = try XCTUnwrap(batch.candidates.first)
+        let resource = try XCTUnwrap(
+            ResourceClassifier().makeResource(from: candidate, tabID: UUID())
+        )
+        XCTAssertEqual(resource.resourceType, .image)
+        XCTAssertFalse(resource.isPotentiallyDownloadable)
+    }
+
     func testOverlongURLAndWrongFieldTypesAreRejected() throws {
         let batch = try decode([
             "kind": "batch",

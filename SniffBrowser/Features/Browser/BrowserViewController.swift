@@ -954,6 +954,15 @@ final class BrowserViewController: UIViewController {
 
   func attachSelectedTab() {
     removeTabTransitionCover(animated: false)
+    let selectedTabID = tabManager.selectedTabID
+    for tab in tabManager.tabs where tab.id != selectedTabID {
+      guard resourceSniffingService.activationState(for: tab.id).isEnabled else {
+        continue
+      }
+      Task { [weak self] in
+        await self?.resourceSniffingService.disableSniffing(for: tab.id)
+      }
+    }
     observations.removeAll()
     resourceStore.removeObserver(activeResourceObservationToken)
     activeResourceObservationToken = nil
@@ -1538,9 +1547,13 @@ extension BrowserViewController: BrowserToolbarDelegate {
           }
           return await self.downloadRequestContextBuilder.build(
             targetURL: url,
-            pageURL: self.viewModel.state.url,
+            pageURL: webView?.url ?? self.viewModel.state.url,
             webView: webView
           )
+        },
+        blobImageDataProvider: { [weak webView = tab.webView] url in
+          guard let webView else { return nil }
+          return await WebViewBlobImageDataLoader.load(url: url, in: webView)
         }
       )
       let controller = ResourceSnifferViewController(viewModel: viewModel)

@@ -75,6 +75,50 @@ final class ResourceThumbnailLoaderTests: XCTestCase {
     }
 
     @MainActor
+    func testLoadsInlineImageWithoutStartingAURLSessionRequest() async throws {
+        let fixture = try makeFixture(maximumBytes: 5 * 1_024 * 1_024)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let dataURL = try XCTUnwrap(URL(string: "data:image/png;base64,AAAA"))
+        let request = ResourceThumbnailRequest(
+            resourceID: UUID(),
+            tabID: UUID(),
+            request: URLRequest(url: dataURL),
+            targetPixelSize: CGSize(width: 80, height: 80),
+            allowsDiskCache: false,
+            inlineData: Self.onePixelPNG
+        )
+
+        let image = await withCheckedContinuation { continuation in
+            let token = fixture.loader.load(request) { image in
+                continuation.resume(returning: image)
+            }
+            retainedTokens.append(token)
+        }
+
+        XCTAssertNotNil(image)
+        XCTAssertEqual(ThumbnailURLProtocol.requestCount, 0)
+    }
+
+    @MainActor
+    func testRejectsHTMLReturnedForAnImageURL() async throws {
+        let fixture = try makeFixture(maximumBytes: 5 * 1_024 * 1_024)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        ThumbnailURLProtocol.configure(
+            data: Data("<html>blocked</html>".utf8),
+            mimeType: "text/html"
+        )
+
+        let image = await load(
+            fixture.loader,
+            request: try makeRequest(url: "https://example.com/protected-image"),
+            allowsDiskCache: false
+        )
+
+        XCTAssertNil(image)
+        XCTAssertEqual(ThumbnailURLProtocol.requestCount, 1)
+    }
+
+    @MainActor
     func testCancellationSuppressesCompletion() throws {
         let fixture = try makeFixture(maximumBytes: 5 * 1_024 * 1_024)
         defer { try? FileManager.default.removeItem(at: fixture.root) }

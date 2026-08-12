@@ -13,6 +13,8 @@ final class ResourceSnifferViewModel {
         let lastScanAt: Date?
         let errorMessage: String?
         let activationState: SniffingActivationState
+        let hasStarted: Bool
+        let imageFilters: Set<ImageResourceFormat>
     }
 
     var onStateChange: ((State) -> Void)?
@@ -21,6 +23,7 @@ final class ResourceSnifferViewModel {
     private let store: TabResourceStore
     private let service: ResourceSniffingService
     private let requestContextProvider: RequestContextProvider
+    private let blobImageDataProvider: @MainActor (URL) async -> Data?
     private let downloadCenter: DownloadCenter
     private let hlsMetadataResolver = HLSResourceMetadataResolver()
     private var observationToken: UUID?
@@ -35,22 +38,27 @@ final class ResourceSnifferViewModel {
         store: TabResourceStore,
         service: ResourceSniffingService,
         downloadCenter: DownloadCenter,
-        requestContextProvider: @escaping RequestContextProvider
+        requestContextProvider: @escaping RequestContextProvider,
+        blobImageDataProvider: @escaping @MainActor (URL) async -> Data?
     ) {
         self.store = store
         self.service = service
         self.downloadCenter = downloadCenter
         self.requestContextProvider = requestContextProvider
+        self.blobImageDataProvider = blobImageDataProvider
+        let snapshot = store.snapshot(for: tabID)
         state = State(
             tabID: tabID,
             pageTitle: pageTitle.nilIfBlank ?? "新标签页",
             pageURL: pageURL,
             isPrivate: isPrivate,
-            resources: store.resources(for: tabID),
-            scanState: store.snapshot(for: tabID).scanState,
-            lastScanAt: store.snapshot(for: tabID).lastScanAt,
-            errorMessage: store.snapshot(for: tabID).errorMessage,
-            activationState: store.snapshot(for: tabID).activationState
+            resources: snapshot.resources,
+            scanState: snapshot.scanState,
+            lastScanAt: snapshot.lastScanAt,
+            errorMessage: snapshot.errorMessage,
+            activationState: snapshot.activationState,
+            hasStarted: snapshot.hasStarted,
+            imageFilters: snapshot.imageFilters
         )
     }
 
@@ -71,7 +79,9 @@ final class ResourceSnifferViewModel {
                 scanState: snapshot.scanState,
                 lastScanAt: snapshot.lastScanAt,
                 errorMessage: snapshot.errorMessage,
-                activationState: snapshot.activationState
+                activationState: snapshot.activationState,
+                hasStarted: snapshot.hasStarted,
+                imageFilters: snapshot.imageFilters
             )
             self.onStateChange?(self.state)
             self.resolveHLSMetadataIfNeeded(in: snapshot.resources)
@@ -103,6 +113,10 @@ final class ResourceSnifferViewModel {
         await service.disableSniffing(for: state.tabID)
     }
 
+    func setImageFilters(_ filters: Set<ImageResourceFormat>) {
+        store.setImageFilters(filters, tabID: state.tabID)
+    }
+
     func clearResults() {
         hlsMetadataTasks.values.forEach { $0.cancel() }
         hlsMetadataTasks.removeAll()
@@ -114,6 +128,11 @@ final class ResourceSnifferViewModel {
         await requestContextProvider(url).makeRequest(
             cachePolicy: .returnCacheDataElseLoad
         )
+    }
+
+    func thumbnailData(for url: URL) async -> Data? {
+        guard url.scheme?.lowercased() == "blob" else { return nil }
+        return await blobImageDataProvider(url)
     }
 
     func requestContext(for resource: DetectedResource) async -> DownloadRequestContext {

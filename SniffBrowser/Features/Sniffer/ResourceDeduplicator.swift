@@ -7,11 +7,18 @@ struct ResourceDeduplicator: Sendable {
 
     static func canonicalURL(for url: URL) -> URL? {
         guard let scheme = url.scheme?.lowercased(),
-              ["http", "https", "blob", "file"].contains(scheme)
+              ["http", "https", "blob", "file", "data"].contains(scheme)
         else {
             return nil
         }
-        if scheme == "blob" || scheme == "file" {
+        if scheme == "blob" || scheme == "file" || scheme == "data" {
+            guard scheme != "data" || url.absoluteString.lowercased().hasPrefix("data:image/") else {
+                return nil
+            }
+            // Keep the original data URL intact. URLComponents can rewrite or
+            // percent-encode the payload, which would make an inline image
+            // impossible to decode later.
+            if scheme == "data" { return url }
             var components = URLComponents(
                 url: url,
                 resolvingAgainstBaseURL: false

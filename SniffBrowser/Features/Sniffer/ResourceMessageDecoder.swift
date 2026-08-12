@@ -3,6 +3,7 @@ import Foundation
 struct ResourceMessageDecoder: Sendable {
     static let maximumBatchCount = 500
     static let maximumURLLength = 8_192
+    private static let maximumInlineImageURLLength = 1_500_000
     private static let maximumTextLength = 1_024
 
     enum DecodeError: Error, Equatable {
@@ -58,10 +59,15 @@ struct ResourceMessageDecoder: Sendable {
         pageURL: String?,
         pageTitle: String?
     ) -> ResourceCandidate? {
-        guard let rawURL = boundedString(
-            value["url"],
-            maximum: Self.maximumURLLength
-        ), isAllowed(rawURL, pageURL: pageURL) else {
+        guard let rawURL = value["url"] as? String,
+              !rawURL.isEmpty else {
+            return nil
+        }
+        let maxURLLength = rawURL.lowercased().hasPrefix("data:image/")
+            ? Self.maximumInlineImageURLLength
+            : Self.maximumURLLength
+        guard rawURL.utf16.count <= maxURLLength,
+              isAllowed(rawURL, pageURL: pageURL) else {
             return nil
         }
         let source = boundedString(value["source"], maximum: 64)
@@ -106,8 +112,13 @@ struct ResourceMessageDecoder: Sendable {
         else {
             return false
         }
-        if ["javascript", "data", "about"].contains(scheme) {
+        if ["javascript", "about"].contains(scheme) {
             return false
+        }
+        if scheme == "data" {
+            // Only image data URLs are accepted, and the outer message size
+            // limit still bounds the amount of inline data we retain.
+            return rawURL.lowercased().hasPrefix("data:image/")
         }
         if ["http", "https", "blob"].contains(scheme) {
             return true

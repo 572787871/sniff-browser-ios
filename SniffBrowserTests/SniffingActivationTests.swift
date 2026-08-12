@@ -52,6 +52,28 @@ final class SniffingActivationTests: XCTestCase {
     }
 
     @MainActor
+    func testNavigationEndsThePreviousPageActivation() throws {
+        let store = TabResourceStore()
+        let tabID = UUID()
+        store.prepare(tabID: tabID, isPrivate: false)
+        store.beginActivation(tabID: tabID)
+        store.completeActivation(tabID: tabID)
+        store.upsert([try resource(tabID: tabID)], tabID: tabID)
+
+        store.beginNavigation(
+            tabID: tabID,
+            pageURL: URL(string: "https://example.com/next"),
+            isPrivate: false
+        )
+
+        let snapshot = store.snapshot(for: tabID)
+        XCTAssertEqual(snapshot.activationState, .disabled)
+        XCTAssertFalse(snapshot.hasStarted)
+        XCTAssertTrue(snapshot.resources.isEmpty)
+        XCTAssertEqual(snapshot.scanState, .idle)
+    }
+
+    @MainActor
     func testRestoredBrowserTabDoesNotRestoreSniffingState() {
         let tab = BrowserTab(
             title: "Example",

@@ -42,7 +42,7 @@ enum ResourceSniffingScriptProvider {
       // 会在查询参数里带扩展名，但下载它返回的是 HTML 而非文件。
       const mediaPathPattern = /\.(m3u8|mp4|mov|m4v|webm|ts|mpeg|mpg|mkv|mp3|m4a|aac|wav|flac|ogg|opus|vtt|srt|ass|pdf|txt|epub|docx?|xlsx?|pptx?|json|xml|zip|rar|7z|tar|gz|jpe?g|png|gif|webp|heic|avif|svg)(?:$|[?#])/i;
       const ignoredPattern = /\.(js|css|woff2?|ttf|otf)(?:$|[?#])/i;
-      const validSchemePattern = /^(https?:|blob:|file:)/i;
+      const validSchemePattern = /^(https?:|blob:|file:|data:image\/)/i;
       const hasMediaPath = raw => {
         try {
           return mediaPathPattern.test(new URL(raw, document.baseURI).pathname);
@@ -54,7 +54,10 @@ enum ResourceSniffingScriptProvider {
         try { handler.postMessage(payload); } catch (_) {}
       };
       const absoluteURL = raw => {
-        if (!raw || typeof raw !== "string" || raw.length > 8192) return null;
+        if (!raw || typeof raw !== "string") return null;
+        const isInlineImage = /^data:image\//i.test(raw);
+        if (raw.length > (isInlineImage ? 1500000 : 8192)) return null;
+        if (isInlineImage) return raw;
         try {
           const value = new URL(raw, document.baseURI).href;
           return validSchemePattern.test(value) ? value : null;
@@ -168,9 +171,11 @@ enum ResourceSniffingScriptProvider {
       });
       const enqueueImageURL = (element, raw, source) => {
         const value = String(raw || "").trim();
-        if (!value || value.startsWith("data:")) return;
+        if (!value) return;
+        const dataMIME = value.match(/^data:([^;,]+)[;,]/i)?.[1] || null;
         enqueue({
           url: value,
+          mimeType: dataMIME,
           width: element.naturalWidth,
           height: element.naturalHeight,
           source,
@@ -193,6 +198,15 @@ enum ResourceSniffingScriptProvider {
         lazyImageSrcsetAttributes.forEach(attribute => {
           scanImageSrcset(element, element.getAttribute(attribute), source);
         });
+      };
+      const scanBackgroundImage = (element, source) => {
+        if (!(element instanceof Element)) return;
+        let background = "";
+        try { background = getComputedStyle(element).backgroundImage || ""; } catch (_) {}
+        const matches = background.matchAll(/url\(\s*(["']?)(.*?)\1\s*\)/gi);
+        for (const match of matches) {
+          enqueueImageURL(element, match[2], source);
+        }
       };
       const scanElement = (element, source) => {
         if (!state.enabled || !(element instanceof Element)) return;
@@ -226,10 +240,15 @@ enum ResourceSniffingScriptProvider {
             enqueue({ url: raw, mimeType: mime, source, elementType: tag });
           }
         }
+        scanBackgroundImage(element, source);
       };
       const scanDOM = source => document
         .querySelectorAll("video,audio,source,track,img,a[href],link[href]")
         .forEach(element => scanElement(element, source));
+      const scanCSSBackgrounds = source => {
+        Array.from(document.querySelectorAll("*")).slice(0, 2000)
+          .forEach(element => scanBackgroundImage(element, source));
+      };
       const scanPerformance = source => {
         let entries = [];
         try { entries = performance.getEntriesByType("resource").slice(-500); } catch (_) {}
@@ -291,6 +310,7 @@ enum ResourceSniffingScriptProvider {
         if (!state.enabled) return false;
         const source = reason === "manualScan" ? "manualScan" : "dom";
         scanDOM(source);
+        scanCSSBackgrounds(source);
         scanPerformance(source);
         scanPlayerConfigurations(source);
         scanEmbeddedHLSURLs(source);
@@ -374,7 +394,7 @@ enum ResourceSniffingScriptProvider {
         state.observer.observe(document.documentElement || document, {
           subtree: true, childList: true, attributes: true,
           attributeFilter: [
-            "src", "href", "srcset", "type",
+            "src", "href", "srcset", "type", "style", "class",
             ...lazyImageURLAttributes, ...lazyImageSrcsetAttributes
           ]
         });
@@ -426,14 +446,4 @@ enum ResourceSniffingScriptProvider {
         """
     }
 
-    static func enableAndIncrementalScanInvocation(reason: String) -> String {
-        let safeReason = reason.replacingOccurrences(of: "\"", with: "")
-        return """
-        (() => {
-          const bridge = window.\(bridgeName);
-          if (!bridge || bridge.enable?.() !== true) return false;
-          return bridge.scan?.("\(safeReason)") === true;
-        })();
-        """
-    }
 }

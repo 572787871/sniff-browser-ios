@@ -86,7 +86,6 @@ extension BrowserViewController: WKNavigationDelegate {
   ) {
     WebPageThemeColorService.requestCurrentTheme(in: webView)
     if let tab = tabManager.tabs.first(where: { $0.webView === webView }) {
-      resourceSniffingService.restoreActiveSniffingAfterNavigation(tabID: tab.id)
       contentBlockerService.applyRules(
         to: webView,
         tabID: tab.id,

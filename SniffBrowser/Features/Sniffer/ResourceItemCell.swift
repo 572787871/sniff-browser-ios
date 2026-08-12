@@ -50,6 +50,7 @@ final class ResourceListCell: UITableViewCell {
         resource: DetectedResource,
         allowsThumbnailDiskCache: Bool,
         thumbnailRequestProvider: @escaping @MainActor (URL) async -> URLRequest?,
+        inlineDataProvider: @escaping @MainActor (URL) async -> Data?,
         mediaContextProvider: @escaping @MainActor (DetectedResource) async -> DownloadRequestContext?,
         onCopy: @escaping () -> Void,
         onShare: @escaping () -> Void,
@@ -110,7 +111,7 @@ final class ResourceListCell: UITableViewCell {
             : UIImage(systemName: symbolName(for: resource.resourceType))
         typeIconView.backgroundColor = AppColors.accentFill
         let thumbnailURL = resource.resourceType == .image
-            ? resource.canonicalURL
+            ? (URL(string: resource.originalURLString) ?? resource.canonicalURL)
             : resource.thumbnailURL
         let supportsMediaFrame = resource.resourceType == .video
             || resource.resourceType == .hls
@@ -125,6 +126,7 @@ final class ResourceListCell: UITableViewCell {
                 guard let request = await thumbnailRequestProvider(thumbnailURL),
                       !Task.isCancelled
                 else { return }
+                let inlineData = await inlineDataProvider(thumbnailURL)
                 let thumbnail = ResourceThumbnailRequest(
                     resourceID: resource.id,
                     tabID: resource.tabID,
@@ -133,7 +135,8 @@ final class ResourceListCell: UITableViewCell {
                         width: 80 * scale,
                         height: 64 * scale
                     ),
-                    allowsDiskCache: allowsThumbnailDiskCache
+                    allowsDiskCache: allowsThumbnailDiskCache,
+                    inlineData: inlineData
                 )
                 self?.thumbnailToken = ResourceThumbnailLoader.shared.load(
                     thumbnail

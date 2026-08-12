@@ -110,6 +110,7 @@ struct ResourceClassifier: Sendable {
         }
 
         let fileExtension = inferredExtension(from: canonicalURL)
+        let scheme = canonicalURL.scheme?.lowercased()
         let rawName = canonicalURL.lastPathComponent
             .removingPercentEncoding ?? canonicalURL.lastPathComponent
         let fallbackName = type.localizedTitle + (fileExtension.isEmpty
@@ -130,13 +131,17 @@ struct ResourceClassifier: Sendable {
         } else {
             displayName = inferredName
         }
-        let fileName = FileNameSanitizer.sanitize(displayName)
-        let scheme = canonicalURL.scheme?.lowercased()
+        let fileName = scheme == "blob" || scheme == "data"
+            ? fallbackName
+            : FileNameSanitizer.sanitize(displayName)
         let isBlob = scheme == "blob"
         let isFile = scheme == "file"
+        let isData = scheme == "data"
         let limitation: String?
         if isBlob {
             limitation = "Blob 地址仅在当前网页会话中有效，暂不能直接下载。"
+        } else if isData {
+            limitation = "内联图片仅在当前页面会话中可预览。"
         } else if isFile {
             limitation = "本地网页资源受 App 沙盒权限限制。"
         } else {
@@ -166,7 +171,7 @@ struct ResourceClassifier: Sendable {
             lastSeenAt: now,
             tabID: tabID,
             headersHint: candidate.headersHint,
-            isPotentiallyDownloadable: !isBlob && !isFile,
+            isPotentiallyDownloadable: !isBlob && !isFile && !isData,
             limitationReason: limitation
         )
     }
@@ -179,7 +184,7 @@ struct ResourceClassifier: Sendable {
         // A blob URL is a page-local playback handle, not a requestable media
         // file. The scanner separately discovers the backing MP4/HLS URL; do
         // not present this unusable duplicate as the first video result.
-        if url.scheme?.lowercased() == "blob" {
+        if url.scheme?.lowercased() == "blob", type != .image {
             return false
         }
         // HLS/DASH media fragments are implementation details of a stream, not
