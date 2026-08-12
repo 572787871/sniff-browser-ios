@@ -1148,6 +1148,10 @@ final class BrowserViewController: UIViewController {
 
     let changes = {
       self.view.backgroundColor = resolvedBackground
+      // contentView fills the whole controller and sits above `view`, so it
+      // must follow the page canvas as well. Otherwise the page can be dark
+      // while the area around the address bar still shows the app paper color.
+      self.contentView.backgroundColor = resolvedBackground
       self.topChromeBackgroundView.backgroundColor = self.currentChromeState
         .showsTopBackdrop ? resolvedBackground : .clear
       self.searchOverlayBackgroundView.backgroundColor = resolvedBackground
