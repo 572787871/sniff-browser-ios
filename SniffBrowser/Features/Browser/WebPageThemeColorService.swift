@@ -66,7 +66,7 @@ enum WebPageThemeColorService {
             : null;
           const schemes = String(rootStyle && rootStyle.colorScheme || "")
             .toLowerCase()
-            .split(/\s+/)
+            .split(/\\s+/)
             .filter(Boolean);
           const prefersDark = Boolean(
             window.matchMedia
