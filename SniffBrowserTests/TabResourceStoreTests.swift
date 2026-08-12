@@ -50,7 +50,7 @@ final class TabResourceStoreTests: XCTestCase {
         )
 
         XCTAssertTrue(store.resources(for: tabID).isEmpty)
-        XCTAssertEqual(store.snapshot(for: tabID).scanState, .installing)
+        XCTAssertEqual(store.snapshot(for: tabID).scanState, .idle)
     }
 
     @MainActor
