@@ -25,13 +25,13 @@
 ## 2. 技术架构
 
 - 语言：Swift 5 语言模式，由 GitHub Runner 的 Xcode 16 工具链编译。
-- UI：UIKit，纯代码 Auto Layout。
+- UI：SwiftUI 展示层 + UIKit 系统桥接与浏览器容器；UIKit 部分使用纯代码 Auto Layout。
 - 浏览器：WKWebView / WebKit。
 - 最低系统：iOS 17.0。
 - 设备：iPhone，arm64；测试目标同时支持 Simulator。
 - 架构：轻量 Coordinator + MVVM。
 - 工程生成：XcodeGen，`project.yml` 是唯一工程配置来源。
-- 系统框架：UIKit、WebKit、Foundation、Security、UniformTypeIdentifiers、AVKit、AVFoundation。
+- 系统框架：SwiftUI、UIKit、WebKit、Foundation、Security、UniformTypeIdentifiers、AVKit、AVFoundation。
 - 测试：XCTest。
 - CI：GitHub Actions macOS Runner。
 
@@ -42,7 +42,7 @@
 - `Core/UI`：统一基础控制器、空状态、加载状态、错误状态。
 - `Features`：按浏览器、标签页、资源、下载、文件、收藏、历史、认证、设置划分。
 - `Services`：持久化、网络、安全及系统集成。
-- View Controller 负责展示与交互，View Model 负责可观察状态与业务转换，Coordinator 负责页面流转。
+- SwiftUI View 负责管理页面展示，UIKit View Controller 作为路由和系统能力适配器，View Model 负责可观察状态与业务转换，Coordinator 负责页面流转。
 
 ## 3. 功能模块
 

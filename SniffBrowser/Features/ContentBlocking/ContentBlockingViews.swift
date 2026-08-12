@@ -66,7 +66,7 @@ enum ContentBlockCardStyle {
 
 // MARK: - 总开关卡片
 
-/// 顶部内容拦截总开关：暖纸卡片 + 原生图标与开关。
+/// 顶部内容拦截总开关：蓝灰卡片 + 原生图标与开关。
 final class ContentBlockMasterCardCell: UITableViewCell {
     static let reuseIdentifier = "ContentBlockMasterCardCell"
 
@@ -468,7 +468,7 @@ final class SparklineView: UIView {
     }
 }
 
-/// 与 Paper Signal 暖纸色协调的语义趋势线。
+/// 与 Deep Ocean 冷灰蓝表面协调的语义趋势线。
 enum ContentBlockChartColors {
     static let blocked = AppColors.danger
     static let pageLoads = AppColors.accent
