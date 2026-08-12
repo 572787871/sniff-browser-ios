@@ -1,5 +1,46 @@
 import UIKit
 
+/// 仍由 UIKit 承担的照片选择/背景画廊所使用的兼容摘要行。
+/// 新设置主页使用 SwiftUI，但保留该窄适配器避免重复实现系统选择器流程。
+final class GlassSummaryCell: UITableViewCell {
+    static let reuseIdentifier = "GlassSummaryCell"
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        selectionStyle = .default
+        var background = UIBackgroundConfiguration.listGroupedCell()
+        background.backgroundColor = AppColors.surface
+        backgroundConfiguration = background
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
+    func configure(
+        title: String,
+        subtitle: String?,
+        symbol: String,
+        tint: UIColor = AppColors.accent,
+        titleColor: UIColor = AppColors.primaryText,
+        isEnabled: Bool = true
+    ) {
+        var content = UIListContentConfiguration.subtitleCell()
+        content.text = title
+        content.secondaryText = subtitle
+        content.image = UIImage(systemName: symbol)
+        content.imageProperties.tintColor = tint
+        content.textProperties.color = titleColor
+        content.secondaryTextProperties.color = AppColors.secondaryText
+        contentConfiguration = content
+        accessoryType = .disclosureIndicator
+        isUserInteractionEnabled = isEnabled
+        alpha = isEnabled ? 1 : 0.46
+        accessibilityLabel = [title, subtitle].compactMap { $0 }.joined(separator: "，")
+        accessibilityTraits = isEnabled ? [.button] : [.button, .notEnabled]
+    }
+}
+
 /// 单选行：图标 + 标题 + 勾选标记，用于设置页的单选项列表。
 final class SettingsCheckmarkCell: UITableViewCell {
     static let reuseIdentifier = "SettingsCheckmarkCell"

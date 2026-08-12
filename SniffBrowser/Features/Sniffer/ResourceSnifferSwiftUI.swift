@@ -1,50 +1,15 @@
 import SwiftUI
 import UIKit
 
-/// Resource Sniffer owns a cool, adaptive surface while the rest of the app is
-/// migrated incrementally. The accent remains the user's global theme color.
+/// 资源面板与应用其余 SwiftUI 页面共享同一套语义颜色。
 enum ResourceSnifferPalette {
-    static let background = UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.027, green: 0.063, blue: 0.106, alpha: 1)
-            : UIColor(red: 0.957, green: 0.973, blue: 0.992, alpha: 1)
-    }
-
-    static let surface = UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.055, green: 0.118, blue: 0.184, alpha: 0.96)
-            : UIColor(red: 0.996, green: 0.998, blue: 1, alpha: 0.96)
-    }
-
-    static let secondarySurface = UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.078, green: 0.157, blue: 0.235, alpha: 1)
-            : UIColor(red: 0.902, green: 0.937, blue: 0.976, alpha: 1)
-    }
-
-    static let primaryText = UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.949, green: 0.973, blue: 1, alpha: 1)
-            : UIColor(red: 0.063, green: 0.118, blue: 0.196, alpha: 1)
-    }
-
-    static let secondaryText = UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.624, green: 0.714, blue: 0.808, alpha: 1)
-            : UIColor(red: 0.357, green: 0.439, blue: 0.537, alpha: 1)
-    }
-
-    static let tertiaryText = UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.455, green: 0.557, blue: 0.663, alpha: 1)
-            : UIColor(red: 0.494, green: 0.565, blue: 0.647, alpha: 1)
-    }
-
-    static let border = UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.302, green: 0.494, blue: 0.686, alpha: 0.28)
-            : UIColor(red: 0.208, green: 0.376, blue: 0.557, alpha: 0.18)
-    }
+    static let background = AppColors.background
+    static let surface = AppColors.surface
+    static let secondarySurface = AppColors.secondarySurface
+    static let primaryText = AppColors.primaryText
+    static let secondaryText = AppColors.secondaryText
+    static let tertiaryText = AppColors.tertiaryText
+    static let border = AppColors.separator
 
     static let accent = AppColors.accent
     static let accentContent = AppColors.accentContent

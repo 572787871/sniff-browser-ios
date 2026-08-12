@@ -115,10 +115,10 @@ enum SettingsLegalContent {
         ) as? String ?? ""
         return [
             heading("关于嗅探浏览器"),
-            paragraph("嗅探浏览器 SniffBrowser 是一款通用网页浏览器，使用原生 Swift + UIKit 开发。"),
+            paragraph("嗅探浏览器 SniffBrowser 是一款通用网页浏览器，界面采用 SwiftUI，网页内核与标签空间转场继续使用原生 WebKit 和 UIKit。"),
             spacer(),
             heading("技术概要"),
-            bullet("采用 Swift + UIKit + WKWebView 开发。"),
+            bullet("采用 SwiftUI + UIKit + WKWebView 的混合原生架构。"),
             bullet("最低支持 iOS 17，仅支持 iPhone。"),
             bullet("不收集、不上传任何个人信息，无账户系统，无内置统计或广告 SDK。"),
             spacer(),

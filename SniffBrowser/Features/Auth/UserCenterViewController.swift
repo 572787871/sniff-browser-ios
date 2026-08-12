@@ -1,7 +1,9 @@
+import Combine
+import SwiftUI
 import UIKit
 
 final class UserCenterViewController: BaseViewController {
-    enum Destination {
+    enum Destination: Hashable {
         case login
         case sync
         case downloads
@@ -15,17 +17,13 @@ final class UserCenterViewController: BaseViewController {
     var onSelectDestination: ((Destination) -> Void)?
     var onLogin: (() -> Void)?
 
-    private var session: AuthSession?
-    private var counts: UserCenterCounts
-    private let tableView = UITableView(frame: .zero, style: .insetGrouped)
-    private let profileHeader = UserProfileHeaderView()
+    private let store: UserCenterSwiftUIStore
 
     init(
         session: AuthSession? = nil,
         counts: UserCenterCounts = UserCenterCounts()
     ) {
-        self.session = session
-        self.counts = counts
+        store = UserCenterSwiftUIStore(session: session, counts: counts)
         super.init(title: "用户中心", prefersLargeTitle: true)
     }
 
@@ -35,87 +33,52 @@ final class UserCenterViewController: BaseViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        profileHeader.configure(session: session, counts: counts)
-        configureTable()
-    }
-
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        updateHeaderLayout()
+        installSwiftUI(
+            UserCenterSwiftUIScreen(
+                store: store,
+                onSelect: { [weak self] destination in
+                    self?.route(to: destination)
+                }
+            ),
+            in: contentView
+        )
     }
 
     func update(session: AuthSession?) {
-        self.session = session
-        guard isViewLoaded else { return }
-        profileHeader.update(session: session)
-        tableView.reloadData()
-        updateHeaderLayout()
+        store.session = session
     }
 
     func update(counts: UserCenterCounts) {
-        self.counts = counts
-        guard isViewLoaded else { return }
-        profileHeader.update(counts: counts)
+        store.counts = counts
     }
 
-    private func configureTable() {
-        tableView.backgroundColor = .clear
-        tableView.separatorStyle = .none
-        tableView.rowHeight = UITableView.automaticDimension
-        tableView.estimatedRowHeight = 58
-        tableView.register(
-            GlassSummaryCell.self,
-            forCellReuseIdentifier: GlassSummaryCell.reuseIdentifier
-        )
-        tableView.dataSource = self
-        tableView.delegate = self
-        tableView.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(tableView)
-
-        let initialWidth = max(view.bounds.width, 1)
-        profileHeader.frame = CGRect(
-            x: 0,
-            y: 0,
-            width: initialWidth,
-            height: profileHeader.fittingHeight(forWidth: initialWidth)
-        )
-        profileHeader.onPrimaryAction = { [weak self] in
-            guard let self else { return }
-            self.route(to: self.session == nil ? .login : .sync)
-        }
-        profileHeader.onSelectSummary = { [weak self] destination in
-            self?.route(to: destination)
-        }
-        tableView.tableHeaderView = profileHeader
-
-        NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: view.topAnchor),
-            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
+    var displayedCounts: UserCenterCounts {
+        store.counts
     }
 
-    private func updateHeaderLayout() {
-        guard tableView.bounds.width > 0 else { return }
-        let targetWidth = tableView.bounds.width
-        if abs(profileHeader.frame.width - targetWidth) > 0.5 {
-            profileHeader.frame.size.width = targetWidth
-        }
-        let fittingHeight = profileHeader.fittingHeight(forWidth: targetWidth)
-        guard abs(profileHeader.frame.height - fittingHeight) > 0.5 else {
-            return
-        }
-        profileHeader.frame.size.height = fittingHeight
-        tableView.tableHeaderView = profileHeader
+    var summaryAccessibilityLabels: [String] {
+        [
+            "下载，\(store.counts.downloads)",
+            "文件，\(store.counts.files)",
+            "收藏，\(store.counts.favorites)",
+            "历史，\(store.counts.history)"
+        ]
     }
 
-    private func route(to destination: Destination) {
+    var menuAccessibilityLabels: [String] {
+        [
+            "数据同步，\(store.session == nil ? "登录后可用" : "同步浏览数据")",
+            "隐私与安全，网站权限与浏览数据",
+            "关于嗅探浏览器，版本与许可信息"
+        ]
+    }
+
+    func route(to destination: Destination) {
         if destination == .login, let onLogin {
             onLogin()
             return
         }
-        if destination == .sync, session == nil {
+        if destination == .sync, store.session == nil {
             route(to: .login)
             return
         }
@@ -124,410 +87,194 @@ final class UserCenterViewController: BaseViewController {
             return
         }
 
-        let viewController: UIViewController?
+        let controller: UIViewController?
         switch destination {
-        case .login:
-            viewController = LoginViewController()
-        case .sync:
-            viewController = nil
-        case .downloads:
-            viewController = DownloadManagerViewController()
-        case .files:
-            viewController = FileManagerViewController()
-        case .favorites:
-            viewController = FavoritesViewController()
-        case .history:
-            viewController = HistoryViewController()
-        case .privacy, .about:
-            viewController = SettingsViewController()
+        case .login: controller = LoginViewController()
+        case .sync: controller = nil
+        case .downloads: controller = DownloadManagerViewController()
+        case .files: controller = FileManagerViewController()
+        case .favorites: controller = FavoritesViewController()
+        case .history: controller = HistoryViewController()
+        case .privacy, .about: controller = SettingsViewController()
         }
-
-        if let viewController {
-            navigationController?.pushViewController(viewController, animated: true)
+        if let controller {
+            navigationController?.pushViewController(controller, animated: true)
         }
     }
 }
 
-extension UserCenterViewController: UITableViewDataSource, UITableViewDelegate {
-    private struct Row {
+@MainActor
+private final class UserCenterSwiftUIStore: ObservableObject {
+    @Published var session: AuthSession?
+    @Published var counts: UserCenterCounts
+
+    init(session: AuthSession?, counts: UserCenterCounts) {
+        self.session = session
+        self.counts = counts
+    }
+}
+
+private struct UserCenterSwiftUIScreen: View {
+    @ObservedObject var store: UserCenterSwiftUIStore
+    let onSelect: (UserCenterViewController.Destination) -> Void
+
+    private struct Summary: Identifiable {
         let title: String
-        let subtitle: String?
+        let value: Int
         let symbol: String
-        let destination: Destination
+        let destination: UserCenterViewController.Destination
+        var id: UserCenterViewController.Destination { destination }
     }
 
-    private struct Section {
-        let title: String
-        let rows: [Row]
-    }
-
-    private var sections: [Section] {
+    private var summaries: [Summary] {
         [
-            Section(title: "账户与应用", rows: [
-                Row(
+            Summary(title: "下载", value: store.counts.downloads, symbol: "arrow.down.circle", destination: .downloads),
+            Summary(title: "文件", value: store.counts.files, symbol: "folder", destination: .files),
+            Summary(title: "收藏", value: store.counts.favorites, symbol: "star", destination: .favorites),
+            Summary(title: "历史", value: store.counts.history, symbol: "clock", destination: .history)
+        ]
+    }
+
+    var body: some View {
+        AppSwiftUIScreen {
+            ScrollView {
+                VStack(spacing: 22) {
+                    profileCard
+                    accountSection
+                }
+                .padding(16)
+                .padding(.bottom, 30)
+            }
+        }
+    }
+
+    private var profileCard: some View {
+        VStack(spacing: 18) {
+            HStack(spacing: 14) {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 34))
+                    .foregroundStyle(AppSwiftUIColors.accent)
+                    .frame(width: 58, height: 58)
+                    .background(
+                        AppSwiftUIColors.accentFill,
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    )
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(profileTitle)
+                        .font(.title2.weight(.bold))
+                    Text(profileSubtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(AppSwiftUIColors.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+
+            Button {
+                onSelect(store.session == nil ? .login : .sync)
+            } label: {
+                Label(
+                    store.session == nil ? "登录或注册" : "同步设置",
+                    systemImage: store.session == nil ? "person.badge.plus" : "arrow.triangle.2.circlepath"
+                )
+            }
+            .buttonStyle(AppSwiftUIPrimaryButtonStyle())
+            .accessibilityIdentifier("userCenter.primaryAction")
+
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 9), count: 4),
+                spacing: 9
+            ) {
+                ForEach(summaries) { summary in
+                    Button {
+                        onSelect(summary.destination)
+                    } label: {
+                        VStack(spacing: 5) {
+                            Image(systemName: summary.symbol)
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundStyle(AppSwiftUIColors.accent)
+                            Text("\(summary.value)")
+                                .font(.headline.monospacedDigit())
+                            Text(summary.title)
+                                .font(.caption)
+                                .foregroundStyle(AppSwiftUIColors.secondaryText)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 78)
+                        .background(
+                            AppSwiftUIColors.secondarySurface.opacity(0.72),
+                            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("userCenter.summary.\(summary.title)")
+                }
+            }
+        }
+        .padding(18)
+        .background(.regularMaterial)
+        .background(AppSwiftUIColors.surface.opacity(0.74))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(AppSwiftUIColors.separator, lineWidth: 0.7)
+        }
+        .shadow(color: .black.opacity(0.06), radius: 16, y: 8)
+    }
+
+    private var accountSection: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            AppSwiftUISectionHeader(title: "账户与应用")
+            AppSwiftUISectionCard {
+                destinationRow(
                     title: "数据同步",
-                    subtitle: session == nil ? "登录后可用" : "同步浏览数据",
+                    subtitle: store.session == nil ? "登录后可用" : "同步浏览数据",
                     symbol: "arrow.triangle.2.circlepath",
                     destination: .sync
-                ),
-                Row(title: "隐私与安全", subtitle: "网站权限与浏览数据", symbol: "hand.raised", destination: .privacy),
-                Row(title: "关于嗅探浏览器", subtitle: "版本与许可信息", symbol: "info.circle", destination: .about)
-            ])
-        ]
-    }
-
-    func numberOfSections(in tableView: UITableView) -> Int {
-        sections.count
-    }
-
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        sections[section].rows.count
-    }
-
-    func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        sections[section].title
-    }
-
-    func tableView(
-        _ tableView: UITableView,
-        cellForRowAt indexPath: IndexPath
-    ) -> UITableViewCell {
-        guard let cell = tableView.dequeueReusableCell(
-            withIdentifier: GlassSummaryCell.reuseIdentifier,
-            for: indexPath
-        ) as? GlassSummaryCell else {
-            return UITableViewCell()
-        }
-        let row = sections[indexPath.section].rows[indexPath.row]
-        cell.configure(
-            title: row.title,
-            subtitle: row.subtitle,
-            symbol: row.symbol
-        )
-        return cell
-    }
-
-    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        tableView.deselectRow(at: indexPath, animated: true)
-        route(to: sections[indexPath.section].rows[indexPath.row].destination)
-    }
-}
-
-private final class UserProfileHeaderView: UIView {
-    var onPrimaryAction: (() -> Void)?
-    var onSelectSummary: ((UserCenterViewController.Destination) -> Void)?
-
-    private let cardView = AppMaterialView(
-        style: .systemMaterial,
-        fallbackColor: AppColors.chromeFallback
-    )
-    private let avatarContainer = UIView()
-    private let avatarView = UIImageView(image: UIImage(systemName: "person.crop.circle.fill"))
-    private let titleLabel = UILabel()
-    private let subtitleLabel = UILabel()
-    private let actionButton = UIButton(type: .system)
-    private let summaryStack = UIStackView()
-    private let downloadSummary = UserSummaryCard(
-        title: "下载",
-        value: 0,
-        symbol: "arrow.down.circle"
-    )
-    private let fileSummary = UserSummaryCard(
-        title: "文件",
-        value: 0,
-        symbol: "folder"
-    )
-    private let favoriteSummary = UserSummaryCard(
-        title: "收藏",
-        value: 0,
-        symbol: "star"
-    )
-    private let historySummary = UserSummaryCard(
-        title: "历史",
-        value: 0,
-        symbol: "clock"
-    )
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        configureView()
-    }
-
-    required init?(coder: NSCoder) {
-        return nil
-    }
-
-    func configure(session: AuthSession?, counts: UserCenterCounts) {
-        update(session: session)
-        update(counts: counts)
-    }
-
-    func update(session: AuthSession?) {
-        if let session {
-            titleLabel.text = session.user.displayName
-                ?? session.user.email
-                ?? "已登录用户"
-            subtitleLabel.text = session.user.email ?? "账户数据已连接"
-            actionButton.configuration?.title = "同步设置"
-            actionButton.accessibilityLabel = "打开数据同步设置"
-        } else {
-            titleLabel.text = "游客模式"
-            subtitleLabel.text = "无需登录即可使用浏览器；登录后可同步个人数据。"
-            actionButton.configuration?.title = "登录或注册"
-            actionButton.accessibilityLabel = "登录或注册"
-        }
-    }
-
-    func update(counts: UserCenterCounts) {
-        downloadSummary.setValue(counts.downloads)
-        fileSummary.setValue(counts.files)
-        favoriteSummary.setValue(counts.favorites)
-        historySummary.setValue(counts.history)
-    }
-
-    func fittingHeight(forWidth width: CGFloat) -> CGFloat {
-        frame.size = CGSize(width: width, height: max(frame.height, 260))
-        setNeedsLayout()
-        layoutIfNeeded()
-        let fittingSize = systemLayoutSizeFitting(
-            CGSize(
-                width: width,
-                height: UIView.layoutFittingCompressedSize.height
-            ),
-            withHorizontalFittingPriority: .required,
-            verticalFittingPriority: .fittingSizeLevel
-        )
-        return max(260, ceil(fittingSize.height))
-    }
-
-    private func configureView() {
-        backgroundColor = .clear
-
-        cardView.layer.cornerRadius = AppRadius.card
-        cardView.layer.cornerCurve = .continuous
-        cardView.layer.borderWidth = AppMetrics.separatorHeight
-        cardView.layer.borderColor = AppColors.separator.cgColor
-        cardView.clipsToBounds = true
-        cardView.contentView.backgroundColor = AppColors.surface.withAlphaComponent(0.90)
-        cardView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(cardView)
-
-        avatarContainer.backgroundColor = AppColors.accentFill
-        avatarContainer.layer.cornerRadius = AppRadius.control
-        avatarContainer.layer.cornerCurve = .continuous
-        avatarContainer.translatesAutoresizingMaskIntoConstraints = false
-
-        avatarView.tintColor = AppColors.accent
-        avatarView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 27)
-        avatarView.contentMode = .center
-        avatarView.isAccessibilityElement = false
-        avatarView.accessibilityIdentifier = "userCenter.avatar"
-        avatarView.translatesAutoresizingMaskIntoConstraints = false
-        avatarContainer.addSubview(avatarView)
-        avatarView.setContentHuggingPriority(.required, for: .horizontal)
-
-        AppTypography.configure(titleLabel, style: .title2, weight: .semibold)
-        titleLabel.numberOfLines = 0
-
-        AppTypography.configure(subtitleLabel, style: .subheadline)
-        subtitleLabel.textColor = AppColors.secondaryText
-        subtitleLabel.numberOfLines = 0
-
-        let labels = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
-        labels.axis = .vertical
-        labels.spacing = AppSpacing.xxs
-
-        var buttonConfiguration = UIButton.Configuration.tinted()
-        buttonConfiguration.cornerStyle = .medium
-        buttonConfiguration.contentInsets = NSDirectionalEdgeInsets(
-            top: AppSpacing.sm,
-            leading: AppSpacing.lg,
-            bottom: AppSpacing.sm,
-            trailing: AppSpacing.lg
-        )
-        buttonConfiguration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer {
-            var attributes = $0
-            attributes.font = AppTypography.headline
-            return attributes
-        }
-        actionButton.configuration = buttonConfiguration
-        actionButton.addTarget(self, action: #selector(actionPressed), for: .touchUpInside)
-        actionButton.isAccessibilityElement = true
-        actionButton.accessibilityIdentifier = "userCenter.primaryAction"
-        actionButton.accessibilityHint = "打开登录和账户页面"
-
-        let identityRow = UIStackView(arrangedSubviews: [avatarContainer, labels])
-        identityRow.axis = .horizontal
-        identityRow.alignment = .center
-        identityRow.spacing = AppSpacing.sm
-
-        summaryStack.axis = .horizontal
-        summaryStack.alignment = .fill
-        summaryStack.distribution = .fillEqually
-        summaryStack.spacing = AppSpacing.xs
-        let summaries: [
-            (
-                card: UserSummaryCard,
-                destination: UserCenterViewController.Destination,
-                accessibilityIdentifier: String
-            )
-        ] = [
-            (downloadSummary, .downloads, "userCenter.summary.downloads"),
-            (fileSummary, .files, "userCenter.summary.files"),
-            (favoriteSummary, .favorites, "userCenter.summary.favorites"),
-            (historySummary, .history, "userCenter.summary.history")
-        ]
-        summaries.forEach { summary in
-            summary.card.accessibilityIdentifier = summary.accessibilityIdentifier
-            summary.card.addAction(
-                UIAction { [weak self] _ in
-                    self?.onSelectSummary?(summary.destination)
-                },
-                for: .touchUpInside
-            )
-            summaryStack.addArrangedSubview(summary.card)
-        }
-
-        let stack = UIStackView(
-            arrangedSubviews: [identityRow, actionButton, summaryStack]
-        )
-        stack.axis = .vertical
-        stack.alignment = .fill
-        stack.spacing = AppSpacing.md
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        cardView.contentView.addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            cardView.topAnchor.constraint(equalTo: topAnchor, constant: AppSpacing.sm),
-            cardView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: AppSpacing.md),
-            cardView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -AppSpacing.md),
-            cardView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -AppSpacing.sm),
-
-            avatarContainer.widthAnchor.constraint(equalToConstant: 52),
-            avatarContainer.heightAnchor.constraint(equalTo: avatarContainer.widthAnchor),
-            avatarView.centerXAnchor.constraint(equalTo: avatarContainer.centerXAnchor),
-            avatarView.centerYAnchor.constraint(equalTo: avatarContainer.centerYAnchor),
-
-            stack.topAnchor.constraint(
-                equalTo: cardView.contentView.topAnchor,
-                constant: AppSpacing.md
-            ),
-            stack.leadingAnchor.constraint(
-                equalTo: cardView.contentView.leadingAnchor,
-                constant: AppSpacing.md
-            ),
-            stack.trailingAnchor.constraint(
-                equalTo: cardView.contentView.trailingAnchor,
-                constant: -AppSpacing.md
-            ),
-            stack.bottomAnchor.constraint(
-                equalTo: cardView.contentView.bottomAnchor,
-                constant: -AppSpacing.md
-            ),
-            actionButton.heightAnchor.constraint(
-                greaterThanOrEqualToConstant: AppMetrics.minimumTapSize
-            ),
-            summaryStack.heightAnchor.constraint(
-                greaterThanOrEqualToConstant: 76
-            )
-        ])
-    }
-
-    @objc private func actionPressed() {
-        onPrimaryAction?()
-    }
-}
-
-private final class UserSummaryCard: UIControl {
-    private let iconView = UIImageView()
-    private let valueLabel = UILabel()
-    private let titleLabel = UILabel()
-
-    init(title: String, value: Int, symbol: String) {
-        super.init(frame: .zero)
-        iconView.image = UIImage(systemName: symbol)
-        titleLabel.text = title
-        valueLabel.text = "\(max(0, value))"
-        configureView()
-    }
-
-    required init?(coder: NSCoder) {
-        return nil
-    }
-
-    func setValue(_ value: Int) {
-        valueLabel.text = "\(max(0, value))"
-        accessibilityLabel = "\(titleLabel.text ?? "")，\(valueLabel.text ?? "0")"
-    }
-
-    override var isHighlighted: Bool {
-        didSet {
-            let updates = {
-                self.alpha = self.isHighlighted ? 0.62 : 1
-                self.transform = self.isHighlighted
-                    ? CGAffineTransform(scaleX: 0.97, y: 0.97)
-                    : .identity
+                )
+                AppSwiftUIDivider()
+                destinationRow(
+                    title: "隐私与安全",
+                    subtitle: "网站权限与浏览数据",
+                    symbol: "hand.raised",
+                    destination: .privacy
+                )
+                AppSwiftUIDivider()
+                destinationRow(
+                    title: "关于嗅探浏览器",
+                    subtitle: "版本与许可信息",
+                    symbol: "info.circle",
+                    destination: .about
+                )
             }
-            AppAppearance.animate(
-                duration: AppAppearance.quickAnimationDuration,
-                animations: updates
-            )
         }
     }
 
-    private func configureView() {
-        backgroundColor = AppColors.tertiarySurface
-        layer.cornerRadius = AppRadius.control
-        layer.cornerCurve = .continuous
-        layer.borderWidth = AppMetrics.separatorHeight
-        layer.borderColor = AppColors.separator.cgColor
-        isAccessibilityElement = true
-        accessibilityLabel = "\(titleLabel.text ?? "")，\(valueLabel.text ?? "0")"
-        accessibilityTraits = .button
+    private func destinationRow(
+        title: String,
+        subtitle: String,
+        symbol: String,
+        destination: UserCenterViewController.Destination
+    ) -> some View {
+        AppSwiftUIActionRow(
+            title: title,
+            subtitle: subtitle,
+            systemName: symbol
+        ) {
+            onSelect(destination)
+        }
+    }
 
-        iconView.tintColor = AppColors.accent
-        iconView.contentMode = .scaleAspectFit
-        iconView.translatesAutoresizingMaskIntoConstraints = false
+    private var profileTitle: String {
+        store.session?.user.displayName
+            ?? store.session?.user.email
+            ?? "游客模式"
+    }
 
-        AppTypography.configure(valueLabel, style: .headline, weight: .semibold)
-        valueLabel.textColor = AppColors.primaryText
-        valueLabel.textAlignment = .center
-
-        AppTypography.configure(titleLabel, style: .caption1)
-        titleLabel.textColor = AppColors.secondaryText
-        titleLabel.textAlignment = .center
-
-        let stack = UIStackView(
-            arrangedSubviews: [iconView, valueLabel, titleLabel]
-        )
-        stack.axis = .vertical
-        stack.alignment = .center
-        stack.spacing = AppSpacing.xxs
-        stack.isUserInteractionEnabled = false
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(
-                greaterThanOrEqualTo: topAnchor,
-                constant: AppSpacing.xs
-            ),
-            stack.leadingAnchor.constraint(
-                greaterThanOrEqualTo: leadingAnchor,
-                constant: AppSpacing.xxs
-            ),
-            stack.trailingAnchor.constraint(
-                lessThanOrEqualTo: trailingAnchor,
-                constant: -AppSpacing.xxs
-            ),
-            stack.bottomAnchor.constraint(
-                lessThanOrEqualTo: bottomAnchor,
-                constant: -AppSpacing.xs
-            ),
-            stack.centerXAnchor.constraint(equalTo: centerXAnchor),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 18),
-            iconView.heightAnchor.constraint(equalTo: iconView.widthAnchor)
-        ])
+    private var profileSubtitle: String {
+        if let email = store.session?.user.email {
+            return email
+        }
+        return "无需登录即可使用浏览器；登录后可同步个人数据。"
     }
 }

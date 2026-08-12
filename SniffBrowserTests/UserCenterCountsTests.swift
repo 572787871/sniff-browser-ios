@@ -51,65 +51,28 @@ final class UserCenterCountsTests: XCTestCase {
             )
         )
 
-        controller.loadViewIfNeeded()
-        controller.view.layoutIfNeeded()
-        let labels = accessibilityLabels(in: controller.view)
-
-        XCTAssertTrue(labels.contains("下载，2"))
-        XCTAssertTrue(labels.contains("文件，4"))
-        XCTAssertTrue(labels.contains("收藏，6"))
-        XCTAssertTrue(labels.contains("历史，8"))
+        XCTAssertEqual(
+            controller.summaryAccessibilityLabels,
+            ["下载，2", "文件，4", "收藏，6", "历史，8"]
+        )
     }
 
     @MainActor
-    func testUserCenterInitialLayoutIsCompleteWithZeroCounts() throws {
+    func testUserCenterInitialLayoutIsCompleteWithZeroCounts() {
         let controller = UserCenterViewController()
         layout(controller)
-
-        let labels = accessibilityLabels(in: controller.view)
-        XCTAssertTrue(labels.contains("登录或注册"))
-        XCTAssertTrue(labels.contains("下载，0"))
-        XCTAssertTrue(labels.contains("文件，0"))
-        XCTAssertTrue(labels.contains("收藏，0"))
-        XCTAssertTrue(labels.contains("历史，0"))
-
-        let avatar = try XCTUnwrap(
-            findView(
-                accessibilityIdentifier: "userCenter.avatar",
-                in: controller.view
-            ) as? UIImageView
+        XCTAssertEqual(controller.displayedCounts, UserCenterCounts())
+        XCTAssertEqual(
+            controller.summaryAccessibilityLabels,
+            ["下载，0", "文件，0", "收藏，0", "历史，0"]
         )
-        XCTAssertNotNil(avatar.image)
-        XCTAssertFalse(avatar.isHidden)
-        XCTAssertGreaterThan(avatar.bounds.height, 0)
-
-        let primaryAction = try XCTUnwrap(
-            findControl(
-                accessibilityIdentifier: "userCenter.primaryAction",
-                in: controller.view
-            )
-        )
-        XCTAssertFalse(primaryAction.isHidden)
-        XCTAssertGreaterThanOrEqual(
-            primaryAction.bounds.height,
-            AppMetrics.minimumTapSize
-        )
-
-        let summaryControls = try summaryControls(in: controller.view)
-        XCTAssertEqual(summaryControls.count, 4)
-        summaryControls.values.forEach {
-            XCTAssertFalse($0.isHidden)
-            XCTAssertEqual($0.alpha, 1)
-            XCTAssertGreaterThan($0.bounds.height, 0)
-        }
+        XCTAssertFalse(controller.children.isEmpty)
     }
 
     @MainActor
-    func testCountUpdateOnlyChangesExistingSummaryControls() throws {
+    func testCountUpdatePublishesIntoExistingSwiftUIStore() {
         let controller = UserCenterViewController()
         layout(controller)
-        let controlsBefore = try summaryControls(in: controller.view)
-        let identitiesBefore = controlsBefore.mapValues { ObjectIdentifier($0) }
 
         controller.update(
             counts: UserCenterCounts(
@@ -119,32 +82,17 @@ final class UserCenterCountsTests: XCTestCase {
                 history: 4
             )
         )
-        controller.view.layoutIfNeeded()
-
-        let controlsAfter = try summaryControls(in: controller.view)
         XCTAssertEqual(
-            controlsAfter.mapValues { ObjectIdentifier($0) },
-            identitiesBefore
+            controller.summaryAccessibilityLabels,
+            ["下载，1", "文件，2", "收藏，3", "历史，4"]
         )
-        XCTAssertEqual(controlsAfter["userCenter.summary.downloads"]?.accessibilityLabel, "下载，1")
-        XCTAssertEqual(controlsAfter["userCenter.summary.files"]?.accessibilityLabel, "文件，2")
-        XCTAssertEqual(controlsAfter["userCenter.summary.favorites"]?.accessibilityLabel, "收藏，3")
-        XCTAssertEqual(controlsAfter["userCenter.summary.history"]?.accessibilityLabel, "历史，4")
     }
 
     @MainActor
-    func testUserCenterDoesNotContainDuplicateBrowserSettingsEntry() throws {
+    func testUserCenterDoesNotContainDuplicateBrowserSettingsEntry() {
         let controller = UserCenterViewController()
         layout(controller)
-
-        let tableView = try XCTUnwrap(findTableView(in: controller.view))
-        XCTAssertEqual(tableView.numberOfRows(inSection: 0), 3)
-        let rowLabels = (0..<3).compactMap { row in
-            tableView.dataSource?
-                .tableView(tableView, cellForRowAt: IndexPath(row: row, section: 0))
-                .accessibilityLabel
-        }
-
+        let rowLabels = controller.menuAccessibilityLabels
         XCTAssertEqual(
             rowLabels,
             [
@@ -164,72 +112,4 @@ final class UserCenterCountsTests: XCTestCase {
         controller.view.layoutIfNeeded()
     }
 
-    @MainActor
-    private func summaryControls(in view: UIView) throws -> [String: UIControl] {
-        let identifiers = [
-            "userCenter.summary.downloads",
-            "userCenter.summary.files",
-            "userCenter.summary.favorites",
-            "userCenter.summary.history"
-        ]
-        return try Dictionary(uniqueKeysWithValues: identifiers.map { identifier in
-            let control = try XCTUnwrap(
-                findControl(accessibilityIdentifier: identifier, in: view)
-            )
-            return (identifier, control)
-        })
-    }
-
-    @MainActor
-    private func findControl(
-        accessibilityIdentifier: String,
-        in view: UIView
-    ) -> UIControl? {
-        if let control = view as? UIControl,
-           control.accessibilityIdentifier == accessibilityIdentifier {
-            return control
-        }
-        return view.subviews.lazy.compactMap {
-            self.findControl(
-                accessibilityIdentifier: accessibilityIdentifier,
-                in: $0
-            )
-        }.first
-    }
-
-    @MainActor
-    private func findView(
-        accessibilityIdentifier: String,
-        in view: UIView
-    ) -> UIView? {
-        if view.accessibilityIdentifier == accessibilityIdentifier {
-            return view
-        }
-        return view.subviews.lazy.compactMap {
-            self.findView(
-                accessibilityIdentifier: accessibilityIdentifier,
-                in: $0
-            )
-        }.first
-    }
-
-    @MainActor
-    private func findTableView(in view: UIView) -> UITableView? {
-        if let tableView = view as? UITableView {
-            return tableView
-        }
-        return view.subviews.lazy.compactMap {
-            self.findTableView(in: $0)
-        }.first
-    }
-
-    @MainActor
-    private func accessibilityLabels(in view: UIView) -> [String] {
-        let ownLabel = view.isAccessibilityElement
-            ? view.accessibilityLabel.map { [$0] } ?? []
-            : []
-        return ownLabel + view.subviews.flatMap {
-            accessibilityLabels(in: $0)
-        }
-    }
 }

@@ -1,449 +1,268 @@
+import SwiftUI
 import UIKit
 
-enum BrowserQuickAction: CaseIterable, Equatable {
-  case newTab
-  case share
-  case favorite
-  case reload
+enum BrowserQuickAction: CaseIterable, Hashable {
+    case newTab
+    case share
+    case favorite
+    case reload
 
-  var title: String {
-    switch self {
-    case .newTab: return "新建标签"
-    case .share: return "分享"
-    case .favorite: return "添加收藏"
-    case .reload: return "刷新"
+    var title: String {
+        switch self {
+        case .newTab: return "新建标签"
+        case .share: return "分享"
+        case .favorite: return "添加收藏"
+        case .reload: return "刷新"
+        }
     }
-  }
 
-  var symbolName: String {
-    switch self {
-    case .newTab: return "plus"
-    case .share: return "square.and.arrow.up"
-    case .favorite: return "star"
-    case .reload: return "arrow.clockwise"
+    var symbolName: String {
+        switch self {
+        case .newTab: return "plus"
+        case .share: return "square.and.arrow.up"
+        case .favorite: return "star"
+        case .reload: return "arrow.clockwise"
+        }
     }
-  }
 }
 
-enum BrowserMenuDestination: CaseIterable, Equatable {
-  case downloads
-  case files
-  case favorites
-  case history
-  case userCenter
-  case settings
+enum BrowserMenuDestination: CaseIterable, Hashable {
+    case downloads
+    case files
+    case favorites
+    case history
+    case userCenter
+    case settings
 
-  var title: String {
-    switch self {
-    case .downloads: return "下载管理"
-    case .files: return "文件管理"
-    case .favorites: return "收藏夹"
-    case .history: return "历史记录"
-    case .userCenter: return "用户中心"
-    case .settings: return "浏览器设置"
+    var title: String {
+        switch self {
+        case .downloads: return "下载管理"
+        case .files: return "文件管理"
+        case .favorites: return "收藏夹"
+        case .history: return "历史记录"
+        case .userCenter: return "用户中心"
+        case .settings: return "浏览器设置"
+        }
     }
-  }
 
-  var symbolName: String {
-    switch self {
-    case .downloads: return "arrow.down.circle"
-    case .files: return "folder"
-    case .favorites: return "star"
-    case .history: return "clock.arrow.circlepath"
-    case .userCenter: return "person.crop.circle"
-    case .settings: return "gearshape"
+    var symbolName: String {
+        switch self {
+        case .downloads: return "arrow.down.circle"
+        case .files: return "folder"
+        case .favorites: return "star"
+        case .history: return "clock.arrow.circlepath"
+        case .userCenter: return "person.crop.circle"
+        case .settings: return "gearshape"
+        }
     }
-  }
 }
 
 struct BrowserMoreMenuState: Equatable {
-  var hasCurrentPage: Bool
-  var downloadSummary: String?
-  var fileSummary: String?
-  var accountSummary: String?
-  var favoriteActionState = FavoriteActionState(
-    isEnabled: false,
-    isFavorite: false
-  )
+    var hasCurrentPage: Bool
+    var downloadSummary: String?
+    var fileSummary: String?
+    var accountSummary: String?
+    var favoriteActionState = FavoriteActionState(
+        isEnabled: false,
+        isFavorite: false
+    )
 
-  func isEnabled(_ action: BrowserQuickAction) -> Bool {
-    switch action {
-    case .newTab:
-      return true
-    case .favorite:
-      return favoriteActionState.isEnabled
-    case .share, .reload:
-      return hasCurrentPage
+    func isEnabled(_ action: BrowserQuickAction) -> Bool {
+        switch action {
+        case .newTab: return true
+        case .favorite: return favoriteActionState.isEnabled
+        case .share, .reload: return hasCurrentPage
+        }
     }
-  }
 
-  func title(for action: BrowserQuickAction) -> String {
-    action == .favorite ? favoriteActionState.title : action.title
-  }
-
-  func symbolName(for action: BrowserQuickAction) -> String {
-    action == .favorite
-      ? favoriteActionState.systemImageName
-      : action.symbolName
-  }
-
-  func detail(for destination: BrowserMenuDestination) -> String? {
-    switch destination {
-    case .downloads: return downloadSummary
-    case .files: return fileSummary
-    case .userCenter: return accountSummary
-    case .favorites, .history, .settings: return nil
+    func title(for action: BrowserQuickAction) -> String {
+        action == .favorite ? favoriteActionState.title : action.title
     }
-  }
+
+    func symbolName(for action: BrowserQuickAction) -> String {
+        action == .favorite
+            ? favoriteActionState.systemImageName
+            : action.symbolName
+    }
+
+    func detail(for destination: BrowserMenuDestination) -> String? {
+        switch destination {
+        case .downloads: return downloadSummary
+        case .files: return fileSummary
+        case .userCenter: return accountSummary
+        case .favorites, .history, .settings: return nil
+        }
+    }
 }
 
 @MainActor
 final class BrowserMoreMenuViewController: UIViewController {
-  var onQuickAction: ((BrowserQuickAction) -> Void)?
-  var onSelectDestination: ((BrowserMenuDestination) -> Void)?
+    var onQuickAction: ((BrowserQuickAction) -> Void)?
+    var onSelectDestination: ((BrowserMenuDestination) -> Void)?
 
-  private let state: BrowserMoreMenuState
-  private let tableView = UITableView(frame: .zero, style: .insetGrouped)
-  private let quickActionsView = BrowserQuickActionsView()
-  private let quickActionsHeader = UIView()
+    private let state: BrowserMoreMenuState
 
-  init(state: BrowserMoreMenuState) {
-    self.state = state
-    super.init(nibName: nil, bundle: nil)
-    modalPresentationStyle = .pageSheet
-  }
-
-  required init?(coder: NSCoder) {
-    return nil
-  }
-
-  override func viewDidLoad() {
-    super.viewDidLoad()
-    view.backgroundColor = AppColors.background
-    configureHeader()
-    configureTable()
-  }
-
-  override func viewDidLayoutSubviews() {
-    super.viewDidLayoutSubviews()
-    let height: CGFloat = traitCollection.preferredContentSizeCategory
-      .isAccessibilityCategory ? 148 : 116
-    guard quickActionsHeader.frame.width != tableView.bounds.width
-      || quickActionsHeader.frame.height != height
-    else {
-      return
+    init(state: BrowserMoreMenuState) {
+        self.state = state
+        super.init(nibName: nil, bundle: nil)
+        modalPresentationStyle = .pageSheet
     }
-    quickActionsHeader.frame = CGRect(
-      x: 0,
-      y: 0,
-      width: tableView.bounds.width,
-      height: height
-    )
-    tableView.tableHeaderView = quickActionsHeader
-  }
 
-  private func configureHeader() {
-    quickActionsHeader.frame = CGRect(x: 0, y: 0, width: 1, height: 116)
-    quickActionsView.translatesAutoresizingMaskIntoConstraints = false
-    quickActionsView.configure(state: state)
-    quickActionsView.onSelect = { [weak self] action in
-      self?.dismissAndPerform {
-        self?.onQuickAction?(action)
-      }
+    required init?(coder: NSCoder) {
+        return nil
     }
-    quickActionsHeader.addSubview(quickActionsView)
-    NSLayoutConstraint.activate([
-      quickActionsView.topAnchor.constraint(
-        equalTo: quickActionsHeader.topAnchor,
-        constant: AppSpacing.sm
-      ),
-      quickActionsView.leadingAnchor.constraint(
-        equalTo: quickActionsHeader.leadingAnchor,
-        constant: AppSpacing.md
-      ),
-      quickActionsView.trailingAnchor.constraint(
-        equalTo: quickActionsHeader.trailingAnchor,
-        constant: -AppSpacing.md
-      ),
-      quickActionsView.bottomAnchor.constraint(
-        equalTo: quickActionsHeader.bottomAnchor,
-        constant: -AppSpacing.sm
-      ),
-    ])
-    tableView.tableHeaderView = quickActionsHeader
-  }
 
-  private func configureTable() {
-    tableView.translatesAutoresizingMaskIntoConstraints = false
-    tableView.backgroundColor = .clear
-    tableView.separatorColor = AppColors.separator
-    tableView.rowHeight = 56
-    tableView.dataSource = self
-    tableView.delegate = self
-    tableView.register(
-      UITableViewCell.self,
-      forCellReuseIdentifier: "BrowserMenuRow"
-    )
-    view.addSubview(tableView)
-    NSLayoutConstraint.activate([
-      tableView.topAnchor.constraint(equalTo: view.topAnchor),
-      tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-      tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-      tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-    ])
-  }
-
-  private func dismissAndPerform(_ action: @escaping () -> Void) {
-    dismiss(animated: true, completion: action)
-  }
-}
-
-extension BrowserMoreMenuViewController: UITableViewDataSource, UITableViewDelegate {
-  func numberOfSections(in tableView: UITableView) -> Int {
-    2
-  }
-
-  func tableView(
-    _ tableView: UITableView,
-    numberOfRowsInSection section: Int
-  ) -> Int {
-    section == 0 ? 4 : 2
-  }
-
-  func tableView(
-    _ tableView: UITableView,
-    cellForRowAt indexPath: IndexPath
-  ) -> UITableViewCell {
-    let destinations: [[BrowserMenuDestination]] = [
-      [.downloads, .files, .favorites, .history],
-      [.userCenter, .settings],
-    ]
-    let destination = destinations[indexPath.section][indexPath.row]
-    let cell = tableView.dequeueReusableCell(
-      withIdentifier: "BrowserMenuRow",
-      for: indexPath
-    )
-    var content = UIListContentConfiguration.valueCell()
-    content.text = destination.title
-    content.secondaryText = state.detail(for: destination)
-    content.image = UIImage(systemName: destination.symbolName)
-    content.imageProperties.tintColor = AppColors.accent
-    content.textProperties.font = AppTypography.body
-    content.secondaryTextProperties.font = AppTypography.subheadline
-    content.secondaryTextProperties.color = AppColors.secondaryText
-    cell.contentConfiguration = content
-    cell.accessoryType = .disclosureIndicator
-    cell.backgroundColor = AppColors.surface
-    cell.accessibilityHint = "打开\(destination.title)"
-    return cell
-  }
-
-  func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-    tableView.deselectRow(at: indexPath, animated: true)
-    let destinations: [[BrowserMenuDestination]] = [
-      [.downloads, .files, .favorites, .history],
-      [.userCenter, .settings],
-    ]
-    let destination = destinations[indexPath.section][indexPath.row]
-    onSelectDestination?(destination)
-  }
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = AppColors.background
+        installSwiftUI(
+            BrowserMoreMenuSwiftUIScreen(
+                state: state,
+                onQuickAction: { [weak self] action in
+                    self?.dismiss(animated: true) {
+                        self?.onQuickAction?(action)
+                    }
+                },
+                onSelectDestination: { [weak self] destination in
+                    self?.onSelectDestination?(destination)
+                }
+            ),
+            in: view
+        )
+    }
 }
 
 @MainActor
 final class BrowserMoreNavigationController: UINavigationController,
-  UINavigationControllerDelegate {
-  init(root: BrowserMoreMenuViewController) {
-    super.init(rootViewController: root)
-    modalPresentationStyle = .pageSheet
-    navigationBar.prefersLargeTitles = true
-    navigationBar.tintColor = AppColors.accent
-    let appearance = UINavigationBarAppearance()
-    appearance.configureWithOpaqueBackground()
-    appearance.backgroundColor = AppColors.background
-    appearance.shadowColor = .clear
-    appearance.titleTextAttributes = [
-      .foregroundColor: AppColors.primaryText,
-      .font: AppTypography.headline,
-    ]
-    appearance.largeTitleTextAttributes = [
-      .foregroundColor: AppColors.primaryText,
-      .font: AppTypography.largeTitle,
-    ]
-    navigationBar.standardAppearance = appearance
-    navigationBar.compactAppearance = appearance
-    navigationBar.scrollEdgeAppearance = appearance
-    delegate = self
-  }
-
-  required init?(coder aDecoder: NSCoder) {
-    return nil
-  }
-
-  func navigationController(
-    _ navigationController: UINavigationController,
-    willShow viewController: UIViewController,
-    animated: Bool
-  ) {
-    navigationController.setNavigationBarHidden(
-      viewController === viewControllers.first,
-      animated: animated
-    )
-  }
-}
-
-private final class BrowserQuickActionsView: UIView {
-  var onSelect: ((BrowserQuickAction) -> Void)?
-
-  private let stackView = UIStackView()
-
-  override init(frame: CGRect) {
-    super.init(frame: frame)
-    configureView()
-  }
-
-  required init?(coder: NSCoder) {
-    return nil
-  }
-
-  func configure(state: BrowserMoreMenuState) {
-    stackView.arrangedSubviews.forEach {
-      stackView.removeArrangedSubview($0)
-      $0.removeFromSuperview()
+    UINavigationControllerDelegate {
+    init(root: BrowserMoreMenuViewController) {
+        super.init(rootViewController: root)
+        modalPresentationStyle = .pageSheet
+        navigationBar.prefersLargeTitles = true
+        navigationBar.tintColor = AppColors.accent
+        delegate = self
     }
-    BrowserQuickAction.allCases.forEach { action in
-      let button = BrowserQuickActionButton(
-        action: action,
-        title: state.title(for: action),
-        symbolName: state.symbolName(for: action)
-      )
-      button.isEnabled = state.isEnabled(action)
-      button.addAction(
-        UIAction { [weak self] _ in
-          self?.onSelect?(action)
-        },
-        for: .touchUpInside
-      )
-      stackView.addArrangedSubview(button)
+
+    required init?(coder aDecoder: NSCoder) {
+        return nil
     }
-  }
 
-  private func configureView() {
-    stackView.translatesAutoresizingMaskIntoConstraints = false
-    stackView.axis = .horizontal
-    stackView.alignment = .top
-    stackView.distribution = .fillEqually
-    stackView.spacing = AppSpacing.xs
-    addSubview(stackView)
-    NSLayoutConstraint.activate([
-      stackView.topAnchor.constraint(equalTo: topAnchor),
-      stackView.leadingAnchor.constraint(equalTo: leadingAnchor),
-      stackView.trailingAnchor.constraint(equalTo: trailingAnchor),
-      stackView.bottomAnchor.constraint(equalTo: bottomAnchor),
-    ])
-  }
-}
-
-private final class BrowserQuickActionButton: UIControl {
-  private let action: BrowserQuickAction
-  private let symbolBackground = UIView()
-  private let imageView = UIImageView()
-  private let titleLabel = UILabel()
-
-  init(
-    action: BrowserQuickAction,
-    title: String,
-    symbolName: String
-  ) {
-    self.action = action
-    super.init(frame: .zero)
-    configureView(title: title, symbolName: symbolName)
-  }
-
-  required init?(coder: NSCoder) {
-    return nil
-  }
-
-  override var isEnabled: Bool {
-    didSet {
-      alpha = isEnabled ? 1 : 0.38
-      accessibilityTraits = isEnabled ? [.button] : [.button, .notEnabled]
-    }
-  }
-
-  override var isHighlighted: Bool {
-    didSet {
-      let changes = {
-        self.transform = self.isHighlighted
-          ? CGAffineTransform(scaleX: 0.96, y: 0.96)
-          : .identity
-        self.alpha = self.isEnabled
-          ? (self.isHighlighted ? 0.68 : 1)
-          : 0.38
-      }
-      if UIAccessibility.isReduceMotionEnabled {
-        changes()
-      } else {
-        UIView.animate(
-          withDuration: AppAppearance.quickAnimationDuration,
-          delay: 0,
-          options: [.beginFromCurrentState, .allowUserInteraction],
-          animations: changes
+    func navigationController(
+        _ navigationController: UINavigationController,
+        willShow viewController: UIViewController,
+        animated: Bool
+    ) {
+        navigationController.setNavigationBarHidden(
+            viewController === viewControllers.first,
+            animated: animated
         )
-      }
     }
-  }
+}
 
-  private func configureView(title: String, symbolName: String) {
-    isAccessibilityElement = true
-    accessibilityLabel = title
-    accessibilityTraits = .button
+private struct BrowserMoreMenuSwiftUIScreen: View {
+    let state: BrowserMoreMenuState
+    let onQuickAction: (BrowserQuickAction) -> Void
+    let onSelectDestination: (BrowserMenuDestination) -> Void
 
-    symbolBackground.translatesAutoresizingMaskIntoConstraints = false
-    symbolBackground.backgroundColor = AppColors.tertiarySurface
-    symbolBackground.layer.cornerRadius = AppRadius.control
-    symbolBackground.layer.cornerCurve = .continuous
-    symbolBackground.isUserInteractionEnabled = false
+    private let primaryDestinations: [BrowserMenuDestination] = [
+        .downloads, .files, .favorites, .history
+    ]
+    private let accountDestinations: [BrowserMenuDestination] = [
+        .userCenter, .settings
+    ]
 
-    imageView.translatesAutoresizingMaskIntoConstraints = false
-    imageView.image = UIImage(
-      systemName: symbolName,
-      withConfiguration: UIImage.SymbolConfiguration(
-        pointSize: AppMetrics.navigationIconSize,
-        weight: .medium
-      )
-    )
-    imageView.tintColor = AppColors.accent
-    imageView.contentMode = .scaleAspectFit
+    var body: some View {
+        AppSwiftUIScreen {
+            ScrollView {
+                VStack(spacing: 20) {
+                    Capsule()
+                        .fill(AppSwiftUIColors.tertiaryText.opacity(0.45))
+                        .frame(width: 38, height: 5)
+                        .padding(.top, 8)
 
-    titleLabel.translatesAutoresizingMaskIntoConstraints = false
-    titleLabel.text = title
-    titleLabel.font = AppTypography.caption
-    titleLabel.adjustsFontForContentSizeCategory = true
-    titleLabel.textColor = AppColors.primaryText
-    titleLabel.textAlignment = .center
-    titleLabel.numberOfLines = 2
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("浏览器菜单")
+                                .font(.title2.weight(.bold))
+                            Text("当前页面操作与浏览数据")
+                                .font(.subheadline)
+                                .foregroundStyle(AppSwiftUIColors.secondaryText)
+                        }
+                        Spacer()
+                        Image(systemName: "safari")
+                            .font(.title2.weight(.medium))
+                            .foregroundStyle(AppSwiftUIColors.accent)
+                            .frame(width: 46, height: 46)
+                            .background(
+                                AppSwiftUIColors.accentFill,
+                                in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            )
+                    }
 
-    addSubview(symbolBackground)
-    symbolBackground.addSubview(imageView)
-    addSubview(titleLabel)
+                    quickActions
 
-    NSLayoutConstraint.activate([
-      heightAnchor.constraint(greaterThanOrEqualToConstant: 88),
-      symbolBackground.topAnchor.constraint(equalTo: topAnchor),
-      symbolBackground.centerXAnchor.constraint(equalTo: centerXAnchor),
-      symbolBackground.widthAnchor.constraint(equalToConstant: 48),
-      symbolBackground.heightAnchor.constraint(equalTo: symbolBackground.widthAnchor),
-      imageView.centerXAnchor.constraint(equalTo: symbolBackground.centerXAnchor),
-      imageView.centerYAnchor.constraint(equalTo: symbolBackground.centerYAnchor),
-      imageView.widthAnchor.constraint(equalToConstant: 22),
-      imageView.heightAnchor.constraint(equalTo: imageView.widthAnchor),
-      titleLabel.topAnchor.constraint(
-        equalTo: symbolBackground.bottomAnchor,
-        constant: AppSpacing.xs
-      ),
-      titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor),
-      titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor),
-      titleLabel.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor),
-    ])
-  }
+                    destinationSection(primaryDestinations)
+                    destinationSection(accountDestinations)
+                }
+                .padding(.horizontal, 18)
+                .padding(.bottom, 28)
+            }
+        }
+    }
+
+    private var quickActions: some View {
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4),
+            spacing: 10
+        ) {
+            ForEach(BrowserQuickAction.allCases, id: \.self) { action in
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    onQuickAction(action)
+                } label: {
+                    VStack(spacing: 9) {
+                        Image(systemName: state.symbolName(for: action))
+                            .font(.system(size: 21, weight: .medium))
+                            .foregroundStyle(AppSwiftUIColors.accent)
+                            .frame(width: 46, height: 46)
+                            .background(
+                                AppSwiftUIColors.accentFill,
+                                in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+                            )
+                        Text(state.title(for: action))
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(AppSwiftUIColors.primaryText)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.8)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 92)
+                }
+                .buttonStyle(.plain)
+                .disabled(!state.isEnabled(action))
+                .opacity(state.isEnabled(action) ? 1 : 0.38)
+                .accessibilityIdentifier("browser.menu.quick.\(action.title)")
+            }
+        }
+    }
+
+    private func destinationSection(
+        _ destinations: [BrowserMenuDestination]
+    ) -> some View {
+        AppSwiftUISectionCard {
+            ForEach(Array(destinations.enumerated()), id: \.element) { index, destination in
+                AppSwiftUIActionRow(
+                    title: destination.title,
+                    systemName: destination.symbolName,
+                    detail: state.detail(for: destination)
+                ) {
+                    onSelectDestination(destination)
+                }
+                .accessibilityIdentifier("browser.menu.\(destination.title)")
+                if index < destinations.count - 1 {
+                    AppSwiftUIDivider()
+                }
+            }
+        }
+    }
 }

@@ -1,6 +1,6 @@
+import SwiftUI
 import UIKit
 
-/// 静态文本内容片段，用于隐私政策、条款等说明页。
 struct StaticContentSegment {
     enum Kind {
         case heading
@@ -21,11 +21,9 @@ struct StaticContentSegment {
     }
 }
 
-/// 通用静态内容页：滚动文本，支持标题、段落、列表与可点击链接。
+/// 法律、许可与关于页面使用 SwiftUI 排版，链接仍交给系统打开。
 final class StaticContentViewController: BaseViewController {
     private let segments: [StaticContentSegment]
-    private let textView = UITextView()
-    private let contentPadding: CGFloat = 20
 
     init(
         title: String,
@@ -42,104 +40,78 @@ final class StaticContentViewController: BaseViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        configureTextView()
-    }
-
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-        textView.attributedText = Self.attributedText(for: segments)
-    }
-
-    private func configureTextView() {
-        textView.backgroundColor = .clear
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.isScrollEnabled = true
-        textView.alwaysBounceVertical = true
-        textView.showsVerticalScrollIndicator = true
-        textView.textContainerInset = UIEdgeInsets(
-            top: contentPadding,
-            left: contentPadding,
-            bottom: contentPadding,
-            right: contentPadding
+        installSwiftUI(
+            StaticContentSwiftUIScreen(segments: segments),
+            in: contentView
         )
-        textView.textContainer.lineFragmentPadding = 0
-        textView.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(textView)
-
-        NSLayoutConstraint.activate([
-            textView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            textView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            textView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            textView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
-        ])
-        textView.attributedText = Self.attributedText(for: segments)
     }
+}
 
-    private static func attributedText(
-        for segments: [StaticContentSegment]
-    ) -> NSAttributedString {
-        let result = NSMutableAttributedString()
-        for segment in segments {
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.lineSpacing = 4
-            paragraph.paragraphSpacing = 10
-            switch segment.kind {
-            case .heading:
-                paragraph.paragraphSpacing = 6
-                result.append(
-                    NSAttributedString(
-                        string: segment.text + "\n",
-                        attributes: [
-                            .font: AppTypography.title3,
-                            .foregroundColor: AppColors.primaryText,
-                            .paragraphStyle: paragraph,
-                        ]
-                    )
-                )
-            case .paragraph:
-                result.append(
-                    NSAttributedString(
-                        string: segment.text + "\n",
-                        attributes: textAttributes(paragraph: paragraph)
-                    )
-                )
-            case .bullet:
-                result.append(
-                    NSAttributedString(
-                        string: "• " + segment.text + "\n",
-                        attributes: textAttributes(paragraph: paragraph)
-                    )
-                )
-            case .link:
-                let url = segment.link
-                    ?? URL(string: "https://github.com/572787871/sniff-browser-ios")!
-                result.append(
-                    NSAttributedString(
-                        string: segment.text + "\n",
-                        attributes: [
-                            .font: UIFont.preferredFont(forTextStyle: .body),
-                            .foregroundColor: AppColors.accent,
-                            .link: url,
-                            .underlineStyle: NSUnderlineStyle.single.rawValue,
-                            .paragraphStyle: paragraph,
-                        ]
-                    )
-                )
-            case .spacer:
-                result.append(NSAttributedString(string: "\n"))
+private struct StaticContentSwiftUIScreen: View {
+    let segments: [StaticContentSegment]
+
+    var body: some View {
+        AppSwiftUIScreen {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
+                        segmentView(segment)
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: 760, alignment: .leading)
+                .frame(maxWidth: .infinity)
             }
         }
-        return result
     }
 
-    private static func textAttributes(
-        paragraph: NSMutableParagraphStyle
-    ) -> [NSAttributedString.Key: Any] {
-        [
-            .font: UIFont.preferredFont(forTextStyle: .body),
-            .foregroundColor: AppColors.primaryText,
-            .paragraphStyle: paragraph,
-        ]
+    @ViewBuilder
+    private func segmentView(_ segment: StaticContentSegment) -> some View {
+        switch segment.kind {
+        case .heading:
+            Text(segment.text)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(AppSwiftUIColors.primaryText)
+                .padding(.top, 14)
+                .padding(.bottom, 7)
+                .accessibilityAddTraits(.isHeader)
+        case .paragraph:
+            Text(segment.text)
+                .font(.body)
+                .foregroundStyle(AppSwiftUIColors.primaryText)
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 10)
+        case .bullet:
+            HStack(alignment: .firstTextBaseline, spacing: 9) {
+                Circle()
+                    .fill(AppSwiftUIColors.accent)
+                    .frame(width: 6, height: 6)
+                Text(segment.text)
+                    .font(.body)
+                    .lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.leading, 4)
+            .padding(.bottom, 9)
+        case .link:
+            Link(
+                destination: segment.link
+                    ?? SettingsLegalContent.repositoryURL
+            ) {
+                Label(segment.text, systemImage: "arrow.up.right.square")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(AppSwiftUIColors.accent)
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 12)
+                    .background(
+                        AppSwiftUIColors.accentFill,
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    )
+            }
+            .padding(.bottom, 10)
+        case .spacer:
+            Color.clear.frame(height: 8)
+        }
     }
 }

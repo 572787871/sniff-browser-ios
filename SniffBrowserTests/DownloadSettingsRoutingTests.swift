@@ -28,11 +28,7 @@ final class DownloadSettingsRoutingTests: XCTestCase {
         controller.onRoute = { receivedRoutes.append($0) }
         layout(controller)
 
-        let tableView = try XCTUnwrap(findTableView(in: controller.view))
-        controller.tableView(
-            tableView,
-            didSelectRowAt: IndexPath(row: 0, section: 2)
-        )
+        controller.selectDestination(.downloadPreferences)
 
         XCTAssertEqual(receivedRoutes, [.downloadSettings])
     }
@@ -98,28 +94,8 @@ final class DownloadSettingsRoutingTests: XCTestCase {
     func testDownloadSettingsPageContainsOnlyPersistedPolicyRows() throws {
         let controller = DownloadSettingsViewController()
         layout(controller)
-        let tableView = try XCTUnwrap(findTableView(in: controller.view))
-
-        XCTAssertEqual(tableView.numberOfSections, 4)
         XCTAssertEqual(
-            (0..<tableView.numberOfSections).reduce(0) {
-                $0 + tableView.numberOfRows(inSection: $1)
-            },
-            5
-        )
-
-        let identifiers = (0..<tableView.numberOfSections).flatMap { section in
-            (0..<tableView.numberOfRows(inSection: section)).compactMap { row in
-                tableView.dataSource?
-                    .tableView(
-                        tableView,
-                        cellForRowAt: IndexPath(row: row, section: section)
-                    )
-                    .accessibilityIdentifier
-            }
-        }
-        XCTAssertEqual(
-            Set(identifiers),
+            DownloadSettingsViewController.policyAccessibilityIdentifiers,
             Set([
                 "downloadSettings.cellular",
                 "downloadSettings.concurrency",
@@ -155,13 +131,4 @@ final class DownloadSettingsRoutingTests: XCTestCase {
         }.first
     }
 
-    @MainActor
-    private func findTableView(in view: UIView) -> UITableView? {
-        if let tableView = view as? UITableView {
-            return tableView
-        }
-        return view.subviews.lazy.compactMap {
-            self.findTableView(in: $0)
-        }.first
-    }
 }

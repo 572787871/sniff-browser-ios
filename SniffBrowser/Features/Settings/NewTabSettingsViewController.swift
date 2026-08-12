@@ -1,4 +1,5 @@
 import PhotosUI
+import SwiftUI
 import UIKit
 
 /// 新标签页设置页，控制新标签页上显示的信息。
@@ -6,6 +7,7 @@ final class NewTabSettingsViewController: BaseViewController {
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
     private let preferences = BrowserPreferences()
     private let backgroundStore = NewTabBackgroundStore.shared
+    private let swiftUIStore = NewTabSettingsSwiftUIStore()
 
     private enum Section: Int, CaseIterable {
         case content
@@ -34,16 +36,30 @@ final class NewTabSettingsViewController: BaseViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "新标签页"
-        configureTableView()
+        installSwiftUI(
+            NewTabSettingsSwiftUIScreen(
+                store: swiftUIStore,
+                onShowGallery: { [weak self] in
+                    guard let self else { return }
+                    self.navigationController?.pushViewController(
+                        NewTabBackgroundGalleryViewController(store: self.backgroundStore),
+                        animated: true
+                    )
+                },
+                onChoosePhoto: { [weak self] in
+                    self?.presentBackgroundPicker()
+                },
+                onRemovePhoto: { [weak self] in
+                    self?.removeBackgroundPhoto()
+                }
+            ),
+            in: contentView
+        )
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        guard isViewLoaded else { return }
-        tableView.reloadSections(
-            IndexSet(integer: Section.background.rawValue),
-            with: .none
-        )
+        swiftUIStore.refresh()
     }
 
     private func configureTableView() {
@@ -206,7 +222,7 @@ extension NewTabSettingsViewController: UITableViewDataSource, UITableViewDelega
     private func removeBackgroundPhoto() {
         do {
             try backgroundStore.remove()
-            tableView.reloadSections(IndexSet(integer: Section.background.rawValue), with: .automatic)
+            swiftUIStore.refresh()
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         } catch {
             presentBackgroundError(message: "无法移除背景照片，请稍后重试。")
@@ -241,10 +257,7 @@ extension NewTabSettingsViewController: PHPickerViewControllerDelegate {
                 }
                 do {
                     try self.backgroundStore.save(image)
-                    self.tableView.reloadSections(
-                        IndexSet(integer: Section.background.rawValue),
-                        with: .automatic
-                    )
+                    self.swiftUIStore.refresh()
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
                 } catch {
                     self.presentBackgroundError(message: "照片保存失败，请检查设备存储空间。")
