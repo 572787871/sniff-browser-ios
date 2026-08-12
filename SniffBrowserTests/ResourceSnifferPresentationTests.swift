@@ -16,9 +16,10 @@ final class ResourceSnifferPresentationTests: XCTestCase {
             selectedFilter: .all
         )
 
-        XCTAssertEqual(configuration.statusTitle, "未开始")
-        XCTAssertEqual(configuration.primaryTitle, "开始嗅探")
+        XCTAssertEqual(configuration.statusTitle, "待检测")
+        XCTAssertEqual(configuration.primaryTitle, "开始捕获")
         XCTAssertEqual(configuration.filters.map(\.count), [0, 0, 0, 0])
+        XCTAssertFalse(configuration.showsResultControls)
     }
 
     @MainActor
@@ -40,11 +41,13 @@ final class ResourceSnifferPresentationTests: XCTestCase {
             selectedFilter: .image
         )
 
-        XCTAssertEqual(configuration.statusTitle, "嗅探中")
-        XCTAssertEqual(configuration.primaryTitle, "停止嗅探")
+        XCTAssertEqual(configuration.statusTitle, "捕获中")
+        XCTAssertEqual(configuration.primaryTitle, "暂停捕获")
         XCTAssertEqual(configuration.filters.map(\.count), [3, 1, 1, 1])
         XCTAssertTrue(configuration.filters.last?.showsRefinement == true)
         XCTAssertTrue(configuration.filters.last?.isSelected == true)
+        XCTAssertEqual(configuration.resultCount, 1)
+        XCTAssertTrue(configuration.showsResultControls)
     }
 
     @MainActor
@@ -60,9 +63,9 @@ final class ResourceSnifferPresentationTests: XCTestCase {
             selectedFilter: .all
         )
 
-        XCTAssertEqual(configuration.statusTitle, "已停止")
+        XCTAssertEqual(configuration.statusTitle, "已暂停")
         XCTAssertEqual(configuration.filters.map(\.count), [1, 0, 0, 1])
-        XCTAssertEqual(configuration.detail, "已停止新增资源，已有结果仍保留")
+        XCTAssertEqual(configuration.detail, "已暂停新增，当前结果仍然保留")
     }
 
     @MainActor
@@ -78,7 +81,7 @@ final class ResourceSnifferPresentationTests: XCTestCase {
             selectedFilter: .all
         )
 
-        XCTAssertTrue(configuration.helper.contains("无痕结果仅保留在当前会话"))
+        XCTAssertTrue(configuration.helper.contains("无痕结果仅保留在本次会话"))
     }
 
     @MainActor

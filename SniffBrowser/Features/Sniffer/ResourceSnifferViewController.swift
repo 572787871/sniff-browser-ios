@@ -51,34 +51,40 @@ final class ResourceSnifferViewController: BaseViewController {
         let hasStarted: Bool
         let imageFilters: Set<ImageResourceFormat>
         let selectedFilter: ResourceSnifferFilter
+        let selectedSortOrder: ResourceSnifferSortOrder
         let filterCounts: [Int]
         let rows: [RenderedResourceRow]
     }
 
     private let viewModel: ResourceSnifferViewModel
+    private let automaticallyStartsSniffing: Bool
     private var resources: [DetectedResource] = []
     private var selectedFilter: ResourceSnifferFilter
+    private var selectedSortOrder: ResourceSnifferSortOrder = .newest
     private var scanTask: Task<Void, Never>?
+    private var downloadTask: Task<Void, Never>?
+    private var playbackTask: Task<Void, Never>?
     private var scanState: ResourceScanState = .idle
     private var activationState: SniffingActivationState = .disabled
     private var hasStarted = false
     private var imageFilters: Set<ImageResourceFormat> = []
     private var renderedRows: [RenderedResourceRow] = []
     private var renderedContent: RenderedContent?
+    private var didPerformAutomaticStart = false
 
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
-    private let imageCollectionView = UICollectionView(
-        frame: .zero,
-        collectionViewLayout: UICollectionViewFlowLayout()
-    )
     private lazy var chromeHost = UIHostingController(
         rootView: makeChromeView(state: viewModel.state)
     )
     private lazy var emptyStateHost = UIHostingController(
         rootView: makeEmptyStateView(state: viewModel.state)
     )
-    init(viewModel: ResourceSnifferViewModel) {
+    init(
+        viewModel: ResourceSnifferViewModel,
+        automaticallyStartsSniffing: Bool = false
+    ) {
         self.viewModel = viewModel
+        self.automaticallyStartsSniffing = automaticallyStartsSniffing
         selectedFilter = viewModel.state.imageFilters.isEmpty ? .all : .image
         super.init(title: "资源嗅探", prefersLargeTitle: false)
     }
@@ -98,6 +104,17 @@ final class ResourceSnifferViewController: BaseViewController {
         viewModel.start()
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard automaticallyStartsSniffing,
+              !didPerformAutomaticStart
+        else { return }
+        didPerformAutomaticStart = true
+        if !activationState.isEnabled {
+            startSniffing()
+        }
+    }
+
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         guard isBeingDismissed
@@ -107,6 +124,8 @@ final class ResourceSnifferViewController: BaseViewController {
             return
         }
         scanTask?.cancel()
+        downloadTask?.cancel()
+        playbackTask?.cancel()
         viewModel.stop()
         if isBeingDismissed
             || navigationController?.isBeingDismissed == true
@@ -121,13 +140,45 @@ final class ResourceSnifferViewController: BaseViewController {
         // A stopped scan keeps its results visible. A brand-new page has no
         // visible resources until the user has explicitly started scanning.
         guard activationState.isEnabled || hasStarted else { return [] }
-        let filtered = resources.filter { selectedFilter.includes($0.resourceType) }
+        var filtered = resources.filter {
+            selectedFilter.includes($0.resourceType)
+        }
         guard selectedFilter == .image,
               !imageFilters.isEmpty,
               imageFilters != [.all]
-        else { return filtered }
-        return filtered.filter { resource in
+        else { return sorted(filtered) }
+        filtered = filtered.filter { resource in
             imageFilters.contains { $0.matches(resource) }
+        }
+        return sorted(filtered)
+    }
+
+    private func sorted(
+        _ resources: [DetectedResource]
+    ) -> [DetectedResource] {
+        resources.sorted { lhs, rhs in
+            switch selectedSortOrder {
+            case .newest:
+                break
+            case .type:
+                if lhs.resourceType.sortPriority != rhs.resourceType.sortPriority {
+                    return lhs.resourceType.sortPriority
+                        < rhs.resourceType.sortPriority
+                }
+            case .size:
+                let left = lhs.estimatedSize ?? -1
+                let right = rhs.estimatedSize ?? -1
+                if left != right { return left > right }
+            case .resolution:
+                let left = Int64(lhs.width ?? 0) * Int64(lhs.height ?? 0)
+                let right = Int64(rhs.width ?? 0) * Int64(rhs.height ?? 0)
+                if left != right { return left > right }
+            }
+            if lhs.detectedAt != rhs.detectedAt {
+                return lhs.detectedAt > rhs.detectedAt
+            }
+            return lhs.canonicalURL.absoluteString
+                < rhs.canonicalURL.absoluteString
         }
     }
 
@@ -155,10 +206,11 @@ final class ResourceSnifferViewController: BaseViewController {
 
     private var statusTitle: String {
         switch activationState {
-        case .starting, .active: return "嗅探中"
-        case .stopping: return "正在停止"
-        case .failed: return "未开始"
-        case .disabled: return hasStarted ? "已停止" : "未开始"
+        case .starting: return "正在连接"
+        case .active: return "捕获中"
+        case .stopping: return "正在暂停"
+        case .failed: return "连接失败"
+        case .disabled: return hasStarted ? "已暂停" : "待检测"
         }
     }
 
@@ -203,13 +255,17 @@ final class ResourceSnifferViewController: BaseViewController {
         ResourceSnifferChromeView(
             configuration: ResourceSnifferChromeConfiguration(
                 state: state,
-                selectedFilter: selectedFilter
+                selectedFilter: selectedFilter,
+                selectedSortOrder: selectedSortOrder
             ),
             onPrimaryAction: { [weak self] in
                 self?.primarySniffingAction()
             },
             onSelectFilter: { [weak self] filter in
                 self?.selectFilter(filter)
+            },
+            onSelectSortOrder: { [weak self] order in
+                self?.selectSortOrder(order)
             }
         )
     }
@@ -234,29 +290,9 @@ final class ResourceSnifferViewController: BaseViewController {
             forCellReuseIdentifier: ResourceListCell.reuseIdentifier
         )
         tableView.dataSource = self
+        tableView.delegate = self
         tableView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(tableView)
-
-        let imageLayout = imageCollectionView.collectionViewLayout
-            as? UICollectionViewFlowLayout
-        imageLayout?.minimumInteritemSpacing = AppSpacing.sm
-        imageLayout?.minimumLineSpacing = AppSpacing.sm
-        imageLayout?.sectionInset = UIEdgeInsets(
-            top: AppSpacing.xs,
-            left: AppSpacing.md,
-            bottom: AppSpacing.lg,
-            right: AppSpacing.md
-        )
-        imageCollectionView.backgroundColor = .clear
-        imageCollectionView.alwaysBounceVertical = true
-        imageCollectionView.translatesAutoresizingMaskIntoConstraints = false
-        imageCollectionView.register(
-            ResourceImageCell.self,
-            forCellWithReuseIdentifier: ResourceImageCell.reuseIdentifier
-        )
-        imageCollectionView.dataSource = self
-        imageCollectionView.delegate = self
-        contentView.addSubview(imageCollectionView)
 
         NSLayoutConstraint.activate([
             tableView.topAnchor.constraint(
@@ -265,14 +301,7 @@ final class ResourceSnifferViewController: BaseViewController {
             ),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            imageCollectionView.topAnchor.constraint(
-                equalTo: chromeHost.view.bottomAnchor,
-                constant: AppSpacing.xs
-            ),
-            imageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            imageCollectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            imageCollectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
     }
 
@@ -308,6 +337,7 @@ final class ResourceSnifferViewController: BaseViewController {
             hasStarted: state.hasStarted,
             imageFilters: state.imageFilters,
             selectedFilter: selectedFilter,
+            selectedSortOrder: selectedSortOrder,
             filterCounts: ResourceSnifferFilter.allCases.map { filter in
                 (canShowResults ? resources : []).lazy.filter {
                     filter.includes($0.resourceType)
@@ -321,12 +351,9 @@ final class ResourceSnifferViewController: BaseViewController {
         if nextRows != renderedRows {
             renderedRows = nextRows
             tableView.reloadData()
-            imageCollectionView.reloadData()
         }
-        let isImageGrid = selectedFilter == .image
         let isEmpty = filteredResources.isEmpty
-        tableView.isHidden = isImageGrid || isEmpty
-        imageCollectionView.isHidden = !isImageGrid || isEmpty
+        tableView.isHidden = isEmpty
         emptyStateHost.view.isHidden = !isEmpty
         emptyStateHost.rootView = makeEmptyStateView(state: state)
         updateNavigation()
@@ -342,8 +369,8 @@ final class ResourceSnifferViewController: BaseViewController {
 
     private func makeManagementItem() -> UIBarButtonItem {
         let stop = UIAction(
-            title: "停止嗅探",
-            image: UIImage(systemName: "stop.circle"),
+            title: "暂停捕获",
+            image: UIImage(systemName: "pause.circle"),
             attributes: activationState.isEnabled ? [] : [.disabled]
         ) { [weak self] _ in self?.stopSniffing() }
         let clear = UIAction(
@@ -477,8 +504,11 @@ final class ResourceSnifferViewController: BaseViewController {
         let message = [
             "类型：\(kind)",
             "文件名：\(resource.fileName)",
-            "预计大小：\(expectedSize)"
-        ].joined(separator: "\n")
+            "预计大小：\(expectedSize)",
+            [.video, .hls].contains(resource.resourceType)
+                ? "可在下载进行时播放并拖动进度"
+                : nil
+        ].compactMap { $0 }.joined(separator: "\n")
         let sheet = UIAlertController(
             title: resource.resourceType == .hls ? "下载视频" : "确认下载",
             message: message,
@@ -486,27 +516,51 @@ final class ResourceSnifferViewController: BaseViewController {
         )
         sheet.addAction(UIAlertAction(title: "取消", style: .cancel))
         sheet.addAction(UIAlertAction(
-            title: "开始下载",
+            title: "仅下载",
             style: .default
         ) { [weak self] _ in
             self?.startDownload(resource)
         })
+        if [.video, .hls].contains(resource.resourceType) {
+            sheet.addAction(UIAlertAction(
+                title: "下载并播放",
+                style: .default
+            ) { [weak self] _ in
+                self?.startDownload(resource, playsWhileDownloading: true)
+            })
+        }
         present(sheet, animated: true)
     }
 
-    private func startDownload(_ resource: DetectedResource) {
-        scanTask = Task { [weak self] in
+    private func startDownload(
+        _ resource: DetectedResource,
+        playsWhileDownloading: Bool = false
+    ) {
+        downloadTask?.cancel()
+        downloadTask = Task { [weak self] in
             guard let self else { return }
             do {
                 let result = try await self.viewModel.startDownload(resource: resource)
                 switch result {
                 case .created:
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
-                    self.showDownloadCreatedMessage()
+                    if playsWhileDownloading {
+                        self.preview(resource)
+                    } else {
+                        self.showDownloadCreatedMessage()
+                    }
                 case .alreadyDownloading:
-                    self.showMessage(title: "已在下载", message: "相同资源已有进行中的任务。")
+                    if playsWhileDownloading {
+                        self.preview(resource)
+                    } else {
+                        self.showMessage(title: "已在下载", message: "相同资源已有进行中的任务。")
+                    }
                 case .fileAlreadyExists:
-                    self.showMessage(title: "文件已存在", message: "相同资源已经下载完成，可前往文件库查看。")
+                    if playsWhileDownloading {
+                        self.preview(resource)
+                    } else {
+                        self.showMessage(title: "文件已存在", message: "相同资源已经下载完成，可前往文件库查看。")
+                    }
                 }
             } catch {
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
@@ -534,7 +588,8 @@ final class ResourceSnifferViewController: BaseViewController {
     }
 
     private func preview(_ resource: DetectedResource) {
-        scanTask = Task { [weak self] in
+        playbackTask?.cancel()
+        playbackTask = Task { [weak self] in
             guard let self else { return }
             if resource.resourceType == .image {
                 let imageURL = URL(string: resource.originalURLString)
@@ -554,20 +609,24 @@ final class ResourceSnifferViewController: BaseViewController {
             }
             let context = await self.viewModel.requestContext(for: resource)
             do {
-                let playbackURL: URL
-                let options: [String: Any]
-                if resource.resourceType == .hls {
-                    playbackURL = try await RemoteHLSPlaybackServer.shared
-                        .playbackURL(context: context)
-                    options = [:]
-                } else {
-                    playbackURL = context.targetURL
-                    options = context.assetOptions()
+                // HLS 和普通视频都由本机回环服务带着网页 Referer、UA 与
+                // 匹配 Cookie 请求。普通媒体按 Range 分块转发，既修复
+                // 防盗链导致的在线播放失败，也保留系统播放器的拖动能力。
+                let kind: RemoteMediaPlaybackKind = resource.resourceType == .hls
+                    ? .hls
+                    : .direct
+                let playbackURL = try await RemoteHLSPlaybackServer.shared
+                    .playbackURL(context: context, kind: kind)
+                guard !Task.isCancelled else { return }
+                let asset = AVURLAsset(url: playbackURL)
+                guard try await asset.load(.isPlayable) else {
+                    throw RemoteHLSPlaybackServerError.invalidResponse
                 }
                 guard !Task.isCancelled else { return }
-                let asset = AVURLAsset(url: playbackURL, options: options)
                 let player = AVPlayerViewController()
                 player.player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
+                player.showsPlaybackControls = true
+                player.allowsPictureInPicturePlayback = true
                 self.present(player, animated: true) { player.player?.play() }
             } catch {
                 self.showMessage(
@@ -642,6 +701,14 @@ final class ResourceSnifferViewController: BaseViewController {
         updateContent(state: state)
     }
 
+    private func selectSortOrder(_ order: ResourceSnifferSortOrder) {
+        guard selectedSortOrder != order else { return }
+        selectedSortOrder = order
+        renderedContent = nil
+        updateContent(state: viewModel.state)
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+
     private func presentImageFilterPanel() {
         let controller = UIHostingController(rootView: ImageResourceFilterSheetView(
             selection: imageFilters,
@@ -662,7 +729,8 @@ final class ResourceSnifferViewController: BaseViewController {
     }
 }
 
-extension ResourceSnifferViewController: UITableViewDataSource {
+extension ResourceSnifferViewController: UITableViewDataSource,
+    UITableViewDelegate {
     func tableView(
         _ tableView: UITableView,
         numberOfRowsInSection section: Int
@@ -711,82 +779,16 @@ extension ResourceSnifferViewController: UITableViewDataSource {
         )
         return cell
     }
-}
 
-extension ResourceSnifferViewController: UICollectionViewDataSource,
-    UICollectionViewDelegateFlowLayout {
-    func collectionView(
-        _ collectionView: UICollectionView,
-        numberOfItemsInSection section: Int
-    ) -> Int {
-        filteredResources.count
-    }
-
-    func collectionView(
-        _ collectionView: UICollectionView,
-        cellForItemAt indexPath: IndexPath
-    ) -> UICollectionViewCell {
-        guard let cell = collectionView.dequeueReusableCell(
-            withReuseIdentifier: ResourceImageCell.reuseIdentifier,
-            for: indexPath
-        ) as? ResourceImageCell else {
-            return UICollectionViewCell()
-        }
-        let resource = filteredResources[indexPath.item]
-        let imageURL = URL(string: resource.originalURLString) ?? resource.canonicalURL
-        cell.configure(
-            resource: resource,
-            allowsDiskCache: !viewModel.state.isPrivate,
-            requestProvider: { [weak viewModel] _ in
-                guard let viewModel else { return nil }
-                return await viewModel.thumbnailRequest(for: imageURL)
-            },
-            inlineDataProvider: { [weak viewModel] _ in
-                guard let viewModel else { return nil }
-                return await viewModel.thumbnailData(for: imageURL)
-            },
-            onPreview: { [weak self] in self?.preview(resource) },
-            onMore: { [weak self] in self?.presentImageActions(for: resource) }
-        )
-        return cell
-    }
-
-    func collectionView(
-        _ collectionView: UICollectionView,
-        layout collectionViewLayout: UICollectionViewLayout,
-        sizeForItemAt indexPath: IndexPath
-    ) -> CGSize {
-        let layout = collectionViewLayout as? UICollectionViewFlowLayout
-        let horizontalInsets = (layout?.sectionInset.left ?? AppSpacing.md)
-            + (layout?.sectionInset.right ?? AppSpacing.md)
-        let spacing = layout?.minimumInteritemSpacing ?? AppSpacing.sm
-        let width = max(120, (collectionView.bounds.width - horizontalInsets - spacing) / 2)
-        return CGSize(width: width, height: 218)
-    }
-
-    private func presentImageActions(for resource: DetectedResource) {
-        let sheet = UIAlertController(
-            title: resource.fileName,
-            message: "选择操作",
-            preferredStyle: .actionSheet
-        )
-        let download = UIAlertAction(title: "下载", style: .default) { [weak self] _ in
-            self?.requestDownload(resource)
-        }
-        download.isEnabled = resource.isPotentiallyDownloadable
-            && ["http", "https"].contains(resource.canonicalURL.scheme?.lowercased() ?? "")
-        sheet.addAction(download)
-        sheet.addAction(UIAlertAction(title: "复制链接", style: .default) { [weak self] _ in
-            self?.copy(resource)
-        })
-        sheet.addAction(UIAlertAction(title: "分享", style: .default) { [weak self] _ in
-            self?.share(resource)
-        })
-        sheet.addAction(UIAlertAction(title: "查看详情", style: .default) { [weak self] _ in
-            self?.showDetails(resource)
-        })
-        sheet.addAction(UIAlertAction(title: "取消", style: .cancel))
-        present(sheet, animated: true)
+    func tableView(
+        _ tableView: UITableView,
+        didSelectRowAt indexPath: IndexPath
+    ) {
+        guard filteredResources.indices.contains(indexPath.row) else { return }
+        let resource = filteredResources[indexPath.row]
+        guard [.image, .video, .audio, .hls].contains(resource.resourceType)
+        else { return }
+        preview(resource)
     }
 }
 

@@ -25,6 +25,8 @@ final class AppCoordinator: NSObject, BrowserRouting {
     navigationController.interactivePopGestureRecognizer?.isEnabled = false
     popInteraction.navigationController = navigationController
     popGesture.edges = .left
+    popGesture.delegate = self
+    popGesture.cancelsTouchesInView = true
     popGesture.addTarget(
       self,
       action: #selector(handlePopGesture(_:))
@@ -302,7 +304,17 @@ final class AppCoordinator: NSObject, BrowserRouting {
     _ controller: UIViewController,
     in navigation: UINavigationController
   ) {
+    // 将边缘返回手势直接挂在当前内容页，而不是只挂在导航控制器外层。
+    // UIPageViewController/UICollectionView 会优先占用横向拖动，外层手势
+    // 在标签总览里可能永远收不到 began；内容页上的 screen-edge 手势
+    // 与 Safari 一样从左边缘连续驱动同一套 pop 空间转场。
     navigation.pushViewController(controller, animated: true)
+    if navigation === navigationController {
+      // push 完成注册后再访问 view，保证目标控制器在 viewDidLoad 中已经
+      // 拿到 navigationController，不改变其他页面原有生命周期。
+      controller.loadViewIfNeeded()
+      controller.view.addGestureRecognizer(popGesture)
+    }
   }
 
   private func returnToBrowser(from navigation: UINavigationController?) {
@@ -338,7 +350,8 @@ final class AppCoordinator: NSObject, BrowserRouting {
   }
 }
 
-extension AppCoordinator: UINavigationControllerDelegate {
+extension AppCoordinator: UINavigationControllerDelegate,
+  UIGestureRecognizerDelegate {
   @objc
   private func handlePopGesture(_ gesture: UIScreenEdgePanGestureRecognizer) {
     if gesture.state == .began {
@@ -346,6 +359,19 @@ extension AppCoordinator: UINavigationControllerDelegate {
         .captureCurrentTransitionFrameIfNeeded()
     }
     popInteraction.handleGesture(gesture)
+  }
+
+  func gestureRecognizerShouldBegin(
+    _ gestureRecognizer: UIGestureRecognizer
+  ) -> Bool {
+    guard gestureRecognizer === popGesture,
+          navigationController.viewControllers.count > 1
+    else { return gestureRecognizer !== popGesture }
+    guard let panGesture = gestureRecognizer as? UIPanGestureRecognizer else {
+      return true
+    }
+    let velocity = panGesture.velocity(in: panGesture.view)
+    return velocity.x > 0 && abs(velocity.x) > abs(velocity.y)
   }
 
   func navigationController(
@@ -678,7 +704,7 @@ private final class TabOverviewNavigationAnimator: NSObject,
       for: itemID,
       fallbackImage: overview.transitionImage(for: itemID)
     )
-    let finalFullFrame = browser.tabTransitionFullContentFrame(
+    let finalFullFrame = browser.tabTransitionSnapshotFullFrame(
       in: transitionWindow
     )
     let finalFrame = browser.tabTransitionContentFrame(in: transitionWindow)

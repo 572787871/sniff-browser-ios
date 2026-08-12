@@ -50,6 +50,31 @@ enum ResourceSnifferFilter: Int, CaseIterable, Equatable {
     }
 }
 
+enum ResourceSnifferSortOrder: Int, CaseIterable, Equatable {
+    case newest
+    case type
+    case size
+    case resolution
+
+    var title: String {
+        switch self {
+        case .newest: return "最新发现"
+        case .type: return "按类型"
+        case .size: return "按大小"
+        case .resolution: return "按清晰度"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .newest: return "clock.arrow.circlepath"
+        case .type: return "square.grid.2x2"
+        case .size: return "arrow.down.circle"
+        case .resolution: return "rectangle.inset.filled"
+        }
+    }
+}
+
 struct ResourceSnifferChromeConfiguration: Equatable {
     struct FilterItem: Identifiable, Equatable {
         let filter: ResourceSnifferFilter
@@ -80,10 +105,14 @@ struct ResourceSnifferChromeConfiguration: Equatable {
     let isPrimaryEnabled: Bool
     let isWorking: Bool
     let filters: [FilterItem]
+    let resultCount: Int
+    let selectedSortOrder: ResourceSnifferSortOrder
+    let showsResultControls: Bool
 
     init(
         state: ResourceSnifferViewModel.State,
-        selectedFilter: ResourceSnifferFilter
+        selectedFilter: ResourceSnifferFilter,
+        selectedSortOrder: ResourceSnifferSortOrder = .newest
     ) {
         pageTitle = state.pageTitle
         pageURL = state.pageURL
@@ -92,47 +121,49 @@ struct ResourceSnifferChromeConfiguration: Equatable {
 
         switch state.activationState {
         case .starting:
-            statusTitle = "正在开启"
+            statusTitle = "正在连接"
             statusStyle = .working
         case .active:
-            statusTitle = "嗅探中"
+            statusTitle = "捕获中"
             statusStyle = .active
         case .stopping:
-            statusTitle = "正在停止"
+            statusTitle = "正在暂停"
             statusStyle = .working
         case .failed:
-            statusTitle = "未开始"
+            statusTitle = "连接失败"
             statusStyle = .failed
         case .disabled:
-            statusTitle = state.hasStarted ? "已停止" : "未开始"
+            statusTitle = state.hasStarted ? "已暂停" : "待检测"
             statusStyle = .stopped
         }
 
         switch state.activationState {
         case .starting, .active, .stopping:
             if state.scanState == .installing || state.scanState == .scanning {
-                detail = "正在检测网页资源…"
+                detail = "正在分析当前页面的资源请求…"
             } else if state.resources.isEmpty {
-                detail = "正在等待页面加载新资源"
+                detail = "等待页面产生视频、音频或图片请求"
             } else {
-                detail = "已发现 \(state.resources.count) 项资源"
+                detail = "已归类 \(state.resources.count) 项页面资源"
             }
         case .failed:
-            detail = state.errorMessage ?? "暂时无法连接资源检测"
+            detail = state.errorMessage ?? "检测器暂时无法连接当前页面"
         case .disabled:
             detail = state.hasStarted
-                ? "已停止新增资源，已有结果仍保留"
-                : "点击开始后检测当前页面资源"
+                ? "已暂停新增，当前结果仍然保留"
+                : "开始后仅检测当前标签页，不读取其他页面"
         }
 
         helper = state.isPrivate
-            ? "仅在本次页面手动开启 · 无痕结果仅保留在当前会话"
-            : "仅在本次页面手动开启，不会自动扫描"
+            ? "只检测当前标签页 · 无痕结果仅保留在本次会话"
+            : "只检测当前标签页 · 切换标签后自动停止"
 
         let isRunning = state.activationState.isEnabled
             || state.activationState == .stopping
-        primaryTitle = isRunning ? "停止嗅探" : "开始嗅探"
-        primarySymbol = isRunning ? "stop.fill" : "dot.radiowaves.left.and.right"
+        primaryTitle = isRunning
+            ? "暂停捕获"
+            : (state.hasStarted ? "继续捕获" : "开始捕获")
+        primarySymbol = isRunning ? "pause.fill" : "dot.radiowaves.left.and.right"
         isPrimaryEnabled = state.activationState != .starting
             && state.activationState != .stopping
         isWorking = state.activationState == .starting
@@ -155,6 +186,20 @@ struct ResourceSnifferChromeConfiguration: Equatable {
                     && state.imageFilters != [.all]
             )
         }
+        let selectedResources = canShowResults
+            ? state.resources.filter { selectedFilter.includes($0.resourceType) }
+            : []
+        if selectedFilter == .image,
+           !state.imageFilters.isEmpty,
+           state.imageFilters != [.all] {
+            resultCount = selectedResources.filter { resource in
+                state.imageFilters.contains { $0.matches(resource) }
+            }.count
+        } else {
+            resultCount = selectedResources.count
+        }
+        self.selectedSortOrder = selectedSortOrder
+        showsResultControls = canShowResults && !state.resources.isEmpty
     }
 }
 
@@ -173,13 +218,13 @@ struct ResourceSnifferEmptyConfiguration: Equatable {
                 ? "exclamationmark.arrow.triangle.2.circlepath"
                 : "dot.radiowaves.left.and.right"
             title = state.activationState == .failed
-                ? "无法开启资源嗅探"
-                : (state.hasStarted ? "嗅探已停止" : "尚未开始嗅探")
+                ? "无法连接页面检测器"
+                : (state.hasStarted ? "捕获已暂停" : "等待开始捕获")
             message = state.errorMessage
                 ?? (state.hasStarted
-                    ? "点击上方按钮可再次检测当前页面资源。"
-                    : "点击上方按钮后显示发现的资源。")
-            actionTitle = canRetry ? "重新开始嗅探" : nil
+                    ? "继续捕获后，新出现的页面资源会追加到这里。"
+                    : "从浏览器工具栏进入时会自动检测当前标签页。")
+            actionTitle = canRetry ? "继续捕获" : nil
             secondaryActionTitle = "返回网页"
             isWorking = false
             return
@@ -193,11 +238,11 @@ struct ResourceSnifferEmptyConfiguration: Equatable {
         symbolName = failed
             ? "exclamationmark.arrow.triangle.2.circlepath"
             : "dot.radiowaves.left.and.right"
-        title = failed ? "资源扫描失败" : "暂未发现资源"
+        title = failed ? "页面分析失败" : "正在等待页面资源"
         message = failed
-            ? (state.errorMessage ?? "请确认网页已完成加载后重新扫描。")
-            : "播放网页中的视频或音频，或继续浏览以发现更多资源。"
-        actionTitle = working ? nil : "重新扫描"
+            ? (state.errorMessage ?? "请确认网页已完成加载后再次分析。")
+            : "播放视频、展开图片区域或继续浏览，结果会实时归类。"
+        actionTitle = working ? nil : "再次分析"
         secondaryActionTitle = "返回网页继续浏览"
         isWorking = working
     }
@@ -207,6 +252,7 @@ struct ResourceSnifferChromeView: View {
     let configuration: ResourceSnifferChromeConfiguration
     let onPrimaryAction: () -> Void
     let onSelectFilter: (ResourceSnifferFilter) -> Void
+    let onSelectSortOrder: (ResourceSnifferSortOrder) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -214,6 +260,9 @@ struct ResourceSnifferChromeView: View {
         VStack(spacing: 14) {
             pagePanel
             filterBar
+            if configuration.showsResultControls {
+                resultControls
+            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
@@ -225,7 +274,20 @@ struct ResourceSnifferChromeView: View {
     }
 
     private var pagePanel: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 13) {
+            HStack(spacing: 8) {
+                Label("当前标签页", systemImage: "safari")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(
+                        Color(uiColor: ResourceSnifferPalette.secondaryText)
+                    )
+                Spacer()
+                SWResourceStatusBadge(
+                    text: configuration.statusTitle,
+                    style: configuration.statusStyle
+                )
+            }
+
             HStack(spacing: 12) {
                 ResourceSnifferFaviconView(
                     pageURL: configuration.pageURL,
@@ -239,12 +301,6 @@ struct ResourceSnifferChromeView: View {
                 )
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("当前网页")
-                        .font(.caption)
-                        .foregroundStyle(
-                            Color(uiColor: ResourceSnifferPalette.secondaryText)
-                        )
-
                     Text(configuration.domain)
                         .font(.headline)
                         .foregroundStyle(
@@ -269,16 +325,14 @@ struct ResourceSnifferChromeView: View {
                         .tint(Color(uiColor: ResourceSnifferPalette.accent))
                         .accessibilityLabel("正在处理")
                 }
-
-                SWResourceStatusBadge(
-                    text: configuration.statusTitle,
-                    style: configuration.statusStyle
-                )
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(
                 "当前网页，\(configuration.pageTitle)，\(configuration.domain)，\(configuration.detail)，\(configuration.statusTitle)"
             )
+
+            Divider()
+                .overlay(Color(uiColor: ResourceSnifferPalette.border))
 
             Button(action: onPrimaryAction) {
                 HStack(spacing: 8) {
@@ -300,7 +354,7 @@ struct ResourceSnifferChromeView: View {
             .disabled(!configuration.isPrimaryEnabled)
             .opacity(configuration.isPrimaryEnabled ? 1 : 0.58)
             .accessibilityHint(
-                configuration.primaryTitle == "开始嗅探"
+                configuration.primaryTitle != "暂停捕获"
                     ? "仅为当前网页开启资源检测"
                     : "停止发现新资源并保留现有结果"
             )
@@ -346,6 +400,49 @@ struct ResourceSnifferChromeView: View {
             .padding(.vertical, 2)
         }
         .accessibilityLabel("资源分类")
+    }
+
+    private var resultControls: some View {
+        HStack(spacing: 12) {
+            Text("\(configuration.resultCount) 项结果")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(
+                    Color(uiColor: ResourceSnifferPalette.primaryText)
+                )
+                .contentTransition(.numericText())
+
+            Spacer()
+
+            Menu {
+                ForEach(ResourceSnifferSortOrder.allCases, id: \.rawValue) { order in
+                    Button {
+                        onSelectSortOrder(order)
+                    } label: {
+                        Label(order.title, systemImage: order == configuration.selectedSortOrder
+                            ? "checkmark"
+                            : order.symbolName)
+                    }
+                }
+            } label: {
+                Label(
+                    configuration.selectedSortOrder.title,
+                    systemImage: "arrow.up.arrow.down"
+                )
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(
+                    Color(uiColor: ResourceSnifferPalette.accent)
+                )
+                .padding(.horizontal, 12)
+                .frame(minHeight: 36)
+                .background(
+                    Color(uiColor: ResourceSnifferPalette.accentFill),
+                    in: Capsule()
+                )
+            }
+            .accessibilityLabel("资源排序")
+            .accessibilityValue(configuration.selectedSortOrder.title)
+        }
+        .padding(.horizontal, 2)
     }
 }
 

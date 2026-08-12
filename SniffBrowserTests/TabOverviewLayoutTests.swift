@@ -3,6 +3,26 @@ import XCTest
 @testable import SniffBrowser
 
 final class TabOverviewLayoutTests: XCTestCase {
+    func testSnapshotViewportExcludesNativeChromeInsets() {
+        let rect = TabSnapshotViewportGeometry.visibleRect(
+            bounds: CGRect(x: 0, y: 0, width: 390, height: 844),
+            contentInset: UIEdgeInsets(top: 112, left: 0, bottom: 94, right: 0)
+        )
+
+        XCTAssertEqual(rect, CGRect(x: 0, y: 112, width: 390, height: 638))
+    }
+
+    func testSnapshotViewportClampsOversizedInsets() {
+        let rect = TabSnapshotViewportGeometry.visibleRect(
+            bounds: CGRect(x: 0, y: 0, width: 100, height: 80),
+            contentInset: UIEdgeInsets(top: 100, left: 0, bottom: 100, right: 0)
+        )
+
+        XCTAssertEqual(rect.width, 100)
+        XCTAssertGreaterThanOrEqual(rect.height, 1)
+        XCTAssertLessThanOrEqual(rect.maxY, 80)
+    }
+
     func testPortraitGridAlwaysUsesTwoColumns() {
         let compact = TabOverviewGridLayoutMetrics.resolve(
             containerSize: CGSize(width: 320, height: 500)

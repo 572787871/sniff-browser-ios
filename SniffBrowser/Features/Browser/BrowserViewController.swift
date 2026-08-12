@@ -1556,7 +1556,10 @@ extension BrowserViewController: BrowserToolbarDelegate {
           return await WebViewBlobImageDataLoader.load(url: url, in: webView)
         }
       )
-      let controller = ResourceSnifferViewController(viewModel: viewModel)
+      let controller = ResourceSnifferViewController(
+        viewModel: viewModel,
+        automaticallyStartsSniffing: true
+      )
       router?.showResources(controller)
     case .tabs:
       showTabs()

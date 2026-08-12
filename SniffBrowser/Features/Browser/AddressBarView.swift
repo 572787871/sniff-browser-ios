@@ -68,7 +68,7 @@ final class AddressBarView: UIView {
       textField.text = displayText(for: state.url)
       textField.textAlignment = isCompact
         ? .center
-        : (state.url == nil ? .center : .left)
+        : .center
     }
     updateSecurityIcon(for: state.url)
     updateTrailingButton()
@@ -130,7 +130,7 @@ final class AddressBarView: UIView {
       self.trailingButton.alpha = compact ? 0 : 1
       self.textField.textAlignment = self.textField.isFirstResponder
         ? .left
-        : (compact ? .center : (self.state.url == nil ? .center : .left))
+        : .center
       self.layer.shadowOpacity = compact ? 0.04 : AppShadow.browserChrome.opacity
     }
     // 收缩时图标只作为视觉元素隐藏；地址栏本身仍要保留可触摸区域，
@@ -351,9 +351,9 @@ final class AddressBarView: UIView {
     } else {
       switch url?.scheme?.lowercased() {
       case "https":
-        symbol = "lock.fill"
+        symbol = "text.page"
         color = pageThemeForegroundStyle?.color ?? AppColors.secondaryText
-        securityImageView.accessibilityLabel = "安全连接"
+        securityImageView.accessibilityLabel = "网页设置，安全连接"
       case "http":
         symbol = "exclamationmark.triangle.fill"
         color = AppColors.warning
@@ -365,6 +365,7 @@ final class AddressBarView: UIView {
       }
     }
     securityImageView.image = UIImage(systemName: symbol)
+      ?? UIImage(systemName: "doc.text.fill")
     securityImageView.tintColor = color
     textField.accessibilityHint = securityImageView.accessibilityLabel
   }
@@ -444,7 +445,7 @@ extension AddressBarView: UITextFieldDelegate, UIGestureRecognizerDelegate {
   func textFieldDidEndEditing(_ textField: UITextField) {
     state.isEditing = false
     textField.text = displayText(for: state.url)
-    textField.textAlignment = state.url == nil ? .center : .left
+    textField.textAlignment = .center
     updateSecurityIcon(for: state.url)
     updateTrailingButton()
     delegate?.addressBarDidEndEditing(self)

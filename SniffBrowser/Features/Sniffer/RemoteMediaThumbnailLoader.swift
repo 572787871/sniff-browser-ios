@@ -52,19 +52,15 @@ final class RemoteMediaThumbnailLoader {
             }
             let asset: AVURLAsset
             do {
-                if resource.resourceType == .hls {
-                    let playbackURL = try await RemoteHLSPlaybackServer.shared
-                        .playbackURL(context: context)
-                    guard !Task.isCancelled, !operation.isCancelled else {
-                        return
-                    }
-                    asset = AVURLAsset(url: playbackURL)
-                } else {
-                    asset = AVURLAsset(
-                        url: context.targetURL,
-                        options: context.assetOptions()
-                    )
+                let kind: RemoteMediaPlaybackKind = resource.resourceType == .hls
+                    ? .hls
+                    : .direct
+                let playbackURL = try await RemoteHLSPlaybackServer.shared
+                    .playbackURL(context: context, kind: kind)
+                guard !Task.isCancelled, !operation.isCancelled else {
+                    return
                 }
+                asset = AVURLAsset(url: playbackURL)
             } catch {
                 guard !operation.isCancelled else { return }
                 completion(nil)

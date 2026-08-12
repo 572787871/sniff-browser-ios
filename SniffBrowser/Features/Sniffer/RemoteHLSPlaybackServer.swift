@@ -15,10 +15,15 @@ enum RemoteHLSPlaybackServerError: LocalizedError {
     }
 }
 
-/// Provides AVPlayer with a loopback HLS origin while fetching every manifest,
-/// key and media segment with the same in-memory context as the WKWebView.
-/// This avoids undocumented AVURLAsset header options and never persists
-/// cookies or request headers.
+enum RemoteMediaPlaybackKind: Sendable {
+    case hls
+    case direct
+}
+
+/// Provides AVPlayer with a loopback media origin while fetching manifests,
+/// segments and direct-file byte ranges with the same in-memory context as
+/// the WKWebView. This avoids undocumented AVURLAsset header options and never
+/// persists cookies or request headers.
 @MainActor
 final class RemoteHLSPlaybackServer {
     static let shared = RemoteHLSPlaybackServer()
@@ -30,7 +35,12 @@ final class RemoteHLSPlaybackServer {
     private let session: URLSession
     private var listener: NWListener?
     private var port: NWEndpoint.Port?
-    private var contextByToken: [String: DownloadRequestContext] = [:]
+    private struct PlaybackContext: Sendable {
+        let requestContext: DownloadRequestContext
+        let kind: RemoteMediaPlaybackKind
+    }
+
+    private var contextByToken: [String: PlaybackContext] = [:]
     private var readinessWaiters: [CheckedContinuation<NWEndpoint.Port, Error>] = []
 
     private init() {
@@ -44,12 +54,25 @@ final class RemoteHLSPlaybackServer {
         session = URLSession(configuration: configuration)
     }
 
-    func playbackURL(context: DownloadRequestContext) async throws -> URL {
+    func playbackURL(
+        context: DownloadRequestContext,
+        kind: RemoteMediaPlaybackKind = .hls
+    ) async throws -> URL {
         guard ["http", "https"].contains(
             context.targetURL.scheme?.lowercased() ?? ""
         ) else { throw RemoteHLSPlaybackServerError.invalidResponse }
         let token = UUID().uuidString.lowercased()
-        contextByToken[token] = context
+        contextByToken[token] = PlaybackContext(
+            requestContext: context,
+            kind: kind
+        )
+        // Tokens are intentionally short-lived and never written to disk.
+        // Keeping a hard cap also prevents repeated previews from retaining
+        // old cookie snapshots for the lifetime of the app.
+        if contextByToken.count > 32,
+           let staleToken = contextByToken.keys.first(where: { $0 != token }) {
+            contextByToken[staleToken] = nil
+        }
         let readyPort = try await readyPort()
         return try Self.proxyURL(
             remoteURL: context.targetURL,
@@ -127,7 +150,7 @@ final class RemoteHLSPlaybackServer {
             Task { @MainActor [weak self] in
                 guard let self,
                       let request = RemoteHLSHTTPRequest(data: data),
-                      let context = self.contextByToken[request.token],
+                      let playbackContext = self.contextByToken[request.token],
                       let readyPort = self.port,
                       let remoteURL = request.remoteURL
                 else {
@@ -139,7 +162,8 @@ final class RemoteHLSPlaybackServer {
                     await Self.serve(
                         request,
                         remoteURL: remoteURL,
-                        context: context,
+                        context: playbackContext.requestContext,
+                        kind: playbackContext.kind,
                         port: readyPort,
                         session: session,
                         connection: connection
@@ -153,6 +177,7 @@ final class RemoteHLSPlaybackServer {
         _ localRequest: RemoteHLSHTTPRequest,
         remoteURL: URL,
         context: DownloadRequestContext,
+        kind: RemoteMediaPlaybackKind,
         port: NWEndpoint.Port,
         session: URLSession,
         connection: NWConnection
@@ -166,6 +191,14 @@ final class RemoteHLSPlaybackServer {
         request.timeoutInterval = 30
         if let range = localRequest.rangeHeader, !range.isEmpty {
             request.setValue(range, forHTTPHeaderField: "Range")
+        }
+        if kind == .direct {
+            await serveDirectMedia(
+                request,
+                session: session,
+                connection: connection
+            )
+            return
         }
         do {
             let (receivedData, response) = try await session.data(for: request)
@@ -207,6 +240,98 @@ final class RemoteHLSPlaybackServer {
             )
         } catch {
             sendStatus(502, on: connection)
+        }
+    }
+
+    /// 普通 MP4/MOV/音频按 URLSession 的字节流逐段转发。AVPlayer 发出的
+    /// Range 请求会原样带给源站，所以下载同时播放时仍可拖动到源站支持
+    /// 的任意时间点；任何时刻内存里只保留一个小缓冲区。
+    nonisolated private static func serveDirectMedia(
+        _ request: URLRequest,
+        session: URLSession,
+        connection: NWConnection
+    ) async {
+        do {
+            let (bytes, response) = try await session.bytes(for: request)
+            guard let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode)
+            else {
+                sendStatus(502, on: connection)
+                return
+            }
+            let isHead = request.httpMethod == "HEAD"
+            let header = responseHeaderData(
+                statusCode: http.statusCode,
+                mimeType: http.mimeType ?? "application/octet-stream",
+                contentRange: http.value(forHTTPHeaderField: "Content-Range"),
+                acceptsRanges: http.value(forHTTPHeaderField: "Accept-Ranges"),
+                expectedContentLength: http.expectedContentLength
+            )
+            try await sendChunk(header, on: connection)
+            guard !isHead else {
+                connection.cancel()
+                return
+            }
+
+            var buffer = Data()
+            buffer.reserveCapacity(64 * 1_024)
+            for try await byte in bytes {
+                try Task.checkCancellation()
+                buffer.append(byte)
+                if buffer.count >= 64 * 1_024 {
+                    try await sendChunk(buffer, on: connection)
+                    buffer.removeAll(keepingCapacity: true)
+                }
+            }
+            if !buffer.isEmpty {
+                try await sendChunk(buffer, on: connection)
+            }
+            connection.cancel()
+        } catch {
+            connection.cancel()
+        }
+    }
+
+    nonisolated private static func responseHeaderData(
+        statusCode: Int,
+        mimeType: String,
+        contentRange: String?,
+        acceptsRanges: String?,
+        expectedContentLength: Int64
+    ) -> Data {
+        let reason = statusCode == 206 ? "Partial Content" : "OK"
+        var headers = [
+            "HTTP/1.1 \(statusCode) \(reason)",
+            "Content-Type: \(mimeType)",
+            "Accept-Ranges: \(acceptsRanges ?? "bytes")",
+            "Cache-Control: no-store",
+            "Connection: close"
+        ]
+        if expectedContentLength >= 0 {
+            headers.append("Content-Length: \(expectedContentLength)")
+        }
+        if let contentRange {
+            headers.append("Content-Range: \(contentRange)")
+        }
+        return Data((headers.joined(separator: "\r\n") + "\r\n\r\n").utf8)
+    }
+
+    nonisolated private static func sendChunk(
+        _ data: Data,
+        on connection: NWConnection
+    ) async throws {
+        try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<Void, Error>) in
+            connection.send(
+                content: data,
+                completion: .contentProcessed { error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume(returning: ())
+                    }
+                }
+            )
         }
     }
 

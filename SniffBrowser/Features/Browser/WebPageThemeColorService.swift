@@ -47,8 +47,36 @@ enum WebPageThemeColorService {
         return values;
       };
 
-      const detectedColors = () => {
+      const topEdgeColors = () => {
+        if (!document.elementFromPoint) return [];
+        const width = Math.max(
+          document.documentElement && document.documentElement.clientWidth || 0,
+          window.innerWidth || 0
+        );
+        const samplePoints = [
+          [Math.max(1, width * 0.5), 1],
+          [Math.max(1, width * 0.18), 1],
+          [Math.max(1, width * 0.82), 1]
+        ];
         const values = [];
+        for (const [x, y] of samplePoints) {
+          let element = document.elementFromPoint(x, y);
+          while (element) {
+            const color = getComputedStyle(element).backgroundColor;
+            if (!isTransparent(color)) {
+              values.push(color);
+              break;
+            }
+            element = element.parentElement;
+          }
+        }
+        return values;
+      };
+
+      const detectedColors = () => {
+        // 浏览器外围应衔接网页“顶边正在显示”的颜色，而不是页面较深处
+        // 的 body 底色。其次采用站点声明的 theme-color，再回退 body/html。
+        const values = [...topEdgeColors(), ...matchingThemeColors()];
         if (document.body) {
           const bodyColor = getComputedStyle(document.body).backgroundColor;
           if (!isTransparent(bodyColor)) values.push(bodyColor);
@@ -59,7 +87,6 @@ enum WebPageThemeColorService {
           ).backgroundColor;
           if (!isTransparent(htmlColor)) values.push(htmlColor);
         }
-        values.push(...matchingThemeColors());
         if (values.length === 0) {
           const rootStyle = document.documentElement
             ? getComputedStyle(document.documentElement)
@@ -107,6 +134,12 @@ enum WebPageThemeColorService {
 
       const mutationAffectsTheme = mutation => {
         if (observesThemeTarget(mutation.target)) return true;
+        if (mutation.type === "attributes"
+            && mutation.target instanceof Element
+            && (mutation.attributeName === "class"
+              || mutation.attributeName === "style")) {
+          return true;
+        }
         const containsThemeMeta = node => {
           if (!(node instanceof Element)) return false;
           if (observesThemeTarget(node)) return true;
@@ -169,6 +202,8 @@ enum WebPageThemeColorService {
         start();
       }
       window.addEventListener("load", schedule, { once: true });
+      window.addEventListener("scroll", schedule, { passive: true });
+      window.addEventListener("resize", schedule, { passive: true });
     })();
     """
 }

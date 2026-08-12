@@ -38,13 +38,18 @@ final class TabSnapshotService: TabSnapshotProviding {
         }
 
         let configuration = WKSnapshotConfiguration()
-        // 明确截取当前可视 viewport，而不是依赖 WebKit 的默认区域。
-        // 这样离屏标签的缓存图与转场使用的冻结画面拥有相同的顶部锚点。
-        configuration.rect = webView.bounds
+        // WebView 全屏铺在地址栏/工具栏下方；contentInset 精确记录了
+        // 两个原生覆盖区。离屏缓存也必须裁掉它们，才能与当前标签的
+        // 转场截图保持同一取景，不再在卡片顶部显示大片空白。
+        let snapshotRect = TabSnapshotViewportGeometry.visibleRect(
+            bounds: webView.bounds,
+            contentInset: webView.scrollView.contentInset
+        )
+        configuration.rect = snapshotRect
         configuration.afterScreenUpdates = true
-        if webView.bounds.width > 0 {
+        if snapshotRect.width > 0 {
             configuration.snapshotWidth = NSNumber(
-                value: Double(min(webView.bounds.width, 360))
+                value: Double(min(snapshotRect.width, 360))
             )
         }
         let image: UIImage? = await withCheckedContinuation { continuation in
@@ -96,5 +101,23 @@ final class TabSnapshotService: TabSnapshotProviding {
         directoryURL
             .appendingPathComponent(tabID.uuidString)
             .appendingPathExtension("jpg")
+    }
+}
+
+enum TabSnapshotViewportGeometry {
+    static func visibleRect(
+        bounds: CGRect,
+        contentInset: UIEdgeInsets
+    ) -> CGRect {
+        guard bounds.width > 0, bounds.height > 0 else { return bounds }
+        let top = min(max(contentInset.top, 0), bounds.height - 1)
+        let availableAfterTop = max(1, bounds.height - top)
+        let bottom = min(max(contentInset.bottom, 0), availableAfterTop - 1)
+        return CGRect(
+            x: bounds.minX,
+            y: bounds.minY + top,
+            width: bounds.width,
+            height: max(1, bounds.height - top - bottom)
+        )
     }
 }

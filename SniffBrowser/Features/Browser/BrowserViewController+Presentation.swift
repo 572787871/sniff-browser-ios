@@ -93,7 +93,21 @@ extension BrowserViewController {
   private func captureTransitionViewportImage(
     from webView: WKWebView
   ) async -> UIImage? {
-    let rect = webView.bounds
+    view.layoutIfNeeded()
+    webView.layoutIfNeeded()
+    // WKWebView 全屏铺在 Browser 下方，顶部地址栏和底部工具栏只是
+    // 覆盖层。直接截取 bounds 会把这两段被遮挡的 viewport 一并写进
+    // 标签卡片，Google 等浅色页面因此出现一大块无意义顶部留白。
+    // 统一转换到 WebView 坐标后只冻结用户真正看得到的网页区域。
+    let visibleRect = tabTransitionContentFrame(in: webView)
+      .standardized
+      .intersection(webView.bounds)
+    let rect = visibleRect.width > 1 && visibleRect.height > 1
+      ? visibleRect
+      : TabSnapshotViewportGeometry.visibleRect(
+          bounds: webView.bounds,
+          contentInset: webView.scrollView.contentInset
+        )
     guard rect.width > 0, rect.height > 0 else { return nil }
 
     let configuration = WKSnapshotConfiguration()
@@ -175,7 +189,10 @@ extension BrowserViewController {
     return BrowserTabTransitionSnapshot(
       contentView: snapshotView,
       contentSize: contentSize,
-      fullFrame: fullFrame,
+      // 网页 UIImage 已在截图阶段裁掉原生 Chrome 覆盖区，它对应的
+      // 完整几何就是 visibleFrame。原生主页仍使用全屏渲染图，并由
+      // 原有 clippedPageFrame 负责裁掉底部工具栏。
+      fullFrame: content is WKWebView ? visibleFrame : fullFrame,
       visibleFrame: visibleFrame,
       sourceCoordinateSpace: coordinateSpace
     )
@@ -188,13 +205,32 @@ extension BrowserViewController {
     return content.convert(content.bounds, to: coordinateSpace)
   }
 
+  /// 缓存快照所对应的完整区域。网页快照已经排除原生 Chrome，主页
+  /// 快照则仍覆盖完整 NewTabView；展开动画必须使用与图片一致的区域。
+  func tabTransitionSnapshotFullFrame(in coordinateSpace: UIView) -> CGRect {
+    let content = tabTransitionContentView()
+    if content is WKWebView {
+      return tabTransitionContentFrame(in: coordinateSpace)
+    }
+    return content.convert(content.bounds, to: coordinateSpace)
+  }
+
   /// 返回实际参与缩放的可见网页区域；顶部地址栏和底部工具栏留给
   /// 页面间交叉淡化，不会被网页图片突然覆盖。
   func tabTransitionContentFrame(in coordinateSpace: UIView) -> CGRect {
     var frame = tabTransitionFullContentFrame(in: coordinateSpace)
     if !addressBar.isHidden {
       let addressFrame = addressBar.convert(addressBar.bounds, to: coordinateSpace)
-      let visibleTop = min(frame.maxY, max(frame.minY, addressFrame.maxY))
+      let backdropFrame = topChromeBackgroundView.isHidden
+        ? addressFrame
+        : topChromeBackgroundView.convert(
+            topChromeBackgroundView.bounds,
+            to: coordinateSpace
+          )
+      let visibleTop = min(
+        frame.maxY,
+        max(frame.minY, max(addressFrame.maxY, backdropFrame.maxY))
+      )
       frame.size.height = max(1, frame.maxY - visibleTop)
       frame.origin.y = visibleTop
     }
