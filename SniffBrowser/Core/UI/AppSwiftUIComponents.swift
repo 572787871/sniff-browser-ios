@@ -320,7 +320,7 @@ struct AppSwiftUIFavicon: UIViewRepresentable {
     var fallbackSystemName = "globe"
 
     func makeUIView(context: Context) -> AppFaviconImageView {
-        AppFaviconImageView()
+        AppFaviconImageView(frame: .zero)
     }
 
     func updateUIView(_ uiView: AppFaviconImageView, context: Context) {
