@@ -115,7 +115,7 @@ enum ImageResourceFormat: String, CaseIterable, Codable, Hashable, Sendable {
         case .webp: return mime == "image/webp" || ext == "webp"
         case .svg: return mime == "image/svg+xml" || ext == "svg"
         case .other:
-            return ![.jpeg, .png, .gif, .webp, .svg].contains {
+            return ![ImageResourceFormat.jpeg, .png, .gif, .webp, .svg].contains {
                 $0.matches(resource)
             }
         }
