@@ -81,6 +81,14 @@ enum ContrastColorResolver {
 /// Keeps browser chrome coherent with the selected app appearance while still
 /// allowing dark websites to extend their color into the surrounding chrome.
 enum BrowserChromeThemeResolver {
+  /// 页面外围画布必须忠实采用网页自身颜色，不能因为 App 当前深浅模式
+  /// 而退回应用纸张色；地址栏内部材质仍可使用下方的可读性过滤。
+  static func pageCanvasTheme(
+    _ color: WebPageThemeColor?
+  ) -> WebPageThemeColor? {
+    color
+  }
+
   static func effectivePageTheme(
     _ color: WebPageThemeColor?,
     interfaceStyle: UIUserInterfaceStyle

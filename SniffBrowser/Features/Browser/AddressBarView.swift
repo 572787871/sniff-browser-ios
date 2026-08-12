@@ -128,9 +128,9 @@ final class AddressBarView: UIView {
         : .identity
       self.securityImageView.alpha = compact ? 0 : 1
       self.trailingButton.alpha = compact ? 0 : 1
-      self.textField.textAlignment = compact ? .center : (
-        self.state.url == nil ? .center : .left
-      )
+      self.textField.textAlignment = self.textField.isFirstResponder
+        ? .left
+        : (compact ? .center : (self.state.url == nil ? .center : .left))
       self.layer.shadowOpacity = compact ? 0.04 : AppShadow.browserChrome.opacity
     }
     // 收缩时图标只作为视觉元素隐藏；地址栏本身仍要保留可触摸区域，
@@ -383,6 +383,7 @@ final class AddressBarView: UIView {
   }
 
   @objc private func textDidChange() {
+    textField.textAlignment = .left
     updateTrailingButton()
     delegate?.addressBar(
       self,
@@ -393,6 +394,7 @@ final class AddressBarView: UIView {
   @objc private func trailingButtonPressed() {
     if textField.isFirstResponder, textField.text?.isEmpty == false {
       textField.text = ""
+      textField.textAlignment = .left
       updateTrailingButton()
       delegate?.addressBar(self, didChangeText: "")
       return

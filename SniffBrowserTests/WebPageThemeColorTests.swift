@@ -95,6 +95,10 @@ final class WebPageThemeColorTests: XCTestCase {
         interfaceStyle: .dark
       )
     )
+    XCTAssertEqual(
+      BrowserChromeThemeResolver.pageCanvasTheme(lightPage),
+      lightPage
+    )
   }
 
   func testDarkAppearanceKeepsDarkPageTheme() {

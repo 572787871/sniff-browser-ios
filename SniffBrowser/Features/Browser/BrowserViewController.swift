@@ -1131,37 +1131,40 @@ final class BrowserViewController: UIViewController {
     animated: Bool
   ) {
     let isPrivate = activeTab?.isPrivate == true
-    let effectivePageTheme = isSearchOverlayActive
-      ? nil
-      : BrowserChromeThemeResolver.effectivePageTheme(
-        color,
-        interfaceStyle: traitCollection.userInterfaceStyle
-      )
-    let foregroundStyle = effectivePageTheme.map {
+    let canvasTheme = BrowserChromeThemeResolver.pageCanvasTheme(color)
+    let effectivePageTheme = BrowserChromeThemeResolver.effectivePageTheme(
+      color,
+      interfaceStyle: traitCollection.userInterfaceStyle
+    )
+    let canvasForegroundStyle = canvasTheme.map {
       ContrastColorResolver.foregroundStyle(for: $0)
     }
-    pageChromeForegroundStyle = foregroundStyle
-    let resolvedBackground = isSearchOverlayActive
-      ? AppColors.browserCanvas
-      : (effectivePageTheme?.uiColor ?? AppColors.background)
+    let chromeForegroundStyle = effectivePageTheme.map {
+      ContrastColorResolver.foregroundStyle(for: $0)
+    }
+    pageChromeForegroundStyle = canvasForegroundStyle
+    let resolvedBackground = canvasTheme?.uiColor ?? AppColors.background
     resolvedPageChromeBackgroundColor = resolvedBackground
 
     let changes = {
       self.view.backgroundColor = resolvedBackground
       self.topChromeBackgroundView.backgroundColor = self.currentChromeState
         .showsTopBackdrop ? resolvedBackground : .clear
+      self.searchOverlayBackgroundView.backgroundColor = resolvedBackground
+      self.quickLinksScrollView.backgroundColor = resolvedBackground
+      self.searchHistoryTableView.backgroundColor = resolvedBackground
       self.activeWebView?.backgroundColor = resolvedBackground
       self.activeWebView?.scrollView.backgroundColor = resolvedBackground
       self.activeWebView?.underPageBackgroundColor = resolvedBackground
       self.addressBar.setPrivateMode(isPrivate)
       self.addressBar.applyPageTheme(
         isPrivate ? nil : effectivePageTheme,
-        foregroundStyle: foregroundStyle
+        foregroundStyle: chromeForegroundStyle
       )
       self.toolbar.setPrivateMode(false)
       self.toolbar.applyPageTheme(
         effectivePageTheme,
-        foregroundStyle: foregroundStyle
+        foregroundStyle: chromeForegroundStyle
       )
       self.setNeedsStatusBarAppearanceUpdate()
     }

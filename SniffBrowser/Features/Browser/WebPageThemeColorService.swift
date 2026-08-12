@@ -48,7 +48,7 @@ enum WebPageThemeColorService {
       };
 
       const detectedColors = () => {
-        const values = matchingThemeColors();
+        const values = [];
         if (document.body) {
           const bodyColor = getComputedStyle(document.body).backgroundColor;
           if (!isTransparent(bodyColor)) values.push(bodyColor);
@@ -58,6 +58,25 @@ enum WebPageThemeColorService {
             document.documentElement
           ).backgroundColor;
           if (!isTransparent(htmlColor)) values.push(htmlColor);
+        }
+        values.push(...matchingThemeColors());
+        if (values.length === 0) {
+          const rootStyle = document.documentElement
+            ? getComputedStyle(document.documentElement)
+            : null;
+          const schemes = String(rootStyle && rootStyle.colorScheme || "")
+            .toLowerCase()
+            .split(/\s+/)
+            .filter(Boolean);
+          const prefersDark = Boolean(
+            window.matchMedia
+              && window.matchMedia("(prefers-color-scheme: dark)").matches
+          );
+          const usesDarkCanvas = schemes.includes("dark")
+            && (!schemes.includes("light") || prefersDark);
+          values.push(
+            usesDarkCanvas ? "rgb(0, 0, 0)" : "rgb(255, 255, 255)"
+          );
         }
         return values;
       };
