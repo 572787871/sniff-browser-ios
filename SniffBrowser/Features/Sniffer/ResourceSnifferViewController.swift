@@ -1,35 +1,11 @@
 import AVFoundation
 import AVKit
+import SwiftUI
 import UIKit
 
 final class ResourceSnifferViewController: BaseViewController {
     var onReturnToPage: (() -> Void)?
     var onShowDownloads: (() -> Void)?
-
-    private enum Filter: Int, CaseIterable, Equatable {
-        case all
-        case video
-        case audio
-        case image
-
-        var title: String {
-            switch self {
-            case .all: return "全部"
-            case .video: return "视频"
-            case .audio: return "音频"
-            case .image: return "图片"
-            }
-        }
-
-        func includes(_ type: ResourceType) -> Bool {
-            switch self {
-            case .all: return true
-            case .video: return type == .video || type == .hls
-            case .audio: return type == .audio
-            case .image: return type == .image
-            }
-        }
-    }
 
     private struct RenderedResourceRow: Equatable {
         let id: UUID
@@ -74,42 +50,37 @@ final class ResourceSnifferViewController: BaseViewController {
         let activationState: SniffingActivationState
         let hasStarted: Bool
         let imageFilters: Set<ImageResourceFormat>
-        let selectedFilter: Filter
+        let selectedFilter: ResourceSnifferFilter
         let filterCounts: [Int]
         let rows: [RenderedResourceRow]
     }
 
     private let viewModel: ResourceSnifferViewModel
     private var resources: [DetectedResource] = []
-    private var selectedFilter: Filter
+    private var selectedFilter: ResourceSnifferFilter
     private var scanTask: Task<Void, Never>?
     private var scanState: ResourceScanState = .idle
-    private var errorMessage: String?
     private var activationState: SniffingActivationState = .disabled
     private var hasStarted = false
     private var imageFilters: Set<ImageResourceFormat> = []
     private var renderedRows: [RenderedResourceRow] = []
     private var renderedContent: RenderedContent?
 
-    private let summaryView = ResourcePageSummaryViewV2()
-    private let filterScrollView = UIScrollView()
-    private let filterStack = UIStackView()
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
     private let imageCollectionView = UICollectionView(
         frame: .zero,
         collectionViewLayout: UICollectionViewFlowLayout()
     )
-    private lazy var emptyState = EmptyStateView(
-        configuration: emptyStateConfiguration,
-        action: { [weak self] in self?.refreshResources() },
-        secondaryAction: { [weak self] in self?.onReturnToPage?() }
+    private lazy var chromeHost = UIHostingController(
+        rootView: makeChromeView(state: viewModel.state)
     )
-    private let loadingIndicator = UIActivityIndicatorView(style: .medium)
-
+    private lazy var emptyStateHost = UIHostingController(
+        rootView: makeEmptyStateView(state: viewModel.state)
+    )
     init(viewModel: ResourceSnifferViewModel) {
         self.viewModel = viewModel
         selectedFilter = viewModel.state.imageFilters.isEmpty ? .all : .image
-        super.init(title: "当前页面资源", prefersLargeTitle: false)
+        super.init(title: "资源嗅探", prefersLargeTitle: false)
     }
 
     required init?(coder: NSCoder) {
@@ -118,9 +89,9 @@ final class ResourceSnifferViewController: BaseViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        configureAppearance()
         configureNavigation()
-        configureSummary()
-        configureFilters()
+        configureChrome()
         configureTable()
         configureEmptyState()
         bindViewModel()
@@ -160,44 +131,11 @@ final class ResourceSnifferViewController: BaseViewController {
         }
     }
 
-    private var emptyStateConfiguration: EmptyStateView.Configuration {
-        if activationState == .disabled || activationState == .failed {
-            let canRetry = activationState == .failed || hasStarted
-            return .init(
-                symbolName: activationState == .failed
-                    ? "exclamationmark.arrow.triangle.2.circlepath"
-                    : "dot.radiowaves.left.and.right",
-                title: activationState == .failed
-                    ? "无法开启资源嗅探"
-                    : (hasStarted ? "嗅探已停止" : "尚未开始嗅探"),
-                message: errorMessage
-                    ?? (hasStarted
-                        ? "点击上方按钮可再次检测当前页面资源。"
-                        : "点击上方按钮后显示发现的资源。"),
-                actionTitle: canRetry ? "重新开始嗅探" : nil,
-                secondaryActionTitle: "返回网页"
-            )
-        }
-        let isFailed = scanState == .failed
-        return .init(
-            symbolName: isFailed
-                ? "exclamationmark.arrow.triangle.2.circlepath"
-                : "dot.radiowaves.left.and.right",
-            title: isFailed ? "资源扫描失败" : "暂未发现资源",
-            message: isFailed
-                ? (errorMessage ?? "请确认网页已完成加载后重新扫描。")
-                : "尝试播放网页中的视频或音频，然后重新扫描当前页面。",
-            actionTitle: scanState == .scanning ? nil : "重新扫描",
-            secondaryActionTitle: "返回网页继续播放"
-        )
-    }
-
     private func bindViewModel() {
         viewModel.onStateChange = { [weak self] state in
             guard let self else { return }
             self.resources = state.resources
             self.scanState = state.scanState
-            self.errorMessage = state.errorMessage
             self.activationState = state.activationState
             self.hasStarted = state.hasStarted
             self.imageFilters = state.imageFilters
@@ -224,92 +162,66 @@ final class ResourceSnifferViewController: BaseViewController {
         }
     }
 
-    private func configureSummary() {
-        summaryView.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(summaryView)
-        summaryView.onAction = { [weak self] in self?.primarySniffingAction() }
+    private func configureAppearance() {
+        view.backgroundColor = ResourceSnifferPalette.background
+        contentView.backgroundColor = ResourceSnifferPalette.background
+
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithOpaqueBackground()
+        appearance.backgroundColor = ResourceSnifferPalette.background
+        appearance.shadowColor = ResourceSnifferPalette.border
+        appearance.titleTextAttributes = [
+            .foregroundColor: ResourceSnifferPalette.primaryText,
+            .font: AppTypography.headline
+        ]
+        navigationController?.navigationBar.standardAppearance = appearance
+        navigationController?.navigationBar.compactAppearance = appearance
+        navigationController?.navigationBar.scrollEdgeAppearance = appearance
+        navigationController?.navigationBar.tintColor = ResourceSnifferPalette.accent
+    }
+
+    private func configureChrome() {
+        addChild(chromeHost)
+        chromeHost.sizingOptions = [.intrinsicContentSize]
+        chromeHost.view.backgroundColor = .clear
+        chromeHost.view.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(chromeHost.view)
+        chromeHost.didMove(toParent: self)
 
         NSLayoutConstraint.activate([
-            summaryView.topAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.topAnchor,
-                constant: AppSpacing.sm
+            chromeHost.view.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor
             ),
-            summaryView.leadingAnchor.constraint(
-                equalTo: view.layoutMarginsGuide.leadingAnchor
-            ),
-            summaryView.trailingAnchor.constraint(
-                equalTo: view.layoutMarginsGuide.trailingAnchor
-            )
+            chromeHost.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            chromeHost.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         ])
     }
 
-    private func configureFilters() {
-        filterScrollView.showsHorizontalScrollIndicator = false
-        filterScrollView.contentInsetAdjustmentBehavior = .never
-        filterScrollView.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(filterScrollView)
-
-        filterStack.axis = .horizontal
-        filterStack.spacing = AppSpacing.xs
-        filterStack.translatesAutoresizingMaskIntoConstraints = false
-        filterScrollView.addSubview(filterStack)
-
-        for filter in Filter.allCases {
-            let button = makeFilterButton(filter)
-            filterStack.addArrangedSubview(button)
-        }
-
-        NSLayoutConstraint.activate([
-            filterScrollView.topAnchor.constraint(
-                equalTo: summaryView.bottomAnchor,
-                constant: AppSpacing.md
+    private func makeChromeView(
+        state: ResourceSnifferViewModel.State
+    ) -> ResourceSnifferChromeView {
+        ResourceSnifferChromeView(
+            configuration: ResourceSnifferChromeConfiguration(
+                state: state,
+                selectedFilter: selectedFilter
             ),
-            filterScrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            filterScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            filterScrollView.heightAnchor.constraint(equalToConstant: 52),
-
-            filterStack.topAnchor.constraint(
-                equalTo: filterScrollView.contentLayoutGuide.topAnchor,
-                constant: AppSpacing.xxs
-            ),
-            filterStack.leadingAnchor.constraint(
-                equalTo: filterScrollView.contentLayoutGuide.leadingAnchor,
-                constant: AppSpacing.md
-            ),
-            filterStack.trailingAnchor.constraint(
-                equalTo: filterScrollView.contentLayoutGuide.trailingAnchor,
-                constant: -AppSpacing.md
-            ),
-            filterStack.bottomAnchor.constraint(
-                equalTo: filterScrollView.contentLayoutGuide.bottomAnchor,
-                constant: -AppSpacing.xxs
-            ),
-            filterStack.heightAnchor.constraint(
-                equalTo: filterScrollView.frameLayoutGuide.heightAnchor,
-                constant: -AppSpacing.xs
-            )
-        ])
+            onPrimaryAction: { [weak self] in
+                self?.primarySniffingAction()
+            },
+            onSelectFilter: { [weak self] filter in
+                self?.selectFilter(filter)
+            }
+        )
     }
 
-    private func makeFilterButton(_ filter: Filter) -> UIButton {
-        var configuration = UIButton.Configuration.tinted()
-        configuration.title = filter.title
-        configuration.cornerStyle = .capsule
-        configuration.contentInsets = NSDirectionalEdgeInsets(
-            top: 7,
-            leading: 14,
-            bottom: 7,
-            trailing: 14
+    private func makeEmptyStateView(
+        state: ResourceSnifferViewModel.State
+    ) -> ResourceSnifferEmptyStateView {
+        ResourceSnifferEmptyStateView(
+            configuration: ResourceSnifferEmptyConfiguration(state: state),
+            onAction: { [weak self] in self?.refreshResources() },
+            onSecondaryAction: { [weak self] in self?.onReturnToPage?() }
         )
-        let button = UIButton(configuration: configuration)
-        button.tag = filter.rawValue
-        button.accessibilityLabel = "\(filter.title)资源"
-        button.addTarget(
-            self,
-            action: #selector(filterPressed(_:)),
-            for: .touchUpInside
-        )
-        return button
     }
 
     private func configureTable() {
@@ -348,14 +260,14 @@ final class ResourceSnifferViewController: BaseViewController {
 
         NSLayoutConstraint.activate([
             tableView.topAnchor.constraint(
-                equalTo: filterScrollView.bottomAnchor,
+                equalTo: chromeHost.view.bottomAnchor,
                 constant: AppSpacing.xs
             ),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             imageCollectionView.topAnchor.constraint(
-                equalTo: filterScrollView.bottomAnchor,
+                equalTo: chromeHost.view.bottomAnchor,
                 constant: AppSpacing.xs
             ),
             imageCollectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -365,24 +277,20 @@ final class ResourceSnifferViewController: BaseViewController {
     }
 
     private func configureEmptyState() {
-        emptyState.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(emptyState)
+        addChild(emptyStateHost)
+        emptyStateHost.view.backgroundColor = .clear
+        emptyStateHost.view.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(emptyStateHost.view)
+        emptyStateHost.didMove(toParent: self)
         NSLayoutConstraint.activate([
-            emptyState.topAnchor.constraint(
-                equalTo: filterScrollView.bottomAnchor,
-                constant: AppSpacing.lg
+            emptyStateHost.view.topAnchor.constraint(
+                equalTo: chromeHost.view.bottomAnchor,
+                constant: AppSpacing.xs
             ),
-            emptyState.leadingAnchor.constraint(
-                equalTo: view.layoutMarginsGuide.leadingAnchor,
-                constant: AppSpacing.sm
-            ),
-            emptyState.trailingAnchor.constraint(
-                equalTo: view.layoutMarginsGuide.trailingAnchor,
-                constant: -AppSpacing.sm
-            ),
-            emptyState.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-                constant: -AppSpacing.md
+            emptyStateHost.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            emptyStateHost.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            emptyStateHost.view.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor
             )
         ])
     }
@@ -400,7 +308,7 @@ final class ResourceSnifferViewController: BaseViewController {
             hasStarted: state.hasStarted,
             imageFilters: state.imageFilters,
             selectedFilter: selectedFilter,
-            filterCounts: Filter.allCases.map { filter in
+            filterCounts: ResourceSnifferFilter.allCases.map { filter in
                 (canShowResults ? resources : []).lazy.filter {
                     filter.includes($0.resourceType)
                 }.count
@@ -409,21 +317,7 @@ final class ResourceSnifferViewController: BaseViewController {
         )
         guard nextContent != renderedContent else { return }
         renderedContent = nextContent
-        let isScanning = state.scanState == .installing
-            || state.scanState == .scanning
-        summaryView.configure(
-            title: state.pageTitle,
-            domain: state.pageURL?.host ?? "尚未打开网页",
-            pageURL: state.pageURL,
-            resourceCount: canShowResults ? resources.count : 0,
-            scanState: state.scanState,
-            isPrivate: state.isPrivate,
-            activationState: state.activationState,
-            hasStarted: state.hasStarted
-        )
-        summaryView.setActionEnabled(
-            state.activationState != .starting && state.activationState != .stopping
-        )
+        chromeHost.rootView = makeChromeView(state: state)
         if nextRows != renderedRows {
             renderedRows = nextRows
             tableView.reloadData()
@@ -433,21 +327,12 @@ final class ResourceSnifferViewController: BaseViewController {
         let isEmpty = filteredResources.isEmpty
         tableView.isHidden = isImageGrid || isEmpty
         imageCollectionView.isHidden = !isImageGrid || isEmpty
-        emptyState.isHidden = !isEmpty
-        emptyState.configure(
-            emptyStateConfiguration,
-            action: isScanning ? nil : { [weak self] in
-                self?.refreshResources()
-            },
-            secondaryAction: onReturnToPage
-        )
-        updateFilterButtons()
-        updateNavigation(isScanning: isScanning)
+        emptyStateHost.view.isHidden = !isEmpty
+        emptyStateHost.rootView = makeEmptyStateView(state: state)
+        updateNavigation()
     }
 
-    private func updateNavigation(isScanning: Bool) {
-        if isScanning { loadingIndicator.startAnimating() }
-        else { loadingIndicator.stopAnimating() }
+    private func updateNavigation() {
         navigationItem.rightBarButtonItem = makeManagementItem()
         (navigationItem.titleView as? ResourceSnifferNavigationTitleView)?.configure(
             status: statusTitle,
@@ -472,33 +357,6 @@ final class ResourceSnifferViewController: BaseViewController {
         )
         item.accessibilityLabel = "资源管理"
         return item
-    }
-
-    private func updateFilterButtons() {
-        let canShowResults = hasStarted || activationState.isEnabled
-        for case let button as UIButton in filterStack.arrangedSubviews {
-            guard let filter = Filter(rawValue: button.tag) else { continue }
-            let count = (canShowResults ? resources : []).lazy.filter {
-                filter.includes($0.resourceType)
-            }.count
-            button.configuration?.title = count > 0
-                ? "\(filter.title) \(count)"
-                : filter.title
-            button.configuration?.baseForegroundColor =
-                filter == selectedFilter ? AppColors.accentContent : AppColors.primaryText
-            button.configuration?.baseBackgroundColor =
-                filter == selectedFilter
-                ? AppColors.accent
-                : AppColors.progressTrack
-            button.configuration?.image = filter == .image
-                && !imageFilters.isEmpty
-                && imageFilters != [.all]
-                ? UIImage(systemName: "line.3.horizontal.decrease.circle.fill")
-                : nil
-            button.accessibilityValue = filter == selectedFilter
-                ? "已选择，\(count) 项"
-                : "\(count) 项"
-        }
     }
 
     private func primarySniffingAction() {
@@ -772,8 +630,7 @@ final class ResourceSnifferViewController: BaseViewController {
         )
     }
 
-    @objc private func filterPressed(_ sender: UIButton) {
-        guard let filter = Filter(rawValue: sender.tag) else { return }
+    private func selectFilter(_ filter: ResourceSnifferFilter) {
         if filter == .image {
             selectedFilter = .image
             updateContent(state: viewModel.state)
@@ -786,21 +643,22 @@ final class ResourceSnifferViewController: BaseViewController {
     }
 
     private func presentImageFilterPanel() {
-        let controller = ImageResourceFilterViewController(selection: imageFilters)
-        controller.onFinish = { [weak self] filters in
-            guard let self else { return }
-            self.viewModel.setImageFilters(filters)
-            self.selectedFilter = .image
-            self.dismiss(animated: true)
-        }
-        let navigation = UINavigationController(rootViewController: controller)
-        navigation.modalPresentationStyle = .pageSheet
-        if let sheet = navigation.sheetPresentationController {
+        let controller = UIHostingController(rootView: ImageResourceFilterSheetView(
+            selection: imageFilters,
+            onConfirm: { [weak self] filters in
+                guard let self else { return }
+                self.viewModel.setImageFilters(filters)
+                self.selectedFilter = .image
+            }
+        ))
+        controller.view.backgroundColor = ResourceSnifferPalette.background
+        controller.modalPresentationStyle = .pageSheet
+        if let sheet = controller.sheetPresentationController {
             sheet.detents = [.medium(), .large()]
             sheet.prefersGrabberVisible = true
             sheet.preferredCornerRadius = AppRadius.sheet
         }
-        present(navigation, animated: true)
+        present(controller, animated: true)
     }
 }
 
@@ -967,6 +825,9 @@ private final class RemoteResourceImageViewController: BaseViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        view.backgroundColor = ResourceSnifferPalette.background
+        contentView.backgroundColor = ResourceSnifferPalette.background
+        indicator.color = ResourceSnifferPalette.accent
         imageView.contentMode = .scaleAspectFit
         imageView.translatesAutoresizingMaskIntoConstraints = false
         indicator.translatesAutoresizingMaskIntoConstraints = false
@@ -1001,7 +862,7 @@ private final class RemoteResourceImageViewController: BaseViewController {
                     self?.imageView.image = UIImage(
                         systemName: "photo.badge.exclamationmark"
                     )
-                    self?.imageView.tintColor = AppColors.secondaryText
+                    self?.imageView.tintColor = ResourceSnifferPalette.secondaryText
                 }
             }
         }
@@ -1029,10 +890,10 @@ private final class ResourceSnifferNavigationTitleView: UIView {
             stack.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
         titleLabel.font = AppTypography.headline
-        titleLabel.textColor = AppColors.primaryText
+        titleLabel.textColor = ResourceSnifferPalette.primaryText
         statusLabel.font = AppTypography.caption
-        statusLabel.textColor = AppColors.accent
-        statusLabel.backgroundColor = AppColors.accentFill
+        statusLabel.textColor = ResourceSnifferPalette.accent
+        statusLabel.backgroundColor = ResourceSnifferPalette.accentFill
         statusLabel.layer.cornerRadius = 9
         statusLabel.layer.cornerCurve = .continuous
         statusLabel.clipsToBounds = true
@@ -1050,197 +911,6 @@ private final class ResourceSnifferNavigationTitleView: UIView {
         titleLabel.text = "资源嗅探"
         statusLabel.text = "  \(status)  "
         accessibilityLabel = "资源嗅探，\(accessibilityValue)"
-    }
-}
-
-private final class ResourcePageSummaryViewV2: UIView {
-    var onAction: (() -> Void)?
-
-    private let iconContainer = UIView()
-    private let iconView = UIImageView(image: UIImage(systemName: "globe"))
-    private let contextLabel = UILabel()
-    private let domainLabel = UILabel()
-    private let detailLabel = UILabel()
-    private let privacyLabel = UILabel()
-    private let actionButton = UIButton(type: .system)
-    private var faviconURL: URL?
-    private var faviconRequestID: UUID?
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        configureView()
-    }
-
-    required init?(coder: NSCoder) { return nil }
-
-    func configure(
-        title: String,
-        domain: String,
-        pageURL: URL?,
-        resourceCount: Int,
-        scanState: ResourceScanState,
-        isPrivate: Bool,
-        activationState: SniffingActivationState,
-        hasStarted: Bool
-    ) {
-        contextLabel.text = "当前网页"
-        domainLabel.text = domain
-        configureFavicon(for: pageURL, isPrivate: isPrivate)
-        switch activationState {
-        case .starting, .active, .stopping:
-            detailLabel.text = scanState == .scanning || scanState == .installing
-                ? "正在检测网页后续资源…"
-                : (resourceCount > 0
-                    ? "已发现 \(resourceCount) 项资源"
-                    : "尚未发现资源")
-        case .failed:
-            detailLabel.text = "暂时无法连接资源检测"
-        case .disabled:
-            detailLabel.text = hasStarted
-                ? "已停止新增资源，已有结果仍保留"
-                : "点击开始后检测当前页面资源"
-        }
-        privacyLabel.text = isPrivate
-            ? "仅在本次页面手动开启，不会自动扫描 · 无痕结果仅保留在当前会话"
-            : "仅在本次页面手动开启，不会自动扫描"
-        privacyLabel.isHidden = false
-        let isRunning = activationState.isEnabled
-            || activationState == .stopping
-            || activationState == .starting
-        var configuration = UIButton.Configuration.filled()
-        configuration.cornerStyle = .medium
-        configuration.baseBackgroundColor = isRunning
-            ? AppColors.secondaryText
-            : AppColors.accent
-        configuration.baseForegroundColor = AppColors.accentContent
-        configuration.image = UIImage(
-            systemName: isRunning ? "stop.fill" : "dot.radiowaves.left.and.right"
-        )
-        configuration.imagePadding = AppSpacing.xs
-        configuration.title = isRunning ? "停止嗅探" : "开始嗅探"
-        configuration.contentInsets = NSDirectionalEdgeInsets(
-            top: AppSpacing.sm,
-            leading: AppSpacing.md,
-            bottom: AppSpacing.sm,
-            trailing: AppSpacing.md
-        )
-        actionButton.configuration = configuration
-        actionButton.accessibilityLabel = configuration.title
-        accessibilityLabel = [
-            title,
-            contextLabel.text,
-            domainLabel.text,
-            detailLabel.text,
-            privacyLabel.text
-        ].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "，")
-    }
-
-    func setActionEnabled(_ enabled: Bool) {
-        actionButton.isEnabled = enabled
-        actionButton.alpha = enabled ? 1 : 0.55
-    }
-
-    private func configureView() {
-        backgroundColor = AppColors.surface
-        layer.cornerRadius = AppRadius.card
-        layer.cornerCurve = .continuous
-        layer.borderWidth = AppMetrics.separatorHeight
-        layer.borderColor = AppColors.separator.cgColor
-        directionalLayoutMargins = NSDirectionalEdgeInsets(
-            top: AppSpacing.md,
-            leading: AppSpacing.md,
-            bottom: AppSpacing.md,
-            trailing: AppSpacing.md
-        )
-
-        iconContainer.translatesAutoresizingMaskIntoConstraints = false
-        iconContainer.backgroundColor = AppColors.accentFill
-        iconContainer.layer.cornerRadius = AppRadius.control
-        iconContainer.layer.cornerCurve = .continuous
-        iconView.translatesAutoresizingMaskIntoConstraints = false
-        iconView.tintColor = AppColors.accent
-        iconView.contentMode = .scaleAspectFit
-        iconContainer.addSubview(iconView)
-
-        [contextLabel, domainLabel, detailLabel, privacyLabel].forEach {
-            $0.adjustsFontForContentSizeCategory = true
-            $0.numberOfLines = 1
-        }
-        contextLabel.font = AppTypography.caption
-        contextLabel.textColor = AppColors.secondaryText
-        domainLabel.font = AppTypography.headline
-        domainLabel.textColor = AppColors.primaryText
-        domainLabel.lineBreakMode = .byTruncatingMiddle
-        detailLabel.font = AppTypography.subheadline
-        detailLabel.textColor = AppColors.secondaryText
-        privacyLabel.font = AppTypography.caption
-        privacyLabel.textColor = AppColors.secondaryText
-        privacyLabel.numberOfLines = 2
-        privacyLabel.isHidden = false
-
-        let labels = UIStackView(
-            arrangedSubviews: [contextLabel, domainLabel, detailLabel, privacyLabel]
-        )
-        labels.axis = .vertical
-        labels.spacing = 3
-        labels.alignment = .fill
-        labels.translatesAutoresizingMaskIntoConstraints = false
-
-        actionButton.translatesAutoresizingMaskIntoConstraints = false
-        actionButton.addTarget(self, action: #selector(actionPressed), for: .touchUpInside)
-
-        let header = UIStackView(arrangedSubviews: [iconContainer, labels])
-        header.axis = .horizontal
-        header.alignment = .center
-        header.spacing = AppSpacing.sm
-        header.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(header)
-        addSubview(actionButton)
-
-        NSLayoutConstraint.activate([
-            iconContainer.widthAnchor.constraint(equalToConstant: 50),
-            iconContainer.heightAnchor.constraint(equalToConstant: 50),
-            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
-            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 28),
-            iconView.heightAnchor.constraint(equalToConstant: 28),
-            header.topAnchor.constraint(equalTo: layoutMarginsGuide.topAnchor),
-            header.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
-            header.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
-            actionButton.topAnchor.constraint(equalTo: header.bottomAnchor, constant: AppSpacing.md),
-            actionButton.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
-            actionButton.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
-            actionButton.bottomAnchor.constraint(equalTo: layoutMarginsGuide.bottomAnchor)
-        ])
-    }
-
-    @objc private func actionPressed() { onAction?() }
-
-    private func configureFavicon(for pageURL: URL?, isPrivate: Bool) {
-        let nextURL = pageURL.flatMap {
-            isPrivate
-                ? FaviconLoader.directFaviconURL(for: $0)
-                : FaviconLoader.faviconURL(for: $0)
-        }
-        guard nextURL != faviconURL else { return }
-        if let faviconURL, let faviconRequestID {
-            FaviconLoader.shared.cancel(url: faviconURL, requestID: faviconRequestID)
-        }
-        faviconURL = nextURL
-        faviconRequestID = nil
-        iconView.image = UIImage(systemName: "globe")
-        guard let nextURL else { return }
-        faviconRequestID = FaviconLoader.shared.load(url: nextURL) { [weak self] image in
-            guard let self, self.faviconURL == nextURL else { return }
-            self.faviconRequestID = nil
-            self.iconView.image = image ?? UIImage(systemName: "globe")
-        }
-    }
-
-    deinit {
-        if let faviconURL, let faviconRequestID {
-            FaviconLoader.shared.cancel(url: faviconURL, requestID: faviconRequestID)
-        }
     }
 }
 
@@ -1360,7 +1030,7 @@ private final class ResourceImageCell: UICollectionViewCell {
                     self.retryButton.isHidden = true
                 } else {
                     self.imageView.image = UIImage(systemName: "photo.badge.exclamationmark")
-                    self.imageView.tintColor = AppColors.secondaryText
+                    self.imageView.tintColor = ResourceSnifferPalette.secondaryText
                     self.retryButton.isHidden = self.retryCount >= 1
                 }
             }
@@ -1369,24 +1039,24 @@ private final class ResourceImageCell: UICollectionViewCell {
 
     private func configureView() {
         backgroundColor = .clear
-        cardView.backgroundColor = AppColors.surface
+        cardView.backgroundColor = ResourceSnifferPalette.surface
         cardView.layer.cornerRadius = AppRadius.card
         cardView.layer.cornerCurve = .continuous
         cardView.layer.borderWidth = AppMetrics.separatorHeight
-        cardView.layer.borderColor = AppColors.separator.cgColor
+        cardView.layer.borderColor = ResourceSnifferPalette.border.cgColor
         cardView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(cardView)
 
-        imageView.backgroundColor = AppColors.progressTrack
+        imageView.backgroundColor = ResourceSnifferPalette.secondarySurface
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
-        imageView.tintColor = AppColors.secondaryText
+        imageView.tintColor = ResourceSnifferPalette.secondaryText
         imageView.translatesAutoresizingMaskIntoConstraints = false
         cardView.addSubview(imageView)
 
         moreButton.setImage(UIImage(systemName: "ellipsis.circle.fill"), for: .normal)
-        moreButton.tintColor = AppColors.primaryText
-        moreButton.backgroundColor = AppColors.surface.withAlphaComponent(0.88)
+        moreButton.tintColor = ResourceSnifferPalette.primaryText
+        moreButton.backgroundColor = ResourceSnifferPalette.surface.withAlphaComponent(0.88)
         moreButton.layer.cornerRadius = 16
         moreButton.translatesAutoresizingMaskIntoConstraints = false
         moreButton.showsMenuAsPrimaryAction = true
@@ -1394,8 +1064,8 @@ private final class ResourceImageCell: UICollectionViewCell {
 
         retryButton.setTitle("重试", for: .normal)
         retryButton.titleLabel?.font = AppTypography.caption
-        retryButton.tintColor = AppColors.accent
-        retryButton.backgroundColor = AppColors.surface
+        retryButton.tintColor = ResourceSnifferPalette.accent
+        retryButton.backgroundColor = ResourceSnifferPalette.surface
         retryButton.layer.cornerRadius = AppRadius.control
         retryButton.isHidden = true
         retryButton.translatesAutoresizingMaskIntoConstraints = false
@@ -1407,11 +1077,11 @@ private final class ResourceImageCell: UICollectionViewCell {
 
         [formatLabel, dimensionLabel, sizeLabel].forEach {
             $0.font = AppTypography.caption
-            $0.textColor = AppColors.secondaryText
+            $0.textColor = ResourceSnifferPalette.secondaryText
             $0.adjustsFontForContentSizeCategory = true
             $0.numberOfLines = 1
         }
-        formatLabel.textColor = AppColors.primaryText
+        formatLabel.textColor = ResourceSnifferPalette.primaryText
         formatLabel.font = AppTypography.subheadline
         let metadata = UIStackView(arrangedSubviews: [formatLabel, dimensionLabel, sizeLabel])
         metadata.axis = .vertical
@@ -1456,91 +1126,5 @@ private final class ResourceImageCell: UICollectionViewCell {
         ImageResourceFormat.allCases.dropFirst().first {
             $0.matches(resource)
         }?.title ?? "图片"
-    }
-}
-
-private final class ImageResourceFilterViewController: UITableViewController {
-    var onFinish: ((Set<ImageResourceFormat>) -> Void)?
-    private var selection: Set<ImageResourceFormat>
-
-    init(selection: Set<ImageResourceFormat>) {
-        self.selection = selection.isEmpty || selection.contains(.all)
-            ? [.all]
-            : selection
-        super.init(style: .insetGrouped)
-        title = "图片类型"
-    }
-
-    required init?(coder: NSCoder) { return nil }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .cancel,
-            target: self,
-            action: #selector(cancelPressed)
-        )
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            barButtonSystemItem: .done,
-            target: self,
-            action: #selector(donePressed)
-        )
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "ImageFilterCell")
-        tableView.rowHeight = 52
-        tableView.accessibilityLabel = "图片类型筛选"
-    }
-
-    override func tableView(
-        _ tableView: UITableView,
-        numberOfRowsInSection section: Int
-    ) -> Int { ImageResourceFormat.allCases.count }
-
-    override func tableView(
-        _ tableView: UITableView,
-        cellForRowAt indexPath: IndexPath
-    ) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(
-            withIdentifier: "ImageFilterCell",
-            for: indexPath
-        )
-        let format = ImageResourceFormat.allCases[indexPath.row]
-        let isSelected = selection.contains(format)
-        var content = cell.defaultContentConfiguration()
-        content.text = format.title
-        content.textProperties.font = AppTypography.body
-        cell.contentConfiguration = content
-        cell.accessoryType = isSelected ? .checkmark : .none
-        cell.tintColor = AppColors.accent
-        cell.contentView.layer.cornerRadius = AppRadius.control
-        cell.contentView.layer.cornerCurve = .continuous
-        cell.contentView.layer.borderWidth = isSelected
-            ? AppMetrics.separatorHeight * 2
-            : 0
-        cell.contentView.layer.borderColor = isSelected
-            ? AppColors.accent.cgColor
-            : UIColor.clear.cgColor
-        return cell
-    }
-
-    override func tableView(
-        _ tableView: UITableView,
-        didSelectRowAt indexPath: IndexPath
-    ) {
-        let format = ImageResourceFormat.allCases[indexPath.row]
-        if format == .all {
-            selection = [.all]
-        } else {
-            selection.remove(.all)
-            if selection.contains(format) { selection.remove(format) }
-            else { selection.insert(format) }
-            if selection.isEmpty { selection = [.all] }
-        }
-        tableView.reloadData()
-    }
-
-    @objc private func cancelPressed() { dismiss(animated: true) }
-
-    @objc private func donePressed() {
-        onFinish?(selection == [.all] ? [] : selection)
     }
 }

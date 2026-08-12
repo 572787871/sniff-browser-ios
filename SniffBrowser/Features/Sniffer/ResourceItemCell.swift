@@ -109,7 +109,7 @@ final class ResourceListCell: UITableViewCell {
         typeIconView.image = resource.resourceType == .hls
             ? AppIconography.scanApertureImage(pointSize: 23, weight: 1.9)
             : UIImage(systemName: symbolName(for: resource.resourceType))
-        typeIconView.backgroundColor = AppColors.accentFill
+        typeIconView.backgroundColor = ResourceSnifferPalette.accentFill
         let thumbnailURL = resource.resourceType == .image
             ? (URL(string: resource.originalURLString) ?? resource.canonicalURL)
             : resource.thumbnailURL
@@ -148,7 +148,7 @@ final class ResourceListCell: UITableViewCell {
                     else { return }
                     self.typeIconView.image = image
                     self.typeIconView.contentMode = .scaleAspectFill
-                    self.typeIconView.backgroundColor = AppColors.progressTrack
+                    self.typeIconView.backgroundColor = ResourceSnifferPalette.secondarySurface
                 }
             }
         }
@@ -176,7 +176,7 @@ final class ResourceListCell: UITableViewCell {
                     self.thumbnailToken = nil
                     self.typeIconView.image = image
                     self.typeIconView.contentMode = .scaleAspectFill
-                    self.typeIconView.backgroundColor = AppColors.progressTrack
+                    self.typeIconView.backgroundColor = ResourceSnifferPalette.secondarySurface
                 }
             }
         }
@@ -232,33 +232,34 @@ final class ResourceListCell: UITableViewCell {
     private func configureView() {
         backgroundColor = .clear
         selectionStyle = .none
-        cardView.backgroundColor = AppColors.surface
+        cardView.backgroundColor = ResourceSnifferPalette.surface
         cardView.layer.cornerRadius = AppRadius.card
         cardView.layer.cornerCurve = .continuous
         cardView.layer.borderWidth = AppMetrics.separatorHeight
-        cardView.layer.borderColor = AppColors.separator.cgColor
+        cardView.layer.borderColor = ResourceSnifferPalette.border.cgColor
         cardView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(cardView)
 
-        typeIconView.tintColor = AppColors.accent
+        typeIconView.tintColor = ResourceSnifferPalette.accent
         typeIconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
             pointSize: 23
         )
         typeIconView.contentMode = .center
-        typeIconView.backgroundColor = AppColors.accentFill
+        typeIconView.backgroundColor = ResourceSnifferPalette.accentFill
         typeIconView.layer.cornerRadius = AppRadius.control
         typeIconView.translatesAutoresizingMaskIntoConstraints = false
 
         nameLabel.font = UIFont.preferredFont(forTextStyle: .headline)
+        nameLabel.textColor = ResourceSnifferPalette.primaryText
         nameLabel.adjustsFontForContentSizeCategory = true
         nameLabel.numberOfLines = 2
         metadataLabel.font = UIFont.preferredFont(forTextStyle: .subheadline)
         metadataLabel.adjustsFontForContentSizeCategory = true
-        metadataLabel.textColor = AppColors.secondaryText
+        metadataLabel.textColor = ResourceSnifferPalette.secondaryText
         metadataLabel.numberOfLines = 2
         domainLabel.font = UIFont.preferredFont(forTextStyle: .caption1)
         domainLabel.adjustsFontForContentSizeCategory = true
-        domainLabel.textColor = AppColors.tertiaryText
+        domainLabel.textColor = ResourceSnifferPalette.tertiaryText
         domainLabel.lineBreakMode = .byTruncatingMiddle
 
         let labels = UIStackView(
@@ -276,8 +277,9 @@ final class ResourceListCell: UITableViewCell {
             for: .normal
         )
         moreButton.accessibilityLabel = "资源操作"
+        moreButton.tintColor = ResourceSnifferPalette.primaryText
 
-        downloadButton.tintColor = AppColors.accent
+        downloadButton.tintColor = ResourceSnifferPalette.accent
         downloadButton.accessibilityLabel = "下载资源"
 
         let stack = UIStackView(
