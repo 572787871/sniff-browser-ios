@@ -30,4 +30,31 @@ final class ResourceSniffingScriptProviderTests: XCTestCase {
     XCTAssertTrue(source.contains("element.poster"))
     XCTAssertTrue(source.contains("scanEmbeddedHLSURLs"))
   }
+
+  func testVideoLongPressResolvesPlayerConfigBeforeBlobPlaybackURL() {
+    let source = WebVideoLongPressScriptProvider.source
+
+    XCTAssertTrue(source.contains("touchstart"))
+    XCTAssertTrue(source.contains("data-config"))
+    XCTAssertTrue(source.contains("configuredURL || elementURLs[0]"))
+    XCTAssertTrue(source.contains("sniffBrowserVideoLongPress"))
+    XCTAssertTrue(source.contains("application/vnd.apple.mpegurl"))
+  }
+
+  func testVideoLongPressPayloadAcceptsHTTPAndRejectsBlob() throws {
+    let payload = try XCTUnwrap(WebVideoLongPressPayload(body: [
+      "url": "https://cdn.example.com/main.m3u8?token=abc",
+      "mimeType": "application/vnd.apple.mpegurl",
+      "duration": 12.5,
+      "width": 1280,
+      "height": 720,
+    ]))
+
+    XCTAssertEqual(payload.url.host, "cdn.example.com")
+    XCTAssertEqual(payload.duration, 12.5)
+    XCTAssertEqual(payload.width, 1280)
+    XCTAssertNil(WebVideoLongPressPayload(body: [
+      "url": "blob:https://example.com/temporary",
+    ]))
+  }
 }

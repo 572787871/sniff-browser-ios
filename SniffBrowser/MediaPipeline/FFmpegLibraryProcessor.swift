@@ -120,7 +120,8 @@ fileprivate enum FFmpegCore {
 
     private static func openInput(
         urlString: String,
-        requestHeaders: [String: String] = [:]
+        requestHeaders: [String: String] = [:],
+        isThumbnailProbe: Bool = false
     ) throws -> UnsafeMutablePointer<AVFormatContext> {
         guard avformat_network_init() >= 0 else {
             throw MediaProcessError.ffmpegUnavailable
@@ -131,10 +132,23 @@ fileprivate enum FFmpegCore {
         if urlString.contains("://") {
             // Prevent a stalled thumbnail request from occupying the serial
             // media queue indefinitely. FFmpeg uses microseconds here.
-            av_dict_set(&options, "rw_timeout", "15000000", 0)
+            av_dict_set(
+                &options,
+                "rw_timeout",
+                isThumbnailProbe ? "8000000" : "15000000",
+                0
+            )
             av_dict_set(&options, "reconnect", "1", 0)
             av_dict_set(&options, "reconnect_streamed", "1", 0)
             av_dict_set(&options, "reconnect_delay_max", "2", 0)
+            if isThumbnailProbe {
+                // A thumbnail only needs enough stream metadata to decode an
+                // early key frame. A bounded probe avoids placing several
+                // multi-second HLS analyses ahead of the visible main video.
+                av_dict_set(&options, "probesize", "262144", 0)
+                av_dict_set(&options, "analyzeduration", "1000000", 0)
+                av_dict_set(&options, "max_probe_packets", "64", 0)
+            }
             applyHTTPHeaders(requestHeaders, to: &options)
         }
         let openResult = avformat_open_input(
@@ -712,7 +726,8 @@ fileprivate enum FFmpegCore {
         var input: UnsafeMutablePointer<AVFormatContext>? =
             try openInput(
                 urlString: inputURLString(for: url),
-                requestHeaders: requestHeaders
+                requestHeaders: requestHeaders,
+                isThumbnailProbe: true
             )
         defer { avformat_close_input(&input) }
 
@@ -747,6 +762,12 @@ fileprivate enum FFmpegCore {
             throw MediaProcessError.thumbnailFailed
         }
         decoderContext!.pointee.pkt_timebase = stream.pointee.time_base
+        // Some pages expose several 4K pre-roll playlists before their main
+        // stream. FFmpeg's default frame threading can allocate one large
+        // frame set per core, which is unnecessary for a single thumbnail and
+        // can exceed an iPhone's memory budget. One decoder thread is both
+        // predictable and fast enough for the first frame.
+        decoderContext!.pointee.thread_count = 1
         guard avcodec_open2(decoderContext!, decoder, nil) >= 0 else {
             debugLog("解码器打开失败")
             throw MediaProcessError.thumbnailFailed
@@ -754,7 +775,7 @@ fileprivate enum FFmpegCore {
 
         let sourceWidth = max(1, Int(codecpar.pointee.width))
         let sourceHeight = max(1, Int(codecpar.pointee.height))
-        let targetWidth = 480
+        let targetWidth = 320
         let targetHeight = max(
             1,
             Int((Double(targetWidth) * Double(sourceHeight) / Double(sourceWidth)).rounded())

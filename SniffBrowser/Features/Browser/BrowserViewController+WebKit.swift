@@ -26,6 +26,57 @@ final class BlockedElementCounterHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
+struct WebVideoLongPressPayload {
+  let url: URL
+  let mimeType: String?
+  let pageURL: URL?
+  let pageTitle: String?
+  let thumbnailURL: URL?
+  let duration: Double?
+  let width: Int?
+  let height: Int?
+
+  init?(body: Any) {
+    guard let values = body as? [String: Any],
+          let rawURL = values["url"] as? String,
+          rawURL.count <= 8192,
+          let url = URL(string: rawURL),
+          ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+    else {
+      return nil
+    }
+    self.url = url
+    mimeType = Self.nonEmptyString(values["mimeType"])
+    pageURL = Self.nonEmptyString(values["pageURL"]).flatMap(URL.init(string:))
+    pageTitle = Self.nonEmptyString(values["pageTitle"])
+    thumbnailURL = Self.nonEmptyString(values["thumbnailURL"])
+      .flatMap(URL.init(string:))
+    duration = Self.positiveDouble(values["duration"])
+    width = Self.positiveDouble(values["width"]).map { Int($0.rounded()) }
+    height = Self.positiveDouble(values["height"]).map { Int($0.rounded()) }
+  }
+
+  private static func nonEmptyString(_ value: Any?) -> String? {
+    guard let value = value as? String,
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { return nil }
+    return value
+  }
+
+  private static func positiveDouble(_ value: Any?) -> Double? {
+    let number: Double?
+    if let value = value as? NSNumber {
+      number = value.doubleValue
+    } else if let value = value as? String {
+      number = Double(value)
+    } else {
+      number = nil
+    }
+    guard let number, number.isFinite, number > 0 else { return nil }
+    return number
+  }
+}
+
 extension BrowserViewController: WKNavigationDelegate {
   func webView(
     _ webView: WKWebView,
@@ -285,6 +336,15 @@ extension BrowserViewController: WKScriptMessageHandler {
       return
     }
 
+    if message.name == WebVideoLongPressScriptProvider.messageHandlerName {
+      guard webView === activeWebView,
+            tab.id == activeTab?.id,
+            let payload = WebVideoLongPressPayload(body: message.body)
+      else { return }
+      handleLongPressedVideo(payload, tab: tab, webView: webView)
+      return
+    }
+
     if message.name == WebPageThemeColorService.messageHandlerName {
       let candidates: [String]
       if let array = message.body as? [String] {
@@ -300,6 +360,113 @@ extension BrowserViewController: WKScriptMessageHandler {
         applyPageTheme(color, animated: true)
       }
     }
+  }
+
+  private func handleLongPressedVideo(
+    _ payload: WebVideoLongPressPayload,
+    tab: BrowserTab,
+    webView: WKWebView
+  ) {
+    let mimeType: String
+    if payload.url.pathExtension.lowercased() == "m3u8"
+        || payload.mimeType?.lowercased().contains("mpegurl") == true {
+      mimeType = "application/vnd.apple.mpegurl"
+    } else {
+      mimeType = payload.mimeType ?? "video/mp4"
+    }
+    let candidate = ResourceCandidate(
+      originalURLString: payload.url.absoluteString,
+      pageURLString: (payload.pageURL ?? webView.url)?.absoluteString,
+      pageTitle: payload.pageTitle ?? webView.title,
+      mimeType: mimeType,
+      estimatedSize: nil,
+      duration: payload.duration,
+      width: payload.width,
+      height: payload.height,
+      bitrate: nil,
+      thumbnailURLString: payload.thumbnailURL?.absoluteString,
+      detectionSource: .mediaEvent,
+      elementType: "source-video",
+      headersHint: [:]
+    )
+    guard let detected = ResourceClassifier().makeResource(
+      from: candidate,
+      tabID: tab.id
+    ) else {
+      showVideoDownloadFailure("未能识别当前视频的真实下载地址。")
+      return
+    }
+    let resource = resourceStore.resources(for: tab.id).first {
+      $0.canonicalURL == detected.canonicalURL
+    } ?? detected
+
+    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    let beginDownload = { [weak self, weak webView] in
+      guard let self, let webView else { return }
+      self.startLongPressedVideoDownload(resource, webView: webView)
+    }
+    guard !DownloadComplianceAcknowledgement.hasAcknowledged else {
+      beginDownload()
+      return
+    }
+
+    guard presentedViewController == nil else { return }
+    let alert = UIAlertController(
+      title: "下载当前视频",
+      message: "请仅下载您拥有版权、已经获得授权或网站明确允许保存的内容。应用不支持受 DRM 保护的视频。",
+      preferredStyle: .alert
+    )
+    alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+    alert.addAction(UIAlertAction(title: "我已了解并下载", style: .default) { _ in
+      DownloadComplianceAcknowledgement.hasAcknowledged = true
+      beginDownload()
+    })
+    present(alert, animated: true)
+  }
+
+  private func startLongPressedVideoDownload(
+    _ resource: DetectedResource,
+    webView: WKWebView
+  ) {
+    Task { [weak self, weak webView] in
+      guard let self, let webView else { return }
+      do {
+        let context = await downloadRequestContextBuilder.build(
+          targetURL: resource.canonicalURL,
+          pageURL: resource.sourcePageURL ?? webView.url,
+          webView: webView
+        )
+        let result = try await downloadCenter.createDownload(
+          resource: resource,
+          context: context
+        )
+        switch result {
+        case .created:
+          UINotificationFeedbackGenerator().notificationOccurred(.success)
+        case .alreadyDownloading:
+          showVideoDownloadFailure("这个视频已经在下载队列中。", title: "已在下载")
+        case .fileAlreadyExists:
+          showVideoDownloadFailure("这个视频已经下载完成，可前往文件页面查看。", title: "文件已存在")
+        }
+      } catch {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        showVideoDownloadFailure(DownloadErrorMapper.message(for: error))
+      }
+    }
+  }
+
+  private func showVideoDownloadFailure(
+    _ message: String,
+    title: String = "无法下载视频"
+  ) {
+    guard view.window != nil, presentedViewController == nil else { return }
+    let alert = UIAlertController(
+      title: title,
+      message: message,
+      preferredStyle: .alert
+    )
+    alert.addAction(UIAlertAction(title: "好", style: .default))
+    present(alert, animated: true)
   }
 }
 

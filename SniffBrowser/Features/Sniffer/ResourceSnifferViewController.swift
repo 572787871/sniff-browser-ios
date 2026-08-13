@@ -662,6 +662,12 @@ extension ResourceSnifferViewController: UITableViewDataSource,
         ) as? ResourceListCell else {
             return UITableViewCell()
         }
+        guard filteredResources.indices.contains(indexPath.row) else {
+            // Metadata resolution can reorder HLS rows while UIKit is
+            // finishing a previous data-source request. Never index a stale
+            // row during those rapid incremental updates.
+            return cell
+        }
         let resource = filteredResources[indexPath.row]
         cell.configure(
             resource: resource,
@@ -706,7 +712,7 @@ extension ResourceSnifferViewController: UITableViewDataSource,
     }
 }
 
-private enum DownloadComplianceAcknowledgement {
+enum DownloadComplianceAcknowledgement {
     private static let key = "download.complianceAcknowledged"
     static var hasAcknowledged: Bool {
         get { UserDefaults.standard.bool(forKey: key) }

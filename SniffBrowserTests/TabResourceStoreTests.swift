@@ -133,6 +133,45 @@ final class TabResourceStoreTests: XCTestCase {
         XCTAssertEqual(states, [.completed])
     }
 
+    @MainActor
+    func testConfiguredHLSAppearsBeforeHigherResolutionPerformancePlaylist() throws {
+        let store = TabResourceStore()
+        let tabID = UUID()
+        activate(store, tabID: tabID)
+        let advertisementURL = try XCTUnwrap(
+            URL(string: "https://cdn.example.com/ad.m3u8?auth_key=first")
+        )
+        let mainURL = try XCTUnwrap(
+            URL(string: "https://cdn.example.com/main.m3u8?auth_key=second")
+        )
+        let advertisement = DetectedResource(
+            canonicalURL: advertisementURL,
+            originalURLString: advertisementURL.absoluteString,
+            fileName: "ad.m3u8",
+            fileExtension: "m3u8",
+            resourceType: .hls,
+            width: 3840,
+            height: 2160,
+            detectionSource: .performance,
+            tabID: tabID
+        )
+        let main = DetectedResource(
+            canonicalURL: mainURL,
+            originalURLString: mainURL.absoluteString,
+            fileName: "main.m3u8",
+            fileExtension: "m3u8",
+            resourceType: .hls,
+            width: 1280,
+            height: 720,
+            detectionSource: .mediaEvent,
+            tabID: tabID
+        )
+
+        store.upsert([advertisement, main], tabID: tabID)
+
+        XCTAssertEqual(store.resources(for: tabID).first?.canonicalURL, mainURL)
+    }
+
     private func resource(
         tabID: UUID,
         name: String,

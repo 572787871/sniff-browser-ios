@@ -995,6 +995,13 @@ final class BrowserViewController: UIViewController {
       WeakScriptMessageHandler(delegate: self),
       name: ResourceSniffingScriptProvider.messageHandlerName
     )
+    userContentController.removeScriptMessageHandler(
+      forName: WebVideoLongPressScriptProvider.messageHandlerName
+    )
+    userContentController.add(
+      WeakScriptMessageHandler(delegate: self),
+      name: WebVideoLongPressScriptProvider.messageHandlerName
+    )
     if let tab = tabManager.tabs.first(where: { $0.webView === webView }) {
       resourceSniffingService.register(
         tabID: tab.id,

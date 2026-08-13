@@ -283,6 +283,13 @@ final class TabResourceStore {
             if lhs.resourceType.sortPriority != rhs.resourceType.sortPriority {
                 return lhs.resourceType.sortPriority < rhs.resourceType.sortPriority
             }
+            if lhs.resourceType == .hls, rhs.resourceType == .hls,
+               lhs.detectionSource.confidence != rhs.detectionSource.confidence {
+                // The configured/current player source should be visible and
+                // thumbnailed before high-resolution pre/post-roll playlists.
+                return lhs.detectionSource.confidence
+                    > rhs.detectionSource.confidence
+            }
             if (lhs.estimatedSize != nil) != (rhs.estimatedSize != nil) {
                 return lhs.estimatedSize != nil
             }

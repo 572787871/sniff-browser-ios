@@ -254,7 +254,11 @@ enum ResourceSniffingScriptProvider {
               width: media.width,
               height: media.height,
               thumbnailURL: media.poster || media.pic || media.thumbnail || null,
-              source,
+              // A URL declared as the player's primary video is a stronger
+              // signal than pre-roll playlists observed through Performance.
+              // Rank it like a real media event so its preview is generated
+              // before large advertisement streams.
+              source: "mediaEvent",
               elementType: "source-video"
             });
           } catch (_) {}

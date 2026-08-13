@@ -13,6 +13,28 @@ final class ResourceThumbnailLoaderTests: XCTestCase {
     }
 
     @MainActor
+    func testHLSPreviewIdentityIgnoresRotatingSignatureButKeepsVariant() throws {
+        let first = try XCTUnwrap(URL(
+            string: "https://cdn.example.com/video.m3u8?quality=720&auth_key=one"
+        ))
+        let second = try XCTUnwrap(URL(
+            string: "https://cdn.example.com/video.m3u8?quality=720&auth_key=two"
+        ))
+        let differentVariant = try XCTUnwrap(URL(
+            string: "https://cdn.example.com/video.m3u8?quality=1080&auth_key=two"
+        ))
+
+        XCTAssertEqual(
+            RemoteMediaThumbnailLoader.previewIdentity(for: first),
+            RemoteMediaThumbnailLoader.previewIdentity(for: second)
+        )
+        XCTAssertNotEqual(
+            RemoteMediaThumbnailLoader.previewIdentity(for: first),
+            RemoteMediaThumbnailLoader.previewIdentity(for: differentVariant)
+        )
+    }
+
+    @MainActor
     func testLoadsAndDownsamplesImageThenUsesMemoryCache() async throws {
         let fixture = try makeFixture(maximumBytes: 5 * 1_024 * 1_024)
         defer { try? FileManager.default.removeItem(at: fixture.root) }

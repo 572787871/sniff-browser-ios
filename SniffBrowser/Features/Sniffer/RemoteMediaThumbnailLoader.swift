@@ -5,6 +5,11 @@ import UIKit
 final class RemoteMediaThumbnailLoader {
     static let shared = RemoteMediaThumbnailLoader()
 
+    private struct HLSFrameWork {
+        let id: UUID
+        let task: Task<UIImage?, Never>
+    }
+
     private final class Operation {
         var task: Task<Void, Never>?
         var imageGenerator: AVAssetImageGenerator?
@@ -23,6 +28,7 @@ final class RemoteMediaThumbnailLoader {
     }
 
     private let cache = NSCache<NSString, UIImage>()
+    private var pendingHLSFrames: [String: HLSFrameWork] = [:]
 
     private init() {
         cache.countLimit = 100
@@ -56,7 +62,8 @@ final class RemoteMediaThumbnailLoader {
             // 请求尚未准备好时所有卡片都会落到同一个占位图。直接取帧仍
             // 携带网页 UA/Referer，但明确不跨 CDN 传播 Cookie/Authorization。
             if resource.resourceType == .hls,
-               let image = await self.generateHLSFrame(
+               let image = await self.coalescedHLSFrame(
+                workKey: key,
                 sourceURL: resource.canonicalURL,
                 requestHeaders: Self.safeRemoteFrameHeaders(
                     context: context,
@@ -86,7 +93,8 @@ final class RemoteMediaThumbnailLoader {
                     return
                 }
                 if resource.resourceType == .hls,
-                   let image = await self.generateHLSFrame(
+                   let image = await self.coalescedHLSFrame(
+                    workKey: "\(key)|proxy",
                     sourceURL: playbackURL,
                     requestHeaders: [:],
                     targetPixelSize: targetPixelSize,
@@ -189,6 +197,40 @@ final class RemoteMediaThumbnailLoader {
 
     func clearMemoryCache() {
         cache.removeAllObjects()
+        pendingHLSFrames.values.forEach { $0.task.cancel() }
+        pendingHLSFrames.removeAll()
+    }
+
+    /// Signed HLS URLs for the same playlist are often discovered once from
+    /// the player config and again from pre/post-roll requests. They must keep
+    /// their original URL for playback/download, but thumbnail extraction can
+    /// safely share one short-lived task for the same playlist path.
+    private func coalescedHLSFrame(
+        workKey: String,
+        sourceURL: URL,
+        requestHeaders: [String: String],
+        targetPixelSize: CGSize,
+        resourceURL: URL
+    ) async -> UIImage? {
+        if let pending = pendingHLSFrames[workKey] {
+            return await pending.task.value
+        }
+        let workID = UUID()
+        let task = Task { [weak self] in
+            guard let self else { return nil }
+            return await self.generateHLSFrame(
+                sourceURL: sourceURL,
+                requestHeaders: requestHeaders,
+                targetPixelSize: targetPixelSize,
+                resourceURL: resourceURL
+            )
+        }
+        pendingHLSFrames[workKey] = HLSFrameWork(id: workID, task: task)
+        let image = await task.value
+        if pendingHLSFrames[workKey]?.id == workID {
+            pendingHLSFrames.removeValue(forKey: workKey)
+        }
+        return image
     }
 
     private func generateHLSFrame(
@@ -279,8 +321,34 @@ final class RemoteMediaThumbnailLoader {
             : "private:\(resource.tabID.uuidString)"
         return [
             namespace,
-            resource.canonicalURL.absoluteString,
+            Self.previewIdentity(for: resource.canonicalURL),
             "\(Int(targetPixelSize.width))x\(Int(targetPixelSize.height))"
         ].joined(separator: "|")
     }
+
+    static func previewIdentity(for url: URL) -> String {
+        guard var components = URLComponents(
+            url: url,
+            resolvingAgainstBaseURL: false
+        ) else {
+            return url.absoluteString
+        }
+        components.fragment = nil
+        components.host = components.host?.lowercased()
+        if let queryItems = components.queryItems {
+            let retained = queryItems.filter { item in
+                let name = item.name.lowercased()
+                return !Self.volatileSignatureQueryNames.contains(name)
+                    && !name.hasPrefix("x-amz-")
+                    && !name.hasPrefix("x-oss-")
+            }
+            components.queryItems = retained.isEmpty ? nil : retained
+        }
+        return components.string ?? url.absoluteString
+    }
+
+    private static let volatileSignatureQueryNames: Set<String> = [
+        "access_token", "auth", "auth_key", "authkey", "expires",
+        "expiration", "key-pair-id", "policy", "sig", "signature", "token"
+    ]
 }
