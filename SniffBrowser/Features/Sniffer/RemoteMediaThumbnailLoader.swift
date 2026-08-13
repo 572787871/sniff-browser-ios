@@ -52,6 +52,29 @@ final class RemoteMediaThumbnailLoader {
             guard let self, let operation, !operation.isCancelled else {
                 return
             }
+            // HLS 先直接交给正式 FFmpeg 引擎。此前先走回环代理，代理
+            // 请求尚未准备好时所有卡片都会落到同一个占位图。直接取帧仍
+            // 携带网页 UA/Referer，但明确不跨 CDN 传播 Cookie/Authorization。
+            if resource.resourceType == .hls,
+               let image = await self.generateHLSFrame(
+                sourceURL: resource.canonicalURL,
+                requestHeaders: Self.safeRemoteFrameHeaders(
+                    context: context,
+                    url: resource.canonicalURL
+                ),
+                targetPixelSize: targetPixelSize,
+                resourceURL: resource.canonicalURL
+               ) {
+                guard !Task.isCancelled, !operation.isCancelled else {
+                    return
+                }
+                operation.isFinished = true
+                if allowsSharedCache {
+                    self.store(image, key: key)
+                }
+                completion(image)
+                return
+            }
             let asset: AVURLAsset
             do {
                 let kind: RemoteMediaPlaybackKind = resource.resourceType == .hls
@@ -64,7 +87,8 @@ final class RemoteMediaThumbnailLoader {
                 }
                 if resource.resourceType == .hls,
                    let image = await self.generateHLSFrame(
-                    playbackURL: playbackURL,
+                    sourceURL: playbackURL,
+                    requestHeaders: [:],
                     targetPixelSize: targetPixelSize,
                     resourceURL: resource.canonicalURL
                    ) {
@@ -168,7 +192,8 @@ final class RemoteMediaThumbnailLoader {
     }
 
     private func generateHLSFrame(
-        playbackURL: URL,
+        sourceURL: URL,
+        requestHeaders: [String: String],
         targetPixelSize: CGSize,
         resourceURL: URL
     ) async -> UIImage? {
@@ -177,8 +202,9 @@ final class RemoteMediaThumbnailLoader {
         defer { try? FileManager.default.removeItem(at: outputURL) }
         do {
             try await FFmpegProcessorProvider.current.generateThumbnail(
-                from: playbackURL,
-                output: outputURL
+                from: sourceURL,
+                output: outputURL,
+                requestHeaders: requestHeaders
             )
             try Task.checkCancellation()
             guard let image = UIImage(contentsOfFile: outputURL.path) else {
@@ -191,6 +217,24 @@ final class RemoteMediaThumbnailLoader {
                 "HLS 视频预览 FFmpeg 取帧失败 url=\(resourceURL.absoluteString) error=\(error.localizedDescription)"
             )
             return nil
+        }
+    }
+
+    private static func safeRemoteFrameHeaders(
+        context: DownloadRequestContext,
+        url: URL
+    ) -> [String: String] {
+        let requestHeaders = context.makeRequest(for: url).allHTTPHeaderFields ?? [:]
+        let allowedNames = Set([
+            "accept",
+            "accept-language",
+            "origin",
+            "referer",
+            "user-agent"
+        ])
+        return requestHeaders.reduce(into: [:]) { result, pair in
+            guard allowedNames.contains(pair.key.lowercased()) else { return }
+            result[pair.key] = pair.value
         }
     }
 

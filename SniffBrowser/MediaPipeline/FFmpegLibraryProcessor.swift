@@ -43,6 +43,20 @@ struct FFmpegLibraryProcessor: FFmpegProcessor {
             try FFmpegCore.generateThumbnail(from: url, output: output)
         }
     }
+
+    func generateThumbnail(
+        from url: URL,
+        output: URL,
+        requestHeaders: [String: String]
+    ) async throws {
+        try await FFmpegCore.run {
+            try FFmpegCore.generateThumbnail(
+                from: url,
+                output: output,
+                requestHeaders: requestHeaders
+            )
+        }
+    }
 }
 
 /// libav* 桥接核心：所有 C 调用集中在后台串行队列执行，不阻塞 UI。
@@ -105,13 +119,30 @@ fileprivate enum FFmpegCore {
     // MARK: - 输入上下文
 
     private static func openInput(
-        urlString: String
+        urlString: String,
+        requestHeaders: [String: String] = [:]
     ) throws -> UnsafeMutablePointer<AVFormatContext> {
         guard avformat_network_init() >= 0 else {
             throw MediaProcessError.ffmpegUnavailable
         }
         var context: UnsafeMutablePointer<AVFormatContext>?
-        let openResult = avformat_open_input(&context, urlString, nil, nil)
+        var options: OpaquePointer?
+        defer { av_dict_free(&options) }
+        if urlString.contains("://") {
+            // Prevent a stalled thumbnail request from occupying the serial
+            // media queue indefinitely. FFmpeg uses microseconds here.
+            av_dict_set(&options, "rw_timeout", "15000000", 0)
+            av_dict_set(&options, "reconnect", "1", 0)
+            av_dict_set(&options, "reconnect_streamed", "1", 0)
+            av_dict_set(&options, "reconnect_delay_max", "2", 0)
+            applyHTTPHeaders(requestHeaders, to: &options)
+        }
+        let openResult = avformat_open_input(
+            &context,
+            urlString,
+            nil,
+            &options
+        )
         guard openResult == 0 else {
             debugLog("openInput 打开失败: \(urlString)", code: openResult)
             throw MediaProcessError.unsupportedFormat
@@ -127,6 +158,34 @@ fileprivate enum FFmpegCore {
             throw MediaProcessError.metadataFailed
         }
         return opened
+    }
+
+    private static func applyHTTPHeaders(
+        _ requestHeaders: [String: String],
+        to options: inout OpaquePointer?
+    ) {
+        var customHeaders: [String] = []
+        for (name, rawValue) in requestHeaders.sorted(by: { $0.key < $1.key }) {
+            let value = rawValue
+                .replacingOccurrences(of: "\r", with: "")
+                .replacingOccurrences(of: "\n", with: "")
+            guard !value.isEmpty,
+                  !name.contains("\r"),
+                  !name.contains("\n")
+            else { continue }
+            if name.caseInsensitiveCompare("User-Agent") == .orderedSame {
+                av_dict_set(&options, "user_agent", value, 0)
+            } else {
+                customHeaders.append("\(name): \(value)")
+            }
+        }
+        guard !customHeaders.isEmpty else { return }
+        av_dict_set(
+            &options,
+            "headers",
+            customHeaders.joined(separator: "\r\n") + "\r\n",
+            0
+        )
     }
 
     // MARK: - 无损转封装（HLS/TS/FLV/MKV/WebM/MOV/MP4 → 目标容器）
@@ -645,9 +704,16 @@ fileprivate enum FFmpegCore {
 
     // MARK: - 封面（解码首帧 → 缩放 → JPEG）
 
-    static func generateThumbnail(from url: URL, output: URL) throws {
+    static func generateThumbnail(
+        from url: URL,
+        output: URL,
+        requestHeaders: [String: String] = [:]
+    ) throws {
         var input: UnsafeMutablePointer<AVFormatContext>? =
-            try openInput(urlString: inputURLString(for: url))
+            try openInput(
+                urlString: inputURLString(for: url),
+                requestHeaders: requestHeaders
+            )
         defer { avformat_close_input(&input) }
 
         let videoIndex = av_find_best_stream(

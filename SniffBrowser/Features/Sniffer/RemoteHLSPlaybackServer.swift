@@ -448,7 +448,15 @@ final class RemoteHLSPlaybackServer {
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
-        return URL(string: "http://127.0.0.1:\(port.rawValue)/remote/\(token)/\(encoded)")
+        // Keep a real media extension at the end of the local path. AVPlayer
+        // normally trusts MIME, but several HLS probing paths classify an
+        // extension-less loopback URL as a generic file before the response
+        // headers arrive.
+        let pathExtension = remoteURL.pathExtension
+        let hint = pathExtension.isEmpty ? "resource" : "resource.\(pathExtension)"
+        return URL(
+            string: "http://127.0.0.1:\(port.rawValue)/remote/\(token)/\(encoded)/\(hint)"
+        )
     }
 }
 
@@ -514,7 +522,7 @@ private struct RemoteHLSHTTPRequest: Sendable {
             maxSplits: 1
         ).first.map(String.init) ?? ""
         let components = rawPath.split(separator: "/", omittingEmptySubsequences: true)
-        guard components.count == 3, components[0] == "remote" else { return nil }
+        guard components.count >= 3, components[0] == "remote" else { return nil }
         token = String(components[1])
         var encoded = String(components[2])
             .replacingOccurrences(of: "-", with: "+")

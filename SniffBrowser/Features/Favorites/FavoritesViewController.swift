@@ -247,12 +247,25 @@ private struct FavoriteSwiftUIRow: View {
                 faviconURL: item.faviconURL,
                 fallbackSystemName: "star.fill"
             )
-            .frame(width: 16, height: 16)
+            // 与“文件”页面的缩略图使用同一尺寸，避免 favicon 在列表中
+            // 看起来像一个被二次缩小的小徽标。
+            .frame(
+                width: AppMetrics.primaryButtonHeight,
+                height: AppMetrics.primaryButtonHeight
+            )
             .clipped()
-            .frame(width: 28, height: 28)
             .background(
                 AppSwiftUIColors.accentFill,
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                in: RoundedRectangle(
+                    cornerRadius: AppRadius.control,
+                    style: .continuous
+                )
+            )
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: AppRadius.control,
+                    style: .continuous
+                )
             )
 
             VStack(alignment: .leading, spacing: 3) {

@@ -21,6 +21,24 @@ protocol FFmpegProcessor {
 
     /// 生成封面。
     func generateThumbnail(from url: URL, output: URL) async throws
+
+    /// 为远程媒体生成封面。仅调用方明确提供的请求头会传给 libav；本地文件
+    /// 和不需要防盗链上下文的调用继续使用上面的基础接口。
+    func generateThumbnail(
+        from url: URL,
+        output: URL,
+        requestHeaders: [String: String]
+    ) async throws
+}
+
+extension FFmpegProcessor {
+    func generateThumbnail(
+        from url: URL,
+        output: URL,
+        requestHeaders: [String: String]
+    ) async throws {
+        try await generateThumbnail(from: url, output: output)
+    }
 }
 
 /// 使用 App 内捆绑的 ffmpeg / ffprobe（GitHub Actions 集成 XCFramework 时

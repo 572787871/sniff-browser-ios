@@ -463,11 +463,11 @@ final class ResourceSnifferViewController: BaseViewController {
             )
             return
         }
-        let continueToConfirmation = { [weak self] in
-            self?.presentDownloadConfirmation(resource)
+        let beginDownload = { [weak self] in
+            self?.startDownload(resource)
         }
         guard !DownloadComplianceAcknowledgement.hasAcknowledged else {
-            continueToConfirmation()
+            beginDownload()
             return
         }
         let alert = UIAlertController(
@@ -478,53 +478,12 @@ final class ResourceSnifferViewController: BaseViewController {
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         alert.addAction(UIAlertAction(title: "我已了解", style: .default) { _ in
             DownloadComplianceAcknowledgement.hasAcknowledged = true
-            continueToConfirmation()
+            beginDownload()
         })
         present(alert, animated: true)
     }
 
-    private func presentDownloadConfirmation(_ resource: DetectedResource) {
-        let kind = resource.resourceType == .hls ? "视频" : resource.resourceType.localizedTitle
-        // Content-Length on an HLS URL is only the playlist text size. It is
-        // never the size of the video represented by that playlist.
-        let expectedSize = resource.resourceType == .hls
-            ? "下载时计算"
-            : formattedSize(resource.estimatedSize)
-        let message = [
-            "类型：\(kind)",
-            "文件名：\(resource.fileName)",
-            "预计大小：\(expectedSize)",
-            [.video, .hls].contains(resource.resourceType)
-                ? "可在下载进行时播放并拖动进度"
-                : nil
-        ].compactMap { $0 }.joined(separator: "\n")
-        let sheet = UIAlertController(
-            title: resource.resourceType == .hls ? "下载视频" : "确认下载",
-            message: message,
-            preferredStyle: .actionSheet
-        )
-        sheet.addAction(UIAlertAction(title: "取消", style: .cancel))
-        sheet.addAction(UIAlertAction(
-            title: "仅下载",
-            style: .default
-        ) { [weak self] _ in
-            self?.startDownload(resource)
-        })
-        if [.video, .hls].contains(resource.resourceType) {
-            sheet.addAction(UIAlertAction(
-                title: "下载并播放",
-                style: .default
-            ) { [weak self] _ in
-                self?.startDownload(resource, playsWhileDownloading: true)
-            })
-        }
-        present(sheet, animated: true)
-    }
-
-    private func startDownload(
-        _ resource: DetectedResource,
-        playsWhileDownloading: Bool = false
-    ) {
+    private func startDownload(_ resource: DetectedResource) {
         downloadTask?.cancel()
         downloadTask = Task { [weak self] in
             guard let self else { return }
@@ -533,23 +492,11 @@ final class ResourceSnifferViewController: BaseViewController {
                 switch result {
                 case .created:
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
-                    if playsWhileDownloading {
-                        self.preview(resource)
-                    } else {
-                        self.showDownloadCreatedMessage()
-                    }
+                    self.showDownloadCreatedMessage()
                 case .alreadyDownloading:
-                    if playsWhileDownloading {
-                        self.preview(resource)
-                    } else {
-                        self.showMessage(title: "已在下载", message: "相同资源已有进行中的任务。")
-                    }
+                    self.showMessage(title: "已在下载", message: "相同资源已有进行中的任务。")
                 case .fileAlreadyExists:
-                    if playsWhileDownloading {
-                        self.preview(resource)
-                    } else {
-                        self.showMessage(title: "文件已存在", message: "相同资源已经下载完成，可前往文件库查看。")
-                    }
+                    self.showMessage(title: "文件已存在", message: "相同资源已经下载完成，可前往文件库查看。")
                 }
             } catch {
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
@@ -607,13 +554,15 @@ final class ResourceSnifferViewController: BaseViewController {
                 let playbackURL = try await RemoteHLSPlaybackServer.shared
                     .playbackURL(context: context, kind: kind)
                 guard !Task.isCancelled else { return }
-                let asset = AVURLAsset(url: playbackURL)
-                guard try await asset.load(.isPlayable) else {
-                    throw RemoteHLSPlaybackServerError.invalidResponse
-                }
-                guard !Task.isCancelled else { return }
+                // Do not reject HLS during AVURLAsset's eager `isPlayable`
+                // probe. Several valid manifests return false until AVPlayerItem
+                // has followed the rewritten variant/segment requests.
+                let item = AVPlayerItem(url: playbackURL)
+                item.preferredForwardBufferDuration = 5
+                item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
                 let player = AVPlayerViewController()
-                player.player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
+                player.player = AVPlayer(playerItem: item)
+                player.player?.automaticallyWaitsToMinimizeStalling = true
                 player.showsPlaybackControls = true
                 player.allowsPictureInPicturePlayback = true
                 self.present(player, animated: true) { player.player?.play() }
