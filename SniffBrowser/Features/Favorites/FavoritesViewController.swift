@@ -241,17 +241,17 @@ private struct FavoriteSwiftUIRow: View {
     let item: FavoriteItem
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             AppSwiftUIFavicon(
                 pageURL: item.url,
                 faviconURL: item.faviconURL,
                 fallbackSystemName: "star.fill"
             )
-            .frame(width: 24, height: 24)
-            .padding(8)
+            .frame(width: 20, height: 20)
+            .padding(6)
             .background(
                 AppSwiftUIColors.accentFill,
-                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
             )
 
             VStack(alignment: .leading, spacing: 3) {
