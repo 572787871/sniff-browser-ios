@@ -647,7 +647,7 @@ fileprivate enum FFmpegCore {
 
     static func generateThumbnail(from url: URL, output: URL) throws {
         var input: UnsafeMutablePointer<AVFormatContext>? =
-            try openInput(urlString: url.path)
+            try openInput(urlString: inputURLString(for: url))
         defer { avformat_close_input(&input) }
 
         let videoIndex = av_find_best_stream(

@@ -62,6 +62,22 @@ final class RemoteMediaThumbnailLoader {
                 guard !Task.isCancelled, !operation.isCancelled else {
                     return
                 }
+                if resource.resourceType == .hls,
+                   let image = await self.generateHLSFrame(
+                    playbackURL: playbackURL,
+                    targetPixelSize: targetPixelSize,
+                    resourceURL: resource.canonicalURL
+                   ) {
+                    guard !Task.isCancelled, !operation.isCancelled else {
+                        return
+                    }
+                    operation.isFinished = true
+                    if allowsSharedCache {
+                        self.store(image, key: key)
+                    }
+                    completion(image)
+                    return
+                }
                 asset = AVURLAsset(url: playbackURL)
             } catch {
                 guard !operation.isCancelled else { return }
@@ -136,14 +152,7 @@ final class RemoteMediaThumbnailLoader {
                     generator.cancelAllCGImageGeneration()
                     let image = UIImage(cgImage: cgImage)
                     if allowsSharedCache {
-                        self.cache.setObject(
-                            image,
-                            forKey: key as NSString,
-                            cost: Int(
-                                image.size.width * image.size.height
-                                    * image.scale * image.scale * 4
-                            )
-                        )
+                        self.store(image, key: key)
                     }
                     completion(image)
                 }
@@ -156,6 +165,44 @@ final class RemoteMediaThumbnailLoader {
 
     func clearMemoryCache() {
         cache.removeAllObjects()
+    }
+
+    private func generateHLSFrame(
+        playbackURL: URL,
+        targetPixelSize: CGSize,
+        resourceURL: URL
+    ) async -> UIImage? {
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sniff-preview-\(UUID().uuidString).jpg")
+        defer { try? FileManager.default.removeItem(at: outputURL) }
+        do {
+            try await FFmpegProcessorProvider.current.generateThumbnail(
+                from: playbackURL,
+                output: outputURL
+            )
+            try Task.checkCancellation()
+            guard let image = UIImage(contentsOfFile: outputURL.path) else {
+                return nil
+            }
+            return image.preparingThumbnail(of: targetPixelSize) ?? image
+        } catch {
+            guard !Task.isCancelled else { return nil }
+            AppLogger(.sniffer).debug(
+                "HLS 视频预览 FFmpeg 取帧失败 url=\(resourceURL.absoluteString) error=\(error.localizedDescription)"
+            )
+            return nil
+        }
+    }
+
+    private func store(_ image: UIImage, key: String) {
+        cache.setObject(
+            image,
+            forKey: key as NSString,
+            cost: Int(
+                image.size.width * image.size.height
+                    * image.scale * image.scale * 4
+            )
+        )
     }
 
     /// HLS manifests can expose their track metadata later than direct files.

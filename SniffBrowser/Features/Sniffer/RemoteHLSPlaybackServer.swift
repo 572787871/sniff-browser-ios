@@ -20,6 +20,21 @@ enum RemoteMediaPlaybackKind: Sendable {
     case direct
 }
 
+enum RemoteMediaUpstreamRequestPolicy {
+    /// Some HLS origins reject HEAD even though their playlists are valid.
+    /// AVFoundation probes the loopback URL with HEAD first, so fetch the small
+    /// playlist with GET and return only its response headers to AVFoundation.
+    static func upstreamMethod(
+        localMethod: String,
+        kind: RemoteMediaPlaybackKind
+    ) -> String {
+        if kind == .hls, localMethod.uppercased() == "HEAD" {
+            return "GET"
+        }
+        return localMethod.uppercased()
+    }
+}
+
 /// Provides AVPlayer with a loopback media origin while fetching manifests,
 /// segments and direct-file byte ranges with the same in-memory context as
 /// the WKWebView. This avoids undocumented AVURLAsset header options and never
@@ -187,7 +202,10 @@ final class RemoteHLSPlaybackServer {
             return
         }
         var request = context.makeRequest(for: remoteURL)
-        request.httpMethod = localRequest.method
+        request.httpMethod = RemoteMediaUpstreamRequestPolicy.upstreamMethod(
+            localMethod: localRequest.method,
+            kind: kind
+        )
         request.timeoutInterval = 30
         if let range = localRequest.rangeHeader, !range.isEmpty {
             request.setValue(range, forHTTPHeaderField: "Range")
@@ -211,8 +229,8 @@ final class RemoteHLSPlaybackServer {
             let finalURL = response.url ?? remoteURL
             var data = receivedData
             var mimeType = http.mimeType ?? "application/octet-stream"
-            if localRequest.method == "GET",
-               data.count <= 5_000_000,
+            var responseContentLength = http.expectedContentLength
+            if data.count <= 5_000_000,
                let playlist = String(data: data, encoding: .utf8),
                playlist.contains("#EXTM3U") {
                 let rewritten = RemoteHLSPlaylistRewriter.rewrite(
@@ -227,13 +245,14 @@ final class RemoteHLSPlaybackServer {
                 }
                 data = Data(rewritten.utf8)
                 mimeType = "application/vnd.apple.mpegurl"
+                responseContentLength = Int64(data.count)
             }
             sendResponse(
                 statusCode: http.statusCode,
                 mimeType: mimeType,
                 contentRange: http.value(forHTTPHeaderField: "Content-Range"),
                 acceptsRanges: http.value(forHTTPHeaderField: "Accept-Ranges"),
-                expectedContentLength: http.expectedContentLength,
+                expectedContentLength: responseContentLength,
                 data: data,
                 isHead: localRequest.method == "HEAD",
                 connection: connection

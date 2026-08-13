@@ -146,4 +146,28 @@ final class HLSResourcePresentationTests: XCTestCase {
         XCTAssertTrue(rewritten.contains("http://127.0.0.1/resource?url=one.ts"))
         XCTAssertTrue(rewritten.contains("#EXTINF:6,"))
     }
+
+    func testHLSHeadProbeUsesGetUpstream() {
+        XCTAssertEqual(
+            RemoteMediaUpstreamRequestPolicy.upstreamMethod(
+                localMethod: "HEAD",
+                kind: .hls
+            ),
+            "GET"
+        )
+        XCTAssertEqual(
+            RemoteMediaUpstreamRequestPolicy.upstreamMethod(
+                localMethod: "GET",
+                kind: .hls
+            ),
+            "GET"
+        )
+        XCTAssertEqual(
+            RemoteMediaUpstreamRequestPolicy.upstreamMethod(
+                localMethod: "HEAD",
+                kind: .direct
+            ),
+            "HEAD"
+        )
+    }
 }
