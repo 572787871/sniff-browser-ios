@@ -216,7 +216,7 @@ final class RemoteMediaThumbnailLoader {
             return await pending.task.value
         }
         let workID = UUID()
-        let task = Task { [weak self] in
+        let task: Task<UIImage?, Never> = Task { [weak self] in
             guard let self else { return nil }
             return await self.generateHLSFrame(
                 sourceURL: sourceURL,
