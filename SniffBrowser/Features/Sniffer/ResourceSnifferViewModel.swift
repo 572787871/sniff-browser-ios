@@ -14,7 +14,6 @@ final class ResourceSnifferViewModel {
         let errorMessage: String?
         let activationState: SniffingActivationState
         let hasStarted: Bool
-        let imageFilters: Set<ImageResourceFormat>
     }
 
     var onStateChange: ((State) -> Void)?
@@ -57,8 +56,7 @@ final class ResourceSnifferViewModel {
             lastScanAt: snapshot.lastScanAt,
             errorMessage: snapshot.errorMessage,
             activationState: snapshot.activationState,
-            hasStarted: snapshot.hasStarted,
-            imageFilters: snapshot.imageFilters
+            hasStarted: snapshot.hasStarted
         )
     }
 
@@ -80,8 +78,7 @@ final class ResourceSnifferViewModel {
                 lastScanAt: snapshot.lastScanAt,
                 errorMessage: snapshot.errorMessage,
                 activationState: snapshot.activationState,
-                hasStarted: snapshot.hasStarted,
-                imageFilters: snapshot.imageFilters
+                hasStarted: snapshot.hasStarted
             )
             self.onStateChange?(self.state)
             self.resolveHLSMetadataIfNeeded(in: snapshot.resources)
@@ -111,10 +108,6 @@ final class ResourceSnifferViewModel {
 
     func disable() async {
         await service.disableSniffing(for: state.tabID)
-    }
-
-    func setImageFilters(_ filters: Set<ImageResourceFormat>) {
-        store.setImageFilters(filters, tabID: state.tabID)
     }
 
     func clearResults() {

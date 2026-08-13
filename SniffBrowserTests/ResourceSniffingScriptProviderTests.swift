@@ -21,4 +21,13 @@ final class ResourceSniffingScriptProviderTests: XCTestCase {
     XCTAssertTrue(source.contains("data:image\\/") || source.contains("data:image/"))
     XCTAssertTrue(source.contains("backgroundImage"))
   }
+
+  func testEmbeddedVideoDoesNotReusePagePreviewArtwork() {
+    let source = ResourceSniffingScriptProvider.source
+
+    XCTAssertFalse(source.contains("const pagePreview"))
+    XCTAssertFalse(source.contains("thumbnailURL: pagePreview()"))
+    XCTAssertTrue(source.contains("element.poster"))
+    XCTAssertTrue(source.contains("scanEmbeddedHLSURLs"))
+  }
 }

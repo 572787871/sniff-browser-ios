@@ -29,6 +29,27 @@ enum WebsitePermissionDecision: String, Codable, Sendable {
     case deny
 }
 
+/// 未为具体网站保存例外时使用的全局行为。敏感能力不提供“默认允许”，
+/// 避免一次设置让所有网站静默获得权限。
+enum WebsitePermissionDefaultPolicy: String, CaseIterable, Codable, Sendable {
+    case ask
+    case deny
+
+    var displayName: String {
+        switch self {
+        case .ask: return "每次询问"
+        case .deny: return "自动阻止"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .ask: return "网站请求时由你决定"
+        case .deny: return "不弹窗，直接拒绝"
+        }
+    }
+}
+
 /// 一个网站保存的全部权限决定。
 struct WebsiteSitePermission: Codable, Equatable, Sendable {
     let host: String
@@ -39,6 +60,8 @@ struct WebsiteSitePermission: Codable, Equatable, Sendable {
 final class WebsitePermissionStore {
     static let shared = WebsitePermissionStore()
     static let storageKey = "com.sniffbrowser.websitePermissions"
+    static let defaultPolicyStorageKey =
+        "com.sniffbrowser.websitePermissionDefaultPolicies"
 
     private let defaults: UserDefaults
 
@@ -50,7 +73,24 @@ final class WebsitePermissionStore {
         for host: String,
         permission: WebsitePermission
     ) -> WebsitePermissionDecision? {
-        sites().first(where: { $0.host == host })?.permissions[permission]
+        let host = normalizedHost(host)
+        return sites().first(where: { $0.host == host })?.permissions[permission]
+    }
+
+    func defaultPolicy(
+        for permission: WebsitePermission
+    ) -> WebsitePermissionDefaultPolicy {
+        defaultPolicies()[permission] ?? .ask
+    }
+
+    func setDefaultPolicy(
+        _ policy: WebsitePermissionDefaultPolicy,
+        for permission: WebsitePermission
+    ) {
+        var policies = defaultPolicies()
+        policies[permission] = policy
+        guard let data = try? JSONEncoder().encode(policies) else { return }
+        defaults.set(data, forKey: Self.defaultPolicyStorageKey)
     }
 
     func setDecision(
@@ -58,6 +98,8 @@ final class WebsitePermissionStore {
         for host: String,
         permission: WebsitePermission
     ) {
+        let host = normalizedHost(host)
+        guard !host.isEmpty else { return }
         var all = sites()
         var entry = all.first(where: { $0.host == host })
             ?? WebsiteSitePermission(host: host, permissions: [:])
@@ -70,7 +112,24 @@ final class WebsitePermissionStore {
         persist(all)
     }
 
+    func removeDecision(
+        for host: String,
+        permission: WebsitePermission
+    ) {
+        let host = normalizedHost(host)
+        var all = sites()
+        guard let index = all.firstIndex(where: { $0.host == host }) else {
+            return
+        }
+        all[index].permissions[permission] = nil
+        if all[index].permissions.isEmpty {
+            all.remove(at: index)
+        }
+        persist(all)
+    }
+
     func removeSite(host: String) {
+        let host = normalizedHost(host)
         persist(sites().filter { $0.host != host })
     }
 
@@ -82,7 +141,37 @@ final class WebsitePermissionStore {
         guard let data = defaults.data(forKey: Self.storageKey) else {
             return []
         }
-        return (try? JSONDecoder().decode([WebsiteSitePermission].self, from: data)) ?? []
+        let decoded = (try? JSONDecoder().decode(
+            [WebsiteSitePermission].self,
+            from: data
+        )) ?? []
+        var merged: [String: [WebsitePermission: WebsitePermissionDecision]] = [:]
+        decoded.forEach { site in
+            let host = normalizedHost(site.host)
+            guard !host.isEmpty else { return }
+            merged[host, default: [:]].merge(site.permissions) { _, latest in
+                latest
+            }
+        }
+        return merged.map {
+            WebsiteSitePermission(host: $0.key, permissions: $0.value)
+        }.sorted { $0.host < $1.host }
+    }
+
+    private func defaultPolicies()
+        -> [WebsitePermission: WebsitePermissionDefaultPolicy] {
+        guard let data = defaults.data(forKey: Self.defaultPolicyStorageKey)
+        else { return [:] }
+        return (try? JSONDecoder().decode(
+            [WebsitePermission: WebsitePermissionDefaultPolicy].self,
+            from: data
+        )) ?? [:]
+    }
+
+    private func normalizedHost(_ host: String) -> String {
+        host.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
     }
 
     private func persist(_ sites: [WebsiteSitePermission]) {

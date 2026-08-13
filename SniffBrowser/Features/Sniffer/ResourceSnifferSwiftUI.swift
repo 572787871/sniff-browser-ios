@@ -80,7 +80,6 @@ struct ResourceSnifferChromeConfiguration: Equatable {
         let filter: ResourceSnifferFilter
         let count: Int
         let isSelected: Bool
-        let showsRefinement: Bool
 
         var id: Int { filter.rawValue }
     }
@@ -180,24 +179,13 @@ struct ResourceSnifferChromeConfiguration: Equatable {
                         filter.includes($0.resourceType)
                     }.count
                     : 0,
-                isSelected: filter == selectedFilter,
-                showsRefinement: filter == .image
-                    && !state.imageFilters.isEmpty
-                    && state.imageFilters != [.all]
+                isSelected: filter == selectedFilter
             )
         }
         let selectedResources = canShowResults
             ? state.resources.filter { selectedFilter.includes($0.resourceType) }
             : []
-        if selectedFilter == .image,
-           !state.imageFilters.isEmpty,
-           state.imageFilters != [.all] {
-            resultCount = selectedResources.filter { resource in
-                state.imageFilters.contains { $0.matches(resource) }
-            }.count
-        } else {
-            resultCount = selectedResources.count
-        }
+        resultCount = selectedResources.count
         self.selectedSortOrder = selectedSortOrder
         showsResultControls = canShowResults && !state.resources.isEmpty
     }
@@ -472,7 +460,7 @@ private struct SWResourceStatusBadge: View {
     }
 }
 
-/// ShipSwift tab-button recipe adapted for counts and image refinements.
+/// ShipSwift tab-button recipe adapted for resource counts.
 private struct SWResourceFilterButton: View {
     let item: ResourceSnifferChromeConfiguration.FilterItem
     let action: () -> Void
@@ -488,14 +476,6 @@ private struct SWResourceFilterButton: View {
                     : item.filter.title)
                     .contentTransition(.numericText())
 
-                if item.showsRefinement {
-                    Circle()
-                        .fill(item.isSelected
-                            ? Color(uiColor: ResourceSnifferPalette.accentContent)
-                            : Color(uiColor: ResourceSnifferPalette.accent))
-                        .frame(width: 6, height: 6)
-                        .accessibilityHidden(true)
-                }
             }
             .font(.subheadline.weight(item.isSelected ? .semibold : .medium))
             .padding(.horizontal, 14)
@@ -597,150 +577,6 @@ struct ResourceSnifferEmptyStateView: View {
             .frame(maxWidth: .infinity, minHeight: 330)
         }
         .scrollIndicators(.hidden)
-    }
-}
-
-struct ImageResourceFilterSheetView: View {
-    let onConfirm: (Set<ImageResourceFormat>) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var selection: Set<ImageResourceFormat>
-
-    private let columns = [
-        GridItem(.flexible(), spacing: 10),
-        GridItem(.flexible(), spacing: 10)
-    ]
-
-    init(
-        selection: Set<ImageResourceFormat>,
-        onConfirm: @escaping (Set<ImageResourceFormat>) -> Void
-    ) {
-        self.onConfirm = onConfirm
-        _selection = State(initialValue:
-            selection.isEmpty || selection.contains(.all)
-                ? [.all]
-                : selection
-        )
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("图片类型")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(
-                            Color(uiColor: ResourceSnifferPalette.primaryText)
-                        )
-                    Text("可同时选择多种格式")
-                        .font(.caption)
-                        .foregroundStyle(
-                            Color(uiColor: ResourceSnifferPalette.secondaryText)
-                        )
-                }
-                Spacer()
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.body.weight(.semibold))
-                        .frame(width: 36, height: 36)
-                        .background(
-                            Color(uiColor: ResourceSnifferPalette.secondarySurface),
-                            in: Circle()
-                        )
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("取消")
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 16)
-
-            LazyVGrid(columns: columns, spacing: 10) {
-                ForEach(ImageResourceFormat.allCases, id: \.self) { format in
-                    formatButton(format)
-                }
-            }
-            .padding(.horizontal, 20)
-
-            Spacer(minLength: 20)
-
-            HStack(spacing: 12) {
-                Button("取消") { dismiss() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .frame(maxWidth: .infinity)
-
-                Button("确定") {
-                    onConfirm(selection == [.all] ? [] : selection)
-                    dismiss()
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Color(uiColor: ResourceSnifferPalette.accent))
-                .controlSize(.large)
-                .frame(maxWidth: .infinity)
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
-        }
-        .background(Color(uiColor: ResourceSnifferPalette.background))
-    }
-
-    private func formatButton(_ format: ImageResourceFormat) -> some View {
-        let selected = selection.contains(format)
-        return Button {
-            toggle(format)
-        } label: {
-            HStack(spacing: 8) {
-                Text(format.title)
-                    .font(.subheadline.weight(selected ? .semibold : .regular))
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(selected
-                        ? Color(uiColor: ResourceSnifferPalette.accent)
-                        : Color(uiColor: ResourceSnifferPalette.tertiaryText))
-            }
-            .foregroundStyle(
-                Color(uiColor: ResourceSnifferPalette.primaryText)
-            )
-            .padding(.horizontal, 14)
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .background(
-                selected
-                    ? Color(uiColor: ResourceSnifferPalette.accentFill)
-                    : Color(uiColor: ResourceSnifferPalette.surface),
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(
-                        selected
-                            ? Color(uiColor: ResourceSnifferPalette.accent)
-                            : Color(uiColor: ResourceSnifferPalette.border),
-                        lineWidth: selected ? 1.2 : 0.5
-                    )
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityValue(selected ? "已选择" : "未选择")
-    }
-
-    private func toggle(_ format: ImageResourceFormat) {
-        if format == .all {
-            selection = [.all]
-            return
-        }
-        selection.remove(.all)
-        if selection.contains(format) {
-            selection.remove(format)
-        } else {
-            selection.insert(format)
-        }
-        if selection.isEmpty {
-            selection = [.all]
-        }
     }
 }
 

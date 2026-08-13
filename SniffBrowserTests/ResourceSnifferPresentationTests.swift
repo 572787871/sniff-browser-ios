@@ -23,7 +23,7 @@ final class ResourceSnifferPresentationTests: XCTestCase {
     }
 
     @MainActor
-    func testActivePresentationGroupsHLSWithVideoAndShowsImageRefinement() throws {
+    func testActivePresentationGroupsHLSWithVideo() throws {
         let tabID = UUID()
         let resources = [
             try resource(type: .hls, tabID: tabID),
@@ -35,8 +35,7 @@ final class ResourceSnifferPresentationTests: XCTestCase {
                 tabID: tabID,
                 resources: resources,
                 activationState: .active,
-                hasStarted: true,
-                imageFilters: [.jpeg, .png]
+                hasStarted: true
             ),
             selectedFilter: .image
         )
@@ -44,7 +43,6 @@ final class ResourceSnifferPresentationTests: XCTestCase {
         XCTAssertEqual(configuration.statusTitle, "捕获中")
         XCTAssertEqual(configuration.primaryTitle, "暂停捕获")
         XCTAssertEqual(configuration.filters.map(\.count), [3, 1, 1, 1])
-        XCTAssertTrue(configuration.filters.last?.showsRefinement == true)
         XCTAssertTrue(configuration.filters.last?.isSelected == true)
         XCTAssertEqual(configuration.resultCount, 1)
         XCTAssertTrue(configuration.showsResultControls)
@@ -104,8 +102,7 @@ final class ResourceSnifferPresentationTests: XCTestCase {
         resources: [DetectedResource],
         isPrivate: Bool = false,
         activationState: SniffingActivationState,
-        hasStarted: Bool,
-        imageFilters: Set<ImageResourceFormat> = []
+        hasStarted: Bool
     ) -> ResourceSnifferViewModel.State {
         ResourceSnifferViewModel.State(
             tabID: tabID,
@@ -117,8 +114,7 @@ final class ResourceSnifferPresentationTests: XCTestCase {
             lastScanAt: nil,
             errorMessage: nil,
             activationState: activationState,
-            hasStarted: hasStarted,
-            imageFilters: imageFilters
+            hasStarted: hasStarted
         )
     }
 

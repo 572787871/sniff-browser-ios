@@ -16,7 +16,6 @@ final class TabResourceStore {
         var manualSeenKeys: Set<String> = []
         var activationState: SniffingActivationState = .disabled
         var hasStarted = false
-        var imageFilters: Set<ImageResourceFormat> = []
     }
 
     private struct Observation {
@@ -55,7 +54,6 @@ final class TabResourceStore {
         bucket.manualScanID = nil
         bucket.manualSeenKeys.removeAll()
         bucket.hasStarted = false
-        bucket.imageFilters.removeAll()
         buckets[tabID] = bucket
         notify(tabID)
     }
@@ -133,7 +131,6 @@ final class TabResourceStore {
             bucket.activationState = .disabled
             bucket.scanState = .idle
             bucket.hasStarted = false
-            bucket.imageFilters.removeAll()
         } else if bucket.pageKey == nil {
             bucket.pageKey = nextPageKey
         }
@@ -232,8 +229,7 @@ final class TabResourceStore {
             lastScanAt: bucket?.lastScanAt,
             errorMessage: bucket?.errorMessage,
             activationState: bucket?.activationState ?? .disabled,
-            hasStarted: bucket?.hasStarted ?? false,
-            imageFilters: bucket?.imageFilters ?? []
+            hasStarted: bucket?.hasStarted ?? false
         )
     }
 
@@ -257,20 +253,6 @@ final class TabResourceStore {
         bucket.errorMessage = nil
         bucket.manualScanID = nil
         bucket.manualSeenKeys.removeAll(keepingCapacity: true)
-        buckets[tabID] = bucket
-        notify(tabID)
-    }
-
-    func imageFilters(for tabID: UUID) -> Set<ImageResourceFormat> {
-        buckets[tabID]?.imageFilters ?? []
-    }
-
-    func setImageFilters(
-        _ filters: Set<ImageResourceFormat>,
-        tabID: UUID
-    ) {
-        guard var bucket = buckets[tabID] else { return }
-        bucket.imageFilters = filters == [.all] ? [] : filters
         buckets[tabID] = bucket
         notify(tabID)
     }

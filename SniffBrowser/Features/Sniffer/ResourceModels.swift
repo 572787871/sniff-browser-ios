@@ -217,7 +217,6 @@ struct TabResourceSnapshot: Equatable, Sendable {
     let errorMessage: String?
     let activationState: SniffingActivationState
     let hasStarted: Bool
-    let imageFilters: Set<ImageResourceFormat>
 }
 
 enum ResourceSniffingError: LocalizedError, Equatable {

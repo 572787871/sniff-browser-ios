@@ -132,29 +132,6 @@ enum ResourceSniffingScriptProvider {
           });
         }
       };
-      const pagePreview = () => {
-        const metadata = document.querySelector(
-          'meta[property="og:image:secure_url"],meta[property="og:image"],'
-          + 'meta[name="twitter:image"],meta[itemprop="thumbnailUrl"]'
-        )?.content;
-        if (metadata) return metadata;
-        const structuredData = Array.from(
-          document.querySelectorAll('script[type="application/ld+json"]')
-        );
-        for (const script of structuredData) {
-          try {
-            const parsed = JSON.parse(script.textContent || '{}');
-            const entries = Array.isArray(parsed) ? parsed : [parsed];
-            for (const entry of entries) {
-              const thumbnail = Array.isArray(entry?.thumbnailUrl)
-                ? entry.thumbnailUrl[0]
-                : entry?.thumbnailUrl;
-              if (typeof thumbnail === 'string' && thumbnail) return thumbnail;
-            }
-          } catch (_) {}
-        }
-        return null;
-      };
       const mediaItem = (element, source) => ({
         url: element.currentSrc || element.src,
         mimeType: element.getAttribute?.("type") || null,
@@ -163,8 +140,7 @@ enum ResourceSniffingScriptProvider {
         height: element.videoHeight,
         thumbnailURL: element instanceof HTMLVideoElement
           ? (element.poster || element.getAttribute?.("poster")
-            || element.dataset?.poster || element.dataset?.thumbnail
-            || pagePreview())
+            || element.dataset?.poster || element.dataset?.thumbnail)
           : null,
         source,
         elementType: element instanceof HTMLVideoElement ? "video" : "audio"
@@ -225,8 +201,7 @@ enum ResourceSniffingScriptProvider {
               thumbnailURL: parentTag === "video"
                 ? (element.parentElement?.poster
                   || element.parentElement?.dataset?.poster
-                  || element.parentElement?.dataset?.thumbnail
-                  || pagePreview()) : null,
+                  || element.parentElement?.dataset?.thumbnail) : null,
               source, elementType: parentTag === "audio" ? "source-audio" : "source-video" });
           }
         } else if (tag === "track") {
@@ -278,7 +253,7 @@ enum ResourceSniffingScriptProvider {
               duration: media.duration,
               width: media.width,
               height: media.height,
-              thumbnailURL: media.poster || media.pic || media.thumbnail || pagePreview(),
+              thumbnailURL: media.poster || media.pic || media.thumbnail || null,
               source,
               elementType: "source-video"
             });
@@ -296,7 +271,6 @@ enum ResourceSniffingScriptProvider {
           matches.slice(0, 50).forEach(url => enqueue({
             url,
             mimeType: "application/vnd.apple.mpegurl",
-            thumbnailURL: pagePreview(),
             source,
             elementType: "source-video"
           }));

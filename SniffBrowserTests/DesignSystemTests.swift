@@ -465,7 +465,7 @@ final class DesignSystemTests: XCTestCase {
   }
 
   @MainActor
-  func testBrowserTransitionCoverMatchesTheNativePageContentFrame() throws {
+  func testBrowserTransitionCoverMatchesTheAnimatedVisibleContentFrame() throws {
     let controller = BrowserViewController(
       viewModel: BrowserViewModel(),
       tabManager: BrowserTabManager(restoresSession: false),
@@ -485,21 +485,21 @@ final class DesignSystemTests: XCTestCase {
 
     controller.installTabTransitionCover(image: image)
     let cover = try XCTUnwrap(controller.tabTransitionCoverView)
-    let expectedFrame = controller.newTabView.convert(
-      controller.newTabView.bounds,
-      to: controller.contentView
+    let expectedFrame = controller.tabTransitionContentFrame(
+      in: controller.contentView
     )
-    let fullTransitionFrame = controller.tabTransitionFullContentFrame(
-      in: controller.view
+    let fullSnapshotFrame = controller.tabTransitionSnapshotFullFrame(
+      in: controller.contentView
     )
-    let visibleTransitionFrame = controller.tabTransitionContentFrame(
-      in: controller.view
+    let expectedImageFrame = TabOverviewTransitionGeometry.clippedPageFrame(
+      contentSize: image.size,
+      fullContainerFrame: fullSnapshotFrame,
+      clippedTo: expectedFrame
     )
 
     XCTAssertTrue(cover.superview === controller.contentView)
     XCTAssertEqual(cover.frame, expectedFrame)
-    XCTAssertEqual(cover.renderedImageFrame.minY, 0, accuracy: 0.001)
-    XCTAssertLessThan(visibleTransitionFrame.maxY, fullTransitionFrame.maxY)
+    XCTAssertEqual(cover.renderedImageFrame, expectedImageFrame)
     controller.removeTabTransitionCover(animated: false)
     XCTAssertNil(controller.tabTransitionCoverView)
   }

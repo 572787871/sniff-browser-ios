@@ -63,6 +63,28 @@ final class RemoteMediaThumbnailLoader {
                 asset = AVURLAsset(url: playbackURL)
             } catch {
                 guard !operation.isCancelled else { return }
+                AppLogger(.sniffer).debug(
+                    "视频预览代理创建失败 type=\(resource.resourceType.rawValue) url=\(resource.canonicalURL.absoluteString) error=\(error.localizedDescription)"
+                )
+                completion(nil)
+                return
+            }
+
+            do {
+                guard try await asset.load(.isPlayable) else {
+                    throw RemoteHLSPlaybackServerError.invalidResponse
+                }
+                let videoTracks = try await asset.loadTracks(
+                    withMediaType: .video
+                )
+                guard !videoTracks.isEmpty else {
+                    throw RemoteHLSPlaybackServerError.invalidResponse
+                }
+            } catch {
+                guard !operation.isCancelled else { return }
+                AppLogger(.sniffer).debug(
+                    "视频预览资源不可播放 type=\(resource.resourceType.rawValue) url=\(resource.canonicalURL.absoluteString) error=\(error.localizedDescription)"
+                )
                 completion(nil)
                 return
             }
@@ -73,13 +95,20 @@ final class RemoteMediaThumbnailLoader {
             generator.requestedTimeToleranceBefore = .positiveInfinity
             generator.requestedTimeToleranceAfter = .positiveInfinity
             operation.imageGenerator = generator
-            let seconds = resource.duration.map {
-                min(max($0 * 0.02, 1), 5)
-            } ?? 1
+            let loadedDuration = try? await asset.load(.duration)
+            let duration = resource.duration.flatMap {
+                $0.isFinite && $0 > 0 ? $0 : nil
+            } ?? loadedDuration.flatMap {
+                let value = $0.seconds
+                return value.isFinite && value > 0 ? value : nil
+            }
+            let seconds = duration.map {
+                min(max($0 * 0.03, 0.35), 3)
+            } ?? 0.75
             let time = CMTime(seconds: seconds, preferredTimescale: 600)
             generator.generateCGImagesAsynchronously(
                 forTimes: [NSValue(time: time)]
-            ) { [weak self, weak operation] _, cgImage, _, result, _ in
+            ) { [weak self, weak operation] _, cgImage, _, result, error in
                 Task { @MainActor in
                     guard let self,
                           let operation,
@@ -87,6 +116,9 @@ final class RemoteMediaThumbnailLoader {
                     else { return }
                     operation.imageGenerator = nil
                     guard result == .succeeded, let cgImage else {
+                        AppLogger(.sniffer).debug(
+                            "视频预览取帧失败 type=\(resource.resourceType.rawValue) time=\(seconds) url=\(resource.canonicalURL.absoluteString) error=\(error?.localizedDescription ?? "unknown")"
+                        )
                         completion(nil)
                         return
                     }

@@ -434,9 +434,22 @@ extension BrowserViewController {
     removeTabTransitionCover(animated: false)
     view.layoutIfNeeded()
 
-    let content = tabTransitionContentView()
     let coverView = TabPageSnapshotView(image: image)
-    coverView.frame = content.convert(content.bounds, to: contentView)
+    // The animated surface stops at the webpage's visible viewport (between
+    // the address bar and bottom toolbar). The handoff cover must use exactly
+    // the same container and rendered-image geometry. Covering the complete
+    // WKWebView here used to reveal a differently cropped image for one frame,
+    // which looked like the page jumped vertically after selecting a tab.
+    let visibleFrame = tabTransitionContentFrame(in: contentView)
+    let fullFrame = tabTransitionSnapshotFullFrame(in: contentView)
+    coverView.frame = visibleFrame
+    coverView.setRenderedImageFrame(
+      TabOverviewTransitionGeometry.clippedPageFrame(
+        contentSize: image.size,
+        fullContainerFrame: fullFrame,
+        clippedTo: visibleFrame
+      )
+    )
     coverView.backgroundColor = AppColors.surface
     coverView.isAccessibilityElement = false
     coverView.accessibilityIdentifier = "browser.tabTransitionCover"
@@ -454,7 +467,7 @@ extension BrowserViewController {
     guard tabTransitionCoverView != nil else { return }
     if !newTabView.isHidden {
       DispatchQueue.main.async { [weak self] in
-        self?.removeTabTransitionCover(animated: true)
+        self?.removeTabTransitionCover(animated: false)
       }
       return
     }
@@ -463,7 +476,7 @@ extension BrowserViewController {
        webView.url != nil,
        !webView.isLoading {
       DispatchQueue.main.async { [weak self] in
-        self?.removeTabTransitionCover(animated: true)
+        self?.removeTabTransitionCover(animated: false)
       }
       return
     }

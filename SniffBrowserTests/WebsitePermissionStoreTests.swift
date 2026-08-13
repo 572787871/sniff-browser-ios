@@ -94,4 +94,54 @@ final class WebsitePermissionStoreTests: XCTestCase {
             .allow
         )
     }
+
+    func testDefaultPolicyAsksUntilExplicitlyChanged() {
+        XCTAssertEqual(store.defaultPolicy(for: .camera), .ask)
+
+        store.setDefaultPolicy(.deny, for: .camera)
+
+        XCTAssertEqual(store.defaultPolicy(for: .camera), .deny)
+        XCTAssertEqual(
+            WebsitePermissionStore(defaults: defaults)
+                .defaultPolicy(for: .camera),
+            .deny
+        )
+        XCTAssertEqual(store.defaultPolicy(for: .microphone), .ask)
+    }
+
+    func testRemoveDecisionKeepsOtherPermissionAndDropsEmptySite() {
+        store.setDecision(.allow, for: "example.com", permission: .camera)
+        store.setDecision(.deny, for: "example.com", permission: .location)
+
+        store.removeDecision(for: "example.com", permission: .camera)
+
+        XCTAssertNil(store.decision(for: "example.com", permission: .camera))
+        XCTAssertEqual(
+            store.decision(for: "example.com", permission: .location),
+            .deny
+        )
+
+        store.removeDecision(for: "example.com", permission: .location)
+        XCTAssertTrue(store.sites().isEmpty)
+    }
+
+    func testHostMatchingIsCaseAndTrailingDotInsensitive() {
+        store.setDecision(.allow, for: " EXAMPLE.COM. ", permission: .camera)
+
+        XCTAssertEqual(
+            store.decision(for: "example.com", permission: .camera),
+            .allow
+        )
+        XCTAssertEqual(store.sites().map(\.host), ["example.com"])
+    }
+
+    func testRemovingSiteExceptionsPreservesDefaultPolicies() {
+        store.setDefaultPolicy(.deny, for: .location)
+        store.setDecision(.allow, for: "example.com", permission: .location)
+
+        store.removeAll()
+
+        XCTAssertTrue(store.sites().isEmpty)
+        XCTAssertEqual(store.defaultPolicy(for: .location), .deny)
+    }
 }

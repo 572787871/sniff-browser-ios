@@ -448,6 +448,10 @@ extension BrowserViewController: WKUIDelegate {
       decisionHandler(decision == .allow ? .grant : .deny)
       return
     }
+    if store.defaultPolicy(for: permission) == .deny {
+      decisionHandler(.deny)
+      return
+    }
     guard canPresentPermissionAlert() else {
       decisionHandler(.deny)
       return
@@ -455,12 +459,8 @@ extension BrowserViewController: WKUIDelegate {
     presentPermissionAlert(
       title: "“\(host)”请求使用\(permission.displayName)",
       message: "允许该网站使用\(permission.displayName)吗？你可以稍后在浏览器设置中修改。",
-      remember: { allowed in
-        store.setDecision(
-          allowed ? .allow : .deny,
-          for: host,
-          permission: permission
-        )
+      remember: { decision in
+        store.setDecision(decision, for: host, permission: permission)
       },
       decisionHandler: decisionHandler
     )
@@ -477,10 +477,22 @@ extension BrowserViewController: WKUIDelegate {
     let store = WebsitePermissionStore.shared
     let cameraDecision = store.decision(for: host, permission: .camera)
     let microphoneDecision = store.decision(for: host, permission: .microphone)
-    if let cameraDecision, let microphoneDecision {
-      decisionHandler(
-        cameraDecision == .allow && microphoneDecision == .allow ? .grant : .deny
-      )
+    if cameraDecision == .deny || microphoneDecision == .deny {
+      decisionHandler(.deny)
+      return
+    }
+    if cameraDecision == .allow, microphoneDecision == .allow {
+      decisionHandler(.grant)
+      return
+    }
+    if cameraDecision == nil,
+       store.defaultPolicy(for: .camera) == .deny {
+      decisionHandler(.deny)
+      return
+    }
+    if microphoneDecision == nil,
+       store.defaultPolicy(for: .microphone) == .deny {
+      decisionHandler(.deny)
       return
     }
     guard canPresentPermissionAlert() else {
@@ -490,8 +502,7 @@ extension BrowserViewController: WKUIDelegate {
     presentPermissionAlert(
       title: "“\(host)”请求使用摄像头和麦克风",
       message: "允许该网站使用摄像头和麦克风吗？你可以稍后在浏览器设置中修改。",
-      remember: { allowed in
-        let decision: WebsitePermissionDecision = allowed ? .allow : .deny
+      remember: { decision in
         store.setDecision(decision, for: host, permission: .camera)
         store.setDecision(decision, for: host, permission: .microphone)
       },
@@ -506,7 +517,7 @@ extension BrowserViewController: WKUIDelegate {
   private func presentPermissionAlert(
     title: String,
     message: String,
-    remember: @escaping (Bool) -> Void,
+    remember: @escaping (WebsitePermissionDecision) -> Void,
     decisionHandler: @escaping (WKPermissionDecision) -> Void
   ) {
     let alert = UIAlertController(
@@ -515,19 +526,24 @@ extension BrowserViewController: WKUIDelegate {
       preferredStyle: .alert
     )
     alert.addAction(
-      UIAlertAction(title: "允许", style: .default) { _ in
-        remember(true)
+      UIAlertAction(title: "允许一次", style: .default) { _ in
         decisionHandler(.grant)
       }
     )
     alert.addAction(
-      UIAlertAction(title: "拒绝", style: .destructive) { _ in
-        remember(false)
+      UIAlertAction(title: "始终允许", style: .default) { _ in
+        remember(.allow)
+        decisionHandler(.grant)
+      }
+    )
+    alert.addAction(
+      UIAlertAction(title: "始终阻止", style: .destructive) { _ in
+        remember(.deny)
         decisionHandler(.deny)
       }
     )
     alert.addAction(
-      UIAlertAction(title: "仅本次拒绝", style: .cancel) { _ in
+      UIAlertAction(title: "暂不允许", style: .cancel) { _ in
         decisionHandler(.deny)
       }
     )

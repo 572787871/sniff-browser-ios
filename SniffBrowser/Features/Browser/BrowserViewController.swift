@@ -1,6 +1,15 @@
 import UIKit
 import WebKit
 
+private struct BrowserSearchOverlayPalette {
+  let primary: UIColor
+  let secondary: UIColor
+  let accent: UIColor
+  let separator: UIColor
+  let selection: UIColor
+  let cardBackground: UIColor
+}
+
 @MainActor
 protocol BrowserRouting: AnyObject {
   func showResources(_ controller: ResourceSnifferViewController)
@@ -590,13 +599,12 @@ final class BrowserViewController: UIViewController {
     searchHistoryItems = Array(matchingEntries.prefix(12))
     if activeTab?.isPrivate == true {
       searchHistoryEmptyLabel.text = "无痕模式不显示历史记录"
-      searchHistoryEmptyLabel.textColor = AppColors.privateBrowsingDescription
     } else {
       searchHistoryEmptyLabel.text = normalizedQuery.isEmpty
         ? "暂无历史记录"
         : "没有匹配的历史记录"
-      searchHistoryEmptyLabel.textColor = AppColors.secondaryText
     }
+    searchHistoryEmptyLabel.textColor = searchOverlayPalette.secondary
     searchHistoryEmptyLabel.isHidden = !searchHistoryItems.isEmpty
     searchHistoryTableView.reloadData()
   }
@@ -644,6 +652,7 @@ final class BrowserViewController: UIViewController {
   }
 
   private func makeQuickLinkButton(_ link: BrowserQuickLink) -> UIButton {
+    let palette = searchOverlayPalette
     var configuration = UIButton.Configuration.tinted()
     configuration.image = UIImage(systemName: link.symbolName)
     configuration.title = link.title
@@ -653,8 +662,10 @@ final class BrowserViewController: UIViewController {
     configuration.cornerStyle = .medium
     configuration.titleLineBreakMode = .byTruncatingTail
     configuration.subtitleLineBreakMode = .byTruncatingMiddle
-    configuration.baseForegroundColor = AppColors.primaryText
-    configuration.baseBackgroundColor = AppColors.surface
+    configuration.baseForegroundColor = palette.primary
+    configuration.baseBackgroundColor = palette.cardBackground
+    configuration.background.strokeColor = palette.separator
+    configuration.background.strokeWidth = 0.5
     configuration.contentInsets = NSDirectionalEdgeInsets(
       top: AppSpacing.xs,
       leading: AppSpacing.sm,
@@ -679,6 +690,59 @@ final class BrowserViewController: UIViewController {
       button.heightAnchor.constraint(equalToConstant: 76),
     ])
     return button
+  }
+
+  private var searchOverlayPalette: BrowserSearchOverlayPalette {
+    switch pageChromeForegroundStyle {
+    case .light:
+      // The page canvas is dark. Use neutral translucent whites instead of
+      // the app accent so suggestions merge with the webpage rather than
+      // becoming a high-contrast green/blue layer.
+      return BrowserSearchOverlayPalette(
+        primary: UIColor.white.withAlphaComponent(0.94),
+        secondary: UIColor.white.withAlphaComponent(0.64),
+        accent: UIColor.white.withAlphaComponent(0.82),
+        separator: UIColor.white.withAlphaComponent(0.10),
+        selection: UIColor.white.withAlphaComponent(0.10),
+        cardBackground: UIColor.white.withAlphaComponent(0.07)
+      )
+    case .dark:
+      return BrowserSearchOverlayPalette(
+        primary: UIColor.black.withAlphaComponent(0.88),
+        secondary: UIColor.black.withAlphaComponent(0.56),
+        accent: UIColor.black.withAlphaComponent(0.72),
+        separator: UIColor.black.withAlphaComponent(0.10),
+        selection: UIColor.black.withAlphaComponent(0.07),
+        cardBackground: UIColor.black.withAlphaComponent(0.045)
+      )
+    case nil:
+      return BrowserSearchOverlayPalette(
+        primary: AppColors.primaryText,
+        secondary: AppColors.secondaryText,
+        accent: AppColors.accent,
+        separator: AppColors.browserChromeSeparator,
+        selection: AppColors.browserChromeSelection,
+        cardBackground: AppColors.surface
+      )
+    }
+  }
+
+  private func applySearchOverlayTheme() {
+    let palette = searchOverlayPalette
+    searchHistoryEmptyLabel.textColor = palette.secondary
+    searchHistoryTableView.separatorColor = palette.separator
+    searchHistoryTableView.visibleCells
+      .compactMap { $0 as? BrowserSearchHistoryCell }
+      .forEach { $0.applyPalette(palette) }
+    quickLinksStack.arrangedSubviews
+      .compactMap { $0 as? UIButton }
+      .forEach { button in
+        guard var configuration = button.configuration else { return }
+        configuration.baseForegroundColor = palette.primary
+        configuration.baseBackgroundColor = palette.cardBackground
+        configuration.background.strokeColor = palette.separator
+        button.configuration = configuration
+      }
   }
 
   private func openQuickLink(_ link: BrowserQuickLink) {
@@ -1166,6 +1230,7 @@ final class BrowserViewController: UIViewController {
       self.searchOverlayBackgroundView.backgroundColor = resolvedBackground
       self.quickLinksScrollView.backgroundColor = resolvedBackground
       self.searchHistoryTableView.backgroundColor = resolvedBackground
+      self.applySearchOverlayTheme()
       self.activeWebView?.backgroundColor = resolvedBackground
       self.activeWebView?.scrollView.backgroundColor = resolvedBackground
       self.activeWebView?.underPageBackgroundColor = resolvedBackground
@@ -1444,6 +1509,7 @@ extension BrowserViewController: UITableViewDataSource, UITableViewDelegate {
       return UITableViewCell()
     }
     cell.configure(with: searchHistoryItems[indexPath.row])
+    cell.applyPalette(searchOverlayPalette)
     return cell
   }
 
@@ -1595,6 +1661,14 @@ private final class BrowserSearchHistoryCell: UITableViewCell {
     titleLabel.text = item.title
     hostLabel.text = item.host
     accessibilityLabel = "\(item.title)，\(item.host)"
+  }
+
+  func applyPalette(_ palette: BrowserSearchOverlayPalette) {
+    titleLabel.textColor = palette.primary
+    hostLabel.textColor = palette.secondary
+    iconView.tintColor = palette.secondary
+    arrowView.tintColor = palette.accent
+    selectedBackgroundView?.backgroundColor = palette.selection
   }
 
   private func configure() {

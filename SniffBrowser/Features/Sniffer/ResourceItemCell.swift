@@ -110,12 +110,25 @@ final class ResourceListCell: UITableViewCell {
             ? AppIconography.scanApertureImage(pointSize: 23, weight: 1.9)
             : UIImage(systemName: symbolName(for: resource.resourceType))
         typeIconView.backgroundColor = ResourceSnifferPalette.accentFill
-        let thumbnailURL = resource.resourceType == .image
-            ? (URL(string: resource.originalURLString) ?? resource.canonicalURL)
-            : resource.thumbnailURL
         let supportsMediaFrame = resource.resourceType == .video
             || resource.resourceType == .hls
-        iconWidthConstraint?.constant = thumbnailURL == nil ? 48 : 80
+        // Video rows always start with a neutral media placeholder and then
+        // replace it with a frame extracted from that exact media URL. A page
+        // og:image is not a valid per-video preview and made every HLS row look
+        // identical on pages containing several streams.
+        let thumbnailURL: URL?
+        switch resource.resourceType {
+        case .image:
+            thumbnailURL = URL(string: resource.originalURLString)
+                ?? resource.canonicalURL
+        case .video, .hls:
+            thumbnailURL = nil
+        default:
+            thumbnailURL = resource.thumbnailURL
+        }
+        iconWidthConstraint?.constant = (thumbnailURL != nil || supportsMediaFrame)
+            ? 80
+            : 48
         typeIconView.contentMode = thumbnailURL == nil
             ? .center
             : .scaleAspectFill

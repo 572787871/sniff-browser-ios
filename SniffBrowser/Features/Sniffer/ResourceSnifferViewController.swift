@@ -49,7 +49,6 @@ final class ResourceSnifferViewController: BaseViewController {
         let errorMessage: String?
         let activationState: SniffingActivationState
         let hasStarted: Bool
-        let imageFilters: Set<ImageResourceFormat>
         let selectedFilter: ResourceSnifferFilter
         let selectedSortOrder: ResourceSnifferSortOrder
         let filterCounts: [Int]
@@ -67,7 +66,6 @@ final class ResourceSnifferViewController: BaseViewController {
     private var scanState: ResourceScanState = .idle
     private var activationState: SniffingActivationState = .disabled
     private var hasStarted = false
-    private var imageFilters: Set<ImageResourceFormat> = []
     private var renderedRows: [RenderedResourceRow] = []
     private var renderedContent: RenderedContent?
     private var didPerformAutomaticStart = false
@@ -85,7 +83,7 @@ final class ResourceSnifferViewController: BaseViewController {
     ) {
         self.viewModel = viewModel
         self.automaticallyStartsSniffing = automaticallyStartsSniffing
-        selectedFilter = viewModel.state.imageFilters.isEmpty ? .all : .image
+        selectedFilter = .all
         super.init(title: "资源嗅探", prefersLargeTitle: false)
     }
 
@@ -140,15 +138,8 @@ final class ResourceSnifferViewController: BaseViewController {
         // A stopped scan keeps its results visible. A brand-new page has no
         // visible resources until the user has explicitly started scanning.
         guard activationState.isEnabled || hasStarted else { return [] }
-        var filtered = resources.filter {
+        let filtered = resources.filter {
             selectedFilter.includes($0.resourceType)
-        }
-        guard selectedFilter == .image,
-              !imageFilters.isEmpty,
-              imageFilters != [.all]
-        else { return sorted(filtered) }
-        filtered = filtered.filter { resource in
-            imageFilters.contains { $0.matches(resource) }
         }
         return sorted(filtered)
     }
@@ -189,7 +180,6 @@ final class ResourceSnifferViewController: BaseViewController {
             self.scanState = state.scanState
             self.activationState = state.activationState
             self.hasStarted = state.hasStarted
-            self.imageFilters = state.imageFilters
             self.updateContent(state: state)
         }
     }
@@ -335,7 +325,6 @@ final class ResourceSnifferViewController: BaseViewController {
             errorMessage: state.errorMessage,
             activationState: state.activationState,
             hasStarted: state.hasStarted,
-            imageFilters: state.imageFilters,
             selectedFilter: selectedFilter,
             selectedSortOrder: selectedSortOrder,
             filterCounts: ResourceSnifferFilter.allCases.map { filter in
@@ -690,12 +679,6 @@ final class ResourceSnifferViewController: BaseViewController {
     }
 
     private func selectFilter(_ filter: ResourceSnifferFilter) {
-        if filter == .image {
-            selectedFilter = .image
-            updateContent(state: viewModel.state)
-            presentImageFilterPanel()
-            return
-        }
         selectedFilter = filter
         let state = viewModel.state
         updateContent(state: state)
@@ -709,24 +692,6 @@ final class ResourceSnifferViewController: BaseViewController {
         UISelectionFeedbackGenerator().selectionChanged()
     }
 
-    private func presentImageFilterPanel() {
-        let controller = UIHostingController(rootView: ImageResourceFilterSheetView(
-            selection: imageFilters,
-            onConfirm: { [weak self] filters in
-                guard let self else { return }
-                self.viewModel.setImageFilters(filters)
-                self.selectedFilter = .image
-            }
-        ))
-        controller.view.backgroundColor = ResourceSnifferPalette.background
-        controller.modalPresentationStyle = .pageSheet
-        if let sheet = controller.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
-            sheet.prefersGrabberVisible = true
-            sheet.preferredCornerRadius = AppRadius.sheet
-        }
-        present(controller, animated: true)
-    }
 }
 
 extension ResourceSnifferViewController: UITableViewDataSource,

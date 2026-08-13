@@ -1,12 +1,13 @@
+import Combine
+import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// 内容拦截设置页：总开关、拦截统计（支持按时间范围筛选）、导入规则与白名单。
+/// 内容拦截控制台。规则编译、导入和白名单仍使用原有服务，仅将旧的
+/// UITableView 统计方块重组为一条清晰的“状态 → 趋势 → 规则”信息流。
 final class ContentBlockingSettingsViewController: BaseViewController {
-    private let tableView = UITableView(frame: .zero, style: .insetGrouped)
     private let manager = ContentBlockManager.shared
-    private var selectedRange: StatisticsRange = .today
-    private weak var rangeButton: UIButton?
+    private let dashboardStore = ContentBlockingDashboardStore()
     private var changeObserver: NSObjectProtocol?
 
     init() {
@@ -25,14 +26,23 @@ final class ContentBlockingSettingsViewController: BaseViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        configureTableView()
+        installSwiftUI(
+            ContentBlockingDashboardView(
+                store: dashboardStore,
+                onImport: { [weak self] in self?.showImportMenu() },
+                onWhitelist: { [weak self] in self?.openWhitelist() },
+                onRebuild: { [weak self] in self?.rebuildRules() }
+            ),
+            in: contentView
+        )
         observeChanges()
         ContentBlockerService.shared.loadIfNeeded()
+        dashboardStore.reload()
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        tableView.reloadData()
+        dashboardStore.reload()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -45,122 +55,49 @@ final class ContentBlockingSettingsViewController: BaseViewController {
         navigationController?.interactivePopGestureRecognizer?.delegate = nil
     }
 
-    private func configureTableView() {
-        tableView.backgroundColor = .clear
-        tableView.separatorStyle = .none
-        tableView.rowHeight = UITableView.automaticDimension
-        tableView.estimatedRowHeight = 96
-        tableView.register(
-            ContentBlockMasterCardCell.self,
-            forCellReuseIdentifier: ContentBlockMasterCardCell.reuseIdentifier
-        )
-        tableView.register(
-            ContentBlockStatsCardCell.self,
-            forCellReuseIdentifier: ContentBlockStatsCardCell.reuseIdentifier
-        )
-        tableView.register(
-            ContentBlockActionCardCell.self,
-            forCellReuseIdentifier: ContentBlockActionCardCell.reuseIdentifier
-        )
-        tableView.dataSource = self
-        tableView.delegate = self
-        tableView.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(tableView)
-        NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            tableView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            tableView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
-        ])
-    }
-
     private func observeChanges() {
         changeObserver = NotificationCenter.default.addObserver(
             forName: .contentBlockerDidChange,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.tableView.reloadData()
-        }
-    }
-
-    // MARK: - 时间范围筛选
-
-    private func selectRange(_ range: StatisticsRange) {
-        selectedRange = range
-        // 原位更新数据与按钮标题，避免整段刷新造成的闪动。
-        rangeButton?.accessibilityLabel = "统计时间范围，当前\(range.rawValue)"
-        rangeButton?.menu = makeRangeMenu()
-        if let cell = tableView.cellForRow(
-            at: IndexPath(row: 0, section: 1)
-        ) as? ContentBlockStatsCardCell {
-            configureStatsCell(cell)
-        }
-    }
-
-    private func makeRangeButton() -> UIButton {
-        // “今日”筛选按钮使用 today_selector 素材，禁止 tint / 重绘。
-        let button = UIButton(type: .custom)
-        button.setImage(
-            UIImage(named: "today_selector")?.withRenderingMode(.alwaysOriginal),
-            for: .normal
-        )
-        button.imageView?.contentMode = .scaleAspectFit
-        button.clipsToBounds = false
-        button.frame = CGRect(x: 0, y: 0, width: 82, height: 34)
-        button.showsMenuAsPrimaryAction = true
-        button.menu = makeRangeMenu()
-        button.accessibilityLabel = "统计时间范围，当前\(selectedRange.rawValue)"
-        rangeButton = button
-        return button
-    }
-
-    private func makeRangeMenu() -> UIMenu {
-        UIMenu(children: StatisticsRange.allCases.map { range in
-            UIAction(
-                title: range.rawValue,
-                state: range == selectedRange ? .on : .off
-            ) { [weak self] _ in
-                self?.selectRange(range)
+            Task { @MainActor [weak self] in
+                self?.dashboardStore.reload()
             }
-        })
+        }
     }
 
-    private func configureStatsCell(_ cell: ContentBlockStatsCardCell) {
-        let statistics = manager.statisticsManager
-        let summary = statistics.summary(for: selectedRange)
-        cell.configure(
-            blocked: summary.todayBlocked,
-            pageLoads: summary.todayPageLoads,
-            ruleCount: summary.ruleCount,
-            filterCount: summary.filterCount,
-            blockedTitle: selectedRange.metricTitle(for: .blocked),
-            pageLoadTitle: selectedRange.metricTitle(for: .pageLoads),
-            blockedSeries: statistics.sparkline(
-                for: selectedRange,
-                kind: .blocked
-            ),
-            pageLoadSeries: statistics.sparkline(
-                for: selectedRange,
-                kind: .pageLoads
-            ),
-            ruleSeries: statistics.sparkline(
-                for: selectedRange,
-                kind: .ruleCount
-            ),
-            filterSeries: statistics.sparkline(
-                for: selectedRange,
-                kind: .filterCount
-            )
+    private func openWhitelist() {
+        navigationController?.pushViewController(
+            WhitelistViewController(),
+            animated: true
         )
     }
 
-    // MARK: - 导入规则
+    private func rebuildRules() {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await dashboardStore.rebuildRules()
+                presentAlert(
+                    title: "规则已重新编译",
+                    message: "新的规则已经应用到浏览器页面。"
+                )
+            } catch {
+                presentAlert(
+                    title: "重新编译失败",
+                    message: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    // MARK: - 规则导入
 
     private func showImportMenu() {
         let alert = UIAlertController(
             title: "导入规则",
-            message: nil,
+            message: "支持 AdBlock 文本规则与 JSON 规则文件。",
             preferredStyle: .actionSheet
         )
         alert.addAction(
@@ -202,7 +139,9 @@ final class ContentBlockingSettingsViewController: BaseViewController {
         alert.addAction(
             UIAlertAction(title: "导入", style: .default) { [weak self, weak alert] _ in
                 guard let text = alert?.textFields?.first?.text,
-                      let url = URL(string: text.trimmingCharacters(in: .whitespaces))
+                      let url = URL(
+                        string: text.trimmingCharacters(in: .whitespacesAndNewlines)
+                      )
                 else { return }
                 self?.importFromURL(url)
             }
@@ -211,39 +150,70 @@ final class ContentBlockingSettingsViewController: BaseViewController {
     }
 
     private func importFromURL(_ url: URL) {
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             do {
                 var request = URLRequest(url: url)
                 request.timeoutInterval = 60
                 let (data, response) = try await URLSession.shared.data(for: request)
                 guard let http = response as? HTTPURLResponse,
-                      http.statusCode == 200
+                      (200...299).contains(http.statusCode)
                 else {
                     throw URLError(.badServerResponse)
                 }
-                let imported: Int
-                if url.pathExtension.lowercased() == "json" {
-                    imported = self.manager.customManager.importJSON(data)
-                } else {
-                    let text = String(data: data, encoding: .utf8) ?? ""
-                    imported = self.manager.customManager.importLines(
-                        text.components(separatedBy: .newlines)
-                    )
-                }
-                if imported > 0 {
-                    try? await ContentBlockerService.shared.rebuildRules(reloadPages: true)
-                    self.presentAlert(title: "导入成功", message: "已导入 \(imported) 条规则。")
-                } else {
-                    self.presentAlert(title: "导入失败", message: "链接中没有识别到有效规则。")
-                }
+                finishImport(data: data, fileExtension: url.pathExtension)
             } catch {
-                self.presentAlert(title: "导入失败", message: "无法下载规则，请检查链接与网络。")
+                presentAlert(
+                    title: "导入失败",
+                    message: "无法下载规则，请检查链接与网络。"
+                )
+            }
+        }
+    }
+
+    private func finishImport(data: Data, fileExtension: String) {
+        let imported: Int
+        if fileExtension.lowercased() == "json" {
+            imported = manager.customManager.importJSON(data)
+        } else {
+            let text = String(data: data, encoding: .utf8) ?? ""
+            imported = manager.customManager.importLines(
+                text.components(separatedBy: .newlines)
+            )
+        }
+        guard imported > 0 else {
+            presentAlert(title: "导入失败", message: "没有识别到有效规则。")
+            return
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await ContentBlockerService.shared.rebuildRules(
+                    reloadPages: true
+                )
+                dashboardStore.reload()
+                presentAlert(
+                    title: "导入成功",
+                    message: "已导入并应用 \(imported) 条规则。"
+                )
+            } catch {
+                dashboardStore.reload()
+                presentAlert(
+                    title: "已导入，暂未应用",
+                    message: "规则已保存，但本次编译失败：\(error.localizedDescription)"
+                )
             }
         }
     }
 
     private func presentAlert(title: String, message: String?) {
-        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        guard presentedViewController == nil else { return }
+        let alert = UIAlertController(
+            title: title,
+            message: message,
+            preferredStyle: .alert
+        )
         alert.addAction(UIAlertAction(title: "好", style: .default))
         present(alert, animated: true)
     }
@@ -257,23 +227,7 @@ extension ContentBlockingSettingsViewController: UIDocumentPickerDelegate {
         guard let url = urls.first,
               let data = try? Data(contentsOf: url)
         else { return }
-        let imported: Int
-        if url.pathExtension.lowercased() == "json" {
-            imported = manager.customManager.importJSON(data)
-        } else {
-            let text = String(data: data, encoding: .utf8) ?? ""
-            imported = manager.customManager.importLines(
-                text.components(separatedBy: .newlines)
-            )
-        }
-        if imported > 0 {
-            Task {
-                try? await ContentBlockerService.shared.rebuildRules(reloadPages: true)
-            }
-            presentAlert(title: "导入成功", message: "已导入 \(imported) 条规则。")
-        } else {
-            presentAlert(title: "导入失败", message: "没有识别到有效规则。")
-        }
+        finishImport(data: data, fileExtension: url.pathExtension)
     }
 }
 
@@ -285,126 +239,367 @@ extension ContentBlockingSettingsViewController: UIGestureRecognizerDelegate {
     }
 }
 
-extension ContentBlockingSettingsViewController: UITableViewDataSource, UITableViewDelegate {
-    func numberOfSections(in tableView: UITableView) -> Int {
-        3
+@MainActor
+private final class ContentBlockingDashboardStore: ObservableObject {
+    @Published private(set) var isEnabled = false
+    @Published private(set) var isReady = false
+    @Published private(set) var isRebuilding = false
+    @Published private(set) var statusDetail = "正在准备规则"
+    @Published private(set) var blockedCount = 0
+    @Published private(set) var pageLoadCount = 0
+    @Published private(set) var ruleCount = 0
+    @Published private(set) var filterCount = 0
+    @Published private(set) var customRuleCount = 0
+    @Published private(set) var whitelistCount = 0
+    @Published private(set) var blockedSeries: [Double] = []
+    @Published private(set) var pageLoadSeries: [Double] = []
+    @Published private(set) var selectedRange: StatisticsRange = .today
+
+    private let manager = ContentBlockManager.shared
+    private let service = ContentBlockerService.shared
+
+    func reload() {
+        isEnabled = service.isEnabled
+        isReady = service.isReady
+        statusDetail = service.lastLoadError
+            ?? (service.isReady ? service.updateDescription : "正在准备过滤规则")
+        customRuleCount = manager.customManager.allRules().count
+        whitelistCount = manager.whitelistManager.allPatterns().count
+        updateStatistics()
     }
 
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        switch section {
-        case 0: return 1
-        case 1: return 1
-        default: return 2
+    func setEnabled(_ enabled: Bool) {
+        service.setEnabled(enabled)
+        reload()
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+
+    func selectRange(_ range: StatisticsRange) {
+        guard selectedRange != range else { return }
+        selectedRange = range
+        updateStatistics()
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+
+    func rebuildRules() async throws {
+        guard !isRebuilding else { return }
+        isRebuilding = true
+        defer {
+            isRebuilding = false
+            reload()
+        }
+        try await service.rebuildRules(reloadPages: true)
+    }
+
+    private func updateStatistics() {
+        let statistics = manager.statisticsManager
+        let summary = statistics.summary(for: selectedRange)
+        blockedCount = summary.todayBlocked
+        pageLoadCount = summary.todayPageLoads
+        ruleCount = summary.ruleCount
+        filterCount = summary.filterCount
+        blockedSeries = statistics.sparkline(
+            for: selectedRange,
+            kind: .blocked
+        )
+        pageLoadSeries = statistics.sparkline(
+            for: selectedRange,
+            kind: .pageLoads
+        )
+    }
+}
+
+private struct ContentBlockingDashboardView: View {
+    @ObservedObject var store: ContentBlockingDashboardStore
+    let onImport: () -> Void
+    let onWhitelist: () -> Void
+    let onRebuild: () -> Void
+
+    var body: some View {
+        AppSwiftUIScreen {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 22) {
+                    protectionHeader
+                    activitySection
+                    rulesSection
+                    privacyFooter
+                }
+                .padding(16)
+                .padding(.bottom, 24)
+            }
         }
     }
 
-    func tableView(
-        _ tableView: UITableView,
-        viewForHeaderInSection section: Int
-    ) -> UIView? {
-        switch section {
-        case 1:
-            return ContentBlockSectionHeaderView(
-                title: "拦截统计",
-                trailing: makeRangeButton()
-            )
-        case 2:
-            return ContentBlockSectionHeaderView(title: "其他")
-        default:
-            return nil
-        }
-    }
+    private var protectionHeader: some View {
+        AppSwiftUISectionCard {
+            HStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            store.isEnabled
+                                ? AppSwiftUIColors.success.opacity(0.14)
+                                : AppSwiftUIColors.tertiarySurface.opacity(0.55)
+                        )
+                    Circle()
+                        .stroke(
+                            store.isEnabled
+                                ? AppSwiftUIColors.success.opacity(0.34)
+                                : AppSwiftUIColors.separator,
+                            lineWidth: 1
+                        )
+                    Image(systemName: store.isEnabled
+                        ? "shield.checkered"
+                        : "shield.slash")
+                        .font(.system(size: 31, weight: .medium))
+                        .foregroundStyle(store.isEnabled
+                            ? AppSwiftUIColors.success
+                            : AppSwiftUIColors.secondaryText)
+                }
+                .frame(width: 74, height: 74)
 
-    func tableView(
-        _ tableView: UITableView,
-        heightForHeaderInSection section: Int
-    ) -> CGFloat {
-        section == 0 ? 10 : 36
-    }
-
-    func tableView(
-        _ tableView: UITableView,
-        viewForFooterInSection section: Int
-    ) -> UIView? {
-        nil
-    }
-
-    func tableView(
-        _ tableView: UITableView,
-        heightForFooterInSection section: Int
-    ) -> CGFloat {
-        0
-    }
-
-    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let service = ContentBlockerService.shared
-        switch indexPath.section {
-        case 0:
-            guard let cell = tableView.dequeueReusableCell(
-                withIdentifier: ContentBlockMasterCardCell.reuseIdentifier,
-                for: indexPath
-            ) as? ContentBlockMasterCardCell else {
-                return UITableViewCell()
-            }
-            cell.configure(
-                title: "内容拦截",
-                subtitle: "过滤广告、追踪器与恶意网站",
-                isOn: service.isEnabled,
-                accessibilityIdentifier: "contentBlocking.master"
-            ) { [weak self] enabled in
-                service.setEnabled(enabled)
-                self?.tableView.reloadData()
-            }
-            return cell
-        case 1:
-            guard let cell = tableView.dequeueReusableCell(
-                withIdentifier: ContentBlockStatsCardCell.reuseIdentifier,
-                for: indexPath
-            ) as? ContentBlockStatsCardCell else {
-                return UITableViewCell()
-            }
-            configureStatsCell(cell)
-            return cell
-        case 2:
-            guard let cell = tableView.dequeueReusableCell(
-                withIdentifier: ContentBlockActionCardCell.reuseIdentifier,
-                for: indexPath
-            ) as? ContentBlockActionCardCell else {
-                return UITableViewCell()
-            }
-            if indexPath.row == 0 {
-                cell.configure(
-                    title: "导入规则",
-                    subtitle: "支持 txt / JSON 文件",
-                    imageName: "import_rule"
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 7) {
+                        Text(store.isEnabled ? "保护已开启" : "保护已暂停")
+                            .font(.title3.weight(.bold))
+                        Circle()
+                            .fill(store.isReady
+                                ? AppSwiftUIColors.success
+                                : AppSwiftUIColors.tertiaryText)
+                            .frame(width: 7, height: 7)
+                    }
+                    Text(store.statusDetail)
+                        .font(.caption)
+                        .foregroundStyle(AppSwiftUIColors.secondaryText)
+                        .lineLimit(3)
+                }
+                Spacer(minLength: 6)
+                Toggle(
+                    "内容拦截",
+                    isOn: Binding(
+                        get: { store.isEnabled },
+                        set: { store.setEnabled($0) }
+                    )
                 )
-            } else {
-                cell.configure(
+                .labelsHidden()
+                .accessibilityIdentifier("contentBlocking.master")
+            }
+            .padding(16)
+        }
+    }
+
+    private var activitySection: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            AppSwiftUISectionHeader(title: "拦截活动", detail: store.selectedRange.rawValue)
+            AppSwiftUISectionCard {
+                VStack(alignment: .leading, spacing: 18) {
+                    rangeSelector
+
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(formatted(store.blockedCount))
+                            .font(.system(size: 42, weight: .bold, design: .rounded))
+                            .contentTransition(.numericText())
+                        Text(store.selectedRange.metricTitle(for: .blocked))
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(AppSwiftUIColors.secondaryText)
+                    }
+
+                    ContentBlockingTrendView(
+                        primary: store.blockedSeries,
+                        secondary: store.pageLoadSeries
+                    )
+                    .frame(height: 96)
+
+                    HStack(spacing: 0) {
+                        metric(
+                            title: store.selectedRange.metricTitle(for: .pageLoads),
+                            value: store.pageLoadCount,
+                            symbol: "globe"
+                        )
+                        metric(
+                            title: "生效规则",
+                            value: store.ruleCount,
+                            symbol: "list.bullet.rectangle"
+                        )
+                        metric(
+                            title: "规则组",
+                            value: store.filterCount,
+                            symbol: "square.stack.3d.up"
+                        )
+                    }
+                }
+                .padding(16)
+            }
+        }
+    }
+
+    private var rangeSelector: some View {
+        HStack(spacing: 4) {
+            ForEach(StatisticsRange.allCases, id: \.rawValue) { range in
+                Button {
+                    store.selectRange(range)
+                } label: {
+                    Text(range.rawValue)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(range == store.selectedRange
+                            ? AppSwiftUIColors.accentContent
+                            : AppSwiftUIColors.secondaryText)
+                        .frame(maxWidth: .infinity, minHeight: 34)
+                        .background(
+                            range == store.selectedRange
+                                ? AppSwiftUIColors.accent
+                                : Color.clear,
+                            in: Capsule(style: .continuous)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(
+            AppSwiftUIColors.secondarySurface.opacity(0.66),
+            in: Capsule(style: .continuous)
+        )
+    }
+
+    private func metric(
+        title: String,
+        value: Int,
+        symbol: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: symbol)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(AppSwiftUIColors.tertiaryText)
+                .lineLimit(1)
+            Text(formatted(value))
+                .font(.headline.monospacedDigit())
+                .foregroundStyle(AppSwiftUIColors.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var rulesSection: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            AppSwiftUISectionHeader(title: "规则与例外")
+            AppSwiftUISectionCard {
+                AppSwiftUIActionRow(
+                    title: "导入自定义规则",
+                    subtitle: "从 txt、JSON 文件或网络链接添加",
+                    systemName: "square.and.arrow.down",
+                    detail: store.customRuleCount == 0
+                        ? nil
+                        : "\(store.customRuleCount) 条"
+                ) {
+                    onImport()
+                }
+                AppSwiftUIDivider()
+                AppSwiftUIActionRow(
                     title: "网站白名单",
-                    subtitle: "\(manager.whitelistManager.allPatterns().count) 个模式",
-                    imageName: "whitelist"
-                )
+                    subtitle: "这些网站不会应用拦截规则",
+                    systemName: "checkmark.shield",
+                    detail: store.whitelistCount == 0
+                        ? "暂无"
+                        : "\(store.whitelistCount) 个"
+                ) {
+                    onWhitelist()
+                }
+                AppSwiftUIDivider()
+                AppSwiftUIActionRow(
+                    title: store.isRebuilding ? "正在重新编译" : "重新编译规则",
+                    subtitle: "应用当前规则源、自定义规则与白名单",
+                    systemName: store.isRebuilding
+                        ? "arrow.triangle.2.circlepath"
+                        : "hammer",
+                    isEnabled: !store.isRebuilding,
+                    showsChevron: false
+                ) {
+                    onRebuild()
+                }
             }
-            return cell
-        default:
-            return UITableViewCell()
         }
     }
 
-    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        tableView.deselectRow(at: indexPath, animated: true)
-        switch indexPath.section {
-        case 2:
-            if indexPath.row == 0 {
-                showImportMenu()
-            } else {
-                navigationController?.pushViewController(
-                    WhitelistViewController(),
-                    animated: true
-                )
-            }
-        default:
-            break
+    private var privacyFooter: some View {
+        Label {
+            Text("过滤由 WebKit 在设备上执行；浏览记录和规则匹配结果不会上传。")
+        } icon: {
+            Image(systemName: "lock.shield")
         }
+        .font(.caption)
+        .foregroundStyle(AppSwiftUIColors.tertiaryText)
+        .padding(.horizontal, 6)
+    }
+
+    private func formatted(_ value: Int) -> String {
+        NumberFormatter.localizedString(
+            from: NSNumber(value: value),
+            number: .decimal
+        )
+    }
+}
+
+private struct ContentBlockingTrendView: View {
+    let primary: [Double]
+    let secondary: [Double]
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                VStack(spacing: 0) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        Spacer()
+                        AppSwiftUIColors.separator.opacity(0.55)
+                            .frame(height: 0.5)
+                    }
+                }
+                ContentBlockingTrendShape(values: secondary)
+                    .stroke(
+                        AppSwiftUIColors.tertiaryText.opacity(0.34),
+                        style: StrokeStyle(lineWidth: 1.5, lineCap: .round)
+                    )
+                ContentBlockingTrendShape(values: primary)
+                    .stroke(
+                        AppSwiftUIColors.accent,
+                        style: StrokeStyle(
+                            lineWidth: 2.6,
+                            lineCap: .round,
+                            lineJoin: .round
+                        )
+                    )
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("拦截趋势")
+    }
+}
+
+private struct ContentBlockingTrendShape: Shape {
+    let values: [Double]
+
+    func path(in rect: CGRect) -> Path {
+        guard !values.isEmpty, rect.width > 0, rect.height > 0 else {
+            return Path()
+        }
+        let minimum = values.min() ?? 0
+        let maximum = values.max() ?? 0
+        let range = max(1, maximum - minimum)
+        let denominator = max(1, values.count - 1)
+        var path = Path()
+        for (index, value) in values.enumerated() {
+            let x = rect.minX
+                + rect.width * CGFloat(index) / CGFloat(denominator)
+            let normalized = CGFloat((value - minimum) / range)
+            let y = rect.maxY - normalized * rect.height * 0.82 - rect.height * 0.09
+            let point = CGPoint(x: x, y: y)
+            if index == 0 {
+                path.move(to: point)
+            } else {
+                path.addLine(to: point)
+            }
+        }
+        return path
     }
 }
