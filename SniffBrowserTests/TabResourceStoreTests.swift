@@ -54,6 +54,78 @@ final class TabResourceStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testSamePageProcessReloadPreservesResultsWithoutRestartingSniffing() throws {
+        let store = TabResourceStore()
+        let tabID = UUID()
+        let pageURL = try XCTUnwrap(
+            URL(string: "https://example.com/watch?id=42#player")
+        )
+        store.beginNavigation(
+            tabID: tabID,
+            pageURL: pageURL,
+            isPrivate: false
+        )
+        activate(store, tabID: tabID)
+        store.upsert(
+            [try resource(tabID: tabID, name: "kept.m3u8")],
+            tabID: tabID
+        )
+
+        store.beginNavigation(
+            tabID: tabID,
+            pageURL: try XCTUnwrap(
+                URL(string: "https://example.com/watch?id=42")
+            ),
+            isPrivate: false
+        )
+
+        let snapshot = store.snapshot(for: tabID)
+        XCTAssertEqual(snapshot.resources.map(\.fileName), ["kept.m3u8"])
+        XCTAssertTrue(snapshot.hasStarted)
+        XCTAssertEqual(snapshot.activationState, .disabled)
+    }
+
+    @MainActor
+    func testHLSMetadataResolutionClaimPersistsUntilRefreshOrNewPage() throws {
+        let store = TabResourceStore()
+        let tabID = UUID()
+        let playlistURL = try XCTUnwrap(
+            URL(string: "https://cdn.example.com/main.m3u8")
+        )
+        let firstPage = try XCTUnwrap(URL(string: "https://example.com/first"))
+        store.beginNavigation(
+            tabID: tabID,
+            pageURL: firstPage,
+            isPrivate: false
+        )
+
+        XCTAssertTrue(store.claimHLSMetadataResolution(
+            tabID: tabID,
+            url: playlistURL
+        ))
+        XCTAssertFalse(store.claimHLSMetadataResolution(
+            tabID: tabID,
+            url: playlistURL
+        ))
+
+        store.resetHLSMetadataResolutionClaims(tabID: tabID)
+        XCTAssertTrue(store.claimHLSMetadataResolution(
+            tabID: tabID,
+            url: playlistURL
+        ))
+
+        store.beginNavigation(
+            tabID: tabID,
+            pageURL: try XCTUnwrap(URL(string: "https://example.com/second")),
+            isPrivate: false
+        )
+        XCTAssertTrue(store.claimHLSMetadataResolution(
+            tabID: tabID,
+            url: playlistURL
+        ))
+    }
+
+    @MainActor
     func testDuplicateSourcesMergeInsteadOfIncreasingCount() throws {
         let store = TabResourceStore()
         let tabID = UUID()

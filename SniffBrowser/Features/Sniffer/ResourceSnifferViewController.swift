@@ -105,12 +105,13 @@ final class ResourceSnifferViewController: BaseViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         guard automaticallyStartsSniffing,
-              !didPerformAutomaticStart
+              !didPerformAutomaticStart,
+              !activationState.isEnabled,
+              !hasStarted,
+              resources.isEmpty
         else { return }
         didPerformAutomaticStart = true
-        if !activationState.isEnabled {
-            startSniffing()
-        }
+        startSniffing()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
@@ -148,6 +149,14 @@ final class ResourceSnifferViewController: BaseViewController {
         _ resources: [DetectedResource]
     ) -> [DetectedResource] {
         resources.sorted { lhs, rhs in
+            if lhs.resourceType == .hls, rhs.resourceType == .hls,
+               lhs.detectionSource.confidence != rhs.detectionSource.confidence {
+                // Player-declared/current streams must reach the visible rows
+                // (and therefore thumbnail extraction) before large pre-roll
+                // playlists reported by Performance APIs.
+                return lhs.detectionSource.confidence
+                    > rhs.detectionSource.confidence
+            }
             switch selectedSortOrder {
             case .newest:
                 break

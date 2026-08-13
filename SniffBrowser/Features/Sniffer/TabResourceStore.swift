@@ -14,6 +14,7 @@ final class TabResourceStore {
         var errorMessage: String?
         var manualScanID: UUID?
         var manualSeenKeys: Set<String> = []
+        var attemptedHLSMetadataURLs: Set<URL> = []
         var activationState: SniffingActivationState = .disabled
         var hasStarted = false
     }
@@ -41,19 +42,27 @@ final class TabResourceStore {
         isPrivate: Bool
     ) {
         var bucket = buckets[tabID] ?? Bucket()
-        bucket.pageKey = pageKey(for: pageURL)
+        let nextPageKey = pageKey(for: pageURL)
+        let preservesCurrentPage = bucket.pageKey != nil
+            && bucket.pageKey == nextPageKey
+        bucket.pageKey = nextPageKey
         bucket.isPrivate = isPrivate
-        bucket.resourcesByURL.removeAll(keepingCapacity: true)
+        if !preservesCurrentPage {
+            bucket.resourcesByURL.removeAll(keepingCapacity: true)
+            bucket.lastScanAt = nil
+            bucket.hasStarted = false
+            bucket.attemptedHLSMetadataURLs.removeAll(keepingCapacity: true)
+        }
         // Activation is scoped to the current document. A navigation must not
-        // inherit the previous page's listener or make the next page look as if
-        // it was already scanned.
+        // inherit the previous listener. A WebContent-process recovery can
+        // reload the exact same URL after returning from another app; preserve
+        // that page's already discovered resources instead of making the user
+        // wait for an identical scan and thumbnail pass again.
         bucket.activationState = .disabled
         bucket.scanState = .idle
-        bucket.lastScanAt = nil
         bucket.errorMessage = nil
         bucket.manualScanID = nil
         bucket.manualSeenKeys.removeAll()
-        bucket.hasStarted = false
         buckets[tabID] = bucket
         notify(tabID)
     }
@@ -128,6 +137,7 @@ final class TabResourceStore {
             bucket.manualScanID = nil
             bucket.lastScanAt = nil
             bucket.errorMessage = nil
+            bucket.attemptedHLSMetadataURLs.removeAll(keepingCapacity: true)
             bucket.activationState = .disabled
             bucket.scanState = .idle
             bucket.hasStarted = false
@@ -220,6 +230,24 @@ final class TabResourceStore {
         sortedResources(in: buckets[tabID])
     }
 
+    /// Claims supplemental HLS resolution once per tab/page. The claim lives
+    /// with the tab rather than a temporary resource-sheet controller, so
+    /// dismissing and reopening the sheet does not refetch every manifest.
+    func claimHLSMetadataResolution(tabID: UUID, url: URL) -> Bool {
+        guard var bucket = buckets[tabID],
+              !bucket.attemptedHLSMetadataURLs.contains(url)
+        else { return false }
+        bucket.attemptedHLSMetadataURLs.insert(url)
+        buckets[tabID] = bucket
+        return true
+    }
+
+    func resetHLSMetadataResolutionClaims(tabID: UUID) {
+        guard var bucket = buckets[tabID] else { return }
+        bucket.attemptedHLSMetadataURLs.removeAll(keepingCapacity: true)
+        buckets[tabID] = bucket
+    }
+
     func snapshot(for tabID: UUID) -> TabResourceSnapshot {
         let bucket = buckets[tabID]
         return TabResourceSnapshot(
@@ -253,6 +281,7 @@ final class TabResourceStore {
         bucket.errorMessage = nil
         bucket.manualScanID = nil
         bucket.manualSeenKeys.removeAll(keepingCapacity: true)
+        bucket.attemptedHLSMetadataURLs.removeAll(keepingCapacity: true)
         buckets[tabID] = bucket
         notify(tabID)
     }

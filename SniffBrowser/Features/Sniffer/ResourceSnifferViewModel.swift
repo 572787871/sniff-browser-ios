@@ -94,6 +94,7 @@ final class ResourceSnifferViewModel {
 
     func refresh() async throws {
         attemptedHLSMetadataURLs.removeAll()
+        store.resetHLSMetadataResolutionClaims(tabID: state.tabID)
         if !state.activationState.isEnabled {
             try await service.enableSniffing(for: state.tabID)
             return
@@ -148,7 +149,11 @@ final class ResourceSnifferViewModel {
         for resource in resources where resource.resourceType == .hls {
             let url = resource.canonicalURL
             guard !attemptedHLSMetadataURLs.contains(url),
-                  hlsMetadataTasks[url] == nil
+                  hlsMetadataTasks[url] == nil,
+                  store.claimHLSMetadataResolution(
+                    tabID: resource.tabID,
+                    url: url
+                  )
             else { continue }
             attemptedHLSMetadataURLs.insert(url)
             hlsMetadataTasks[url] = Task { [weak self] in

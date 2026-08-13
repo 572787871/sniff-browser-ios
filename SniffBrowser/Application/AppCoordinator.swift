@@ -254,6 +254,7 @@ final class AppCoordinator: NSObject, BrowserRouting {
       Task { @MainActor in
         await self.websiteDataManager.clearAllWebsiteData()
         ResourceThumbnailLoader.shared.clearCache()
+        RemoteMediaThumbnailLoader.shared.clearMemoryCache()
         FaviconLoader.shared.clearCache()
         self.browserViewController?.reloadActivePageAfterClearingWebsiteData()
         controller?.showBrowsingDataClearCompleted()

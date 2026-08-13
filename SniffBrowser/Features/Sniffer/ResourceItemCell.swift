@@ -167,17 +167,35 @@ final class ResourceListCell: UITableViewCell {
         }
         if supportsMediaFrame {
             let scale = UIScreen.main.scale
+            let targetPixelSize = CGSize(
+                width: 80 * scale,
+                height: 64 * scale
+            )
             mediaThumbnailTask = Task { [weak self] in
+                if let image = await RemoteMediaThumbnailLoader.shared.cachedImage(
+                    resource: resource,
+                    targetPixelSize: targetPixelSize,
+                    allowsSharedCache: allowsThumbnailDiskCache
+                ) {
+                    guard let self,
+                          !Task.isCancelled,
+                          self.representedResourceID == resource.id
+                    else { return }
+                    self.hasMediaFrame = true
+                    self.thumbnailToken?.cancel()
+                    self.thumbnailToken = nil
+                    self.typeIconView.image = image
+                    self.typeIconView.contentMode = .scaleAspectFill
+                    self.typeIconView.backgroundColor = ResourceSnifferPalette.secondarySurface
+                    return
+                }
                 guard let context = await mediaContextProvider(resource),
                       !Task.isCancelled
                 else { return }
                 self?.mediaThumbnailToken = RemoteMediaThumbnailLoader.shared.load(
                     resource: resource,
                     context: context,
-                    targetPixelSize: CGSize(
-                        width: 80 * scale,
-                        height: 64 * scale
-                    ),
+                    targetPixelSize: targetPixelSize,
                     allowsSharedCache: allowsThumbnailDiskCache
                 ) { [weak self] image in
                     guard let self,

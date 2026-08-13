@@ -47,8 +47,7 @@ final class RemoteMediaThumbnailLoader {
             targetPixelSize: targetPixelSize,
             allowsSharedCache: allowsSharedCache
         )
-        if allowsSharedCache,
-           let image = cache.object(forKey: key as NSString) {
+        if let image = cache.object(forKey: key as NSString) {
             completion(image)
             return ResourceThumbnailToken(cancellation: {})
         }
@@ -58,12 +57,27 @@ final class RemoteMediaThumbnailLoader {
             guard let self, let operation, !operation.isCancelled else {
                 return
             }
+            if allowsSharedCache,
+               let image = await self.persistedImage(
+                key: key,
+                targetPixelSize: targetPixelSize
+               ) {
+                guard !Task.isCancelled, !operation.isCancelled else {
+                    return
+                }
+                self.store(image, key: key)
+                operation.isFinished = true
+                completion(image)
+                return
+            }
             // HLS 先直接交给正式 FFmpeg 引擎。此前先走回环代理，代理
             // 请求尚未准备好时所有卡片都会落到同一个占位图。直接取帧仍
             // 携带网页 UA/Referer，但明确不跨 CDN 传播 Cookie/Authorization。
             if resource.resourceType == .hls,
                let image = await self.coalescedHLSFrame(
                 workKey: key,
+                cacheKey: key,
+                allowsDiskCache: allowsSharedCache,
                 sourceURL: resource.canonicalURL,
                 requestHeaders: Self.safeRemoteFrameHeaders(
                     context: context,
@@ -76,9 +90,6 @@ final class RemoteMediaThumbnailLoader {
                     return
                 }
                 operation.isFinished = true
-                if allowsSharedCache {
-                    self.store(image, key: key)
-                }
                 completion(image)
                 return
             }
@@ -95,6 +106,8 @@ final class RemoteMediaThumbnailLoader {
                 if resource.resourceType == .hls,
                    let image = await self.coalescedHLSFrame(
                     workKey: "\(key)|proxy",
+                    cacheKey: key,
+                    allowsDiskCache: allowsSharedCache,
                     sourceURL: playbackURL,
                     requestHeaders: [:],
                     targetPixelSize: targetPixelSize,
@@ -104,9 +117,6 @@ final class RemoteMediaThumbnailLoader {
                         return
                     }
                     operation.isFinished = true
-                    if allowsSharedCache {
-                        self.store(image, key: key)
-                    }
                     completion(image)
                     return
                 }
@@ -183,9 +193,11 @@ final class RemoteMediaThumbnailLoader {
                     operation.imageGenerator = nil
                     generator.cancelAllCGImageGeneration()
                     let image = UIImage(cgImage: cgImage)
-                    if allowsSharedCache {
-                        self.store(image, key: key)
-                    }
+                    self.persist(
+                        image,
+                        key: key,
+                        allowsDiskCache: allowsSharedCache
+                    )
                     completion(image)
                 }
             }
@@ -193,6 +205,33 @@ final class RemoteMediaThumbnailLoader {
         return ResourceThumbnailToken {
             Task { @MainActor in operation.cancel() }
         }
+    }
+
+    /// Returns an already generated frame without resolving WebKit cookies or
+    /// opening the media URL again. Normal-tab frames survive sheet recreation,
+    /// memory warnings and app background/foreground cycles through the shared
+    /// thumbnail disk cache. Private-tab frames remain memory-only.
+    func cachedImage(
+        resource: DetectedResource,
+        targetPixelSize: CGSize,
+        allowsSharedCache: Bool
+    ) async -> UIImage? {
+        let key = cacheKey(
+            resource: resource,
+            targetPixelSize: targetPixelSize,
+            allowsSharedCache: allowsSharedCache
+        )
+        if let image = cache.object(forKey: key as NSString) {
+            return image
+        }
+        guard allowsSharedCache,
+              let image = await persistedImage(
+                key: key,
+                targetPixelSize: targetPixelSize
+              )
+        else { return nil }
+        store(image, key: key)
+        return image
     }
 
     func clearMemoryCache() {
@@ -207,6 +246,8 @@ final class RemoteMediaThumbnailLoader {
     /// safely share one short-lived task for the same playlist path.
     private func coalescedHLSFrame(
         workKey: String,
+        cacheKey: String,
+        allowsDiskCache: Bool,
         sourceURL: URL,
         requestHeaders: [String: String],
         targetPixelSize: CGSize,
@@ -218,12 +259,23 @@ final class RemoteMediaThumbnailLoader {
         let workID = UUID()
         let task: Task<UIImage?, Never> = Task { [weak self] in
             guard let self else { return nil }
-            return await self.generateHLSFrame(
+            let image = await self.generateHLSFrame(
                 sourceURL: sourceURL,
                 requestHeaders: requestHeaders,
                 targetPixelSize: targetPixelSize,
                 resourceURL: resourceURL
             )
+            if let image {
+                // Persist inside the shared work item. A table cell can be
+                // reused while FFmpeg is still extracting the frame; the
+                // completed cover must not be discarded with that cell.
+                self.persist(
+                    image,
+                    key: cacheKey,
+                    allowsDiskCache: allowsDiskCache
+                )
+            }
+            return image
         }
         pendingHLSFrames[workKey] = HLSFrameWork(id: workID, task: task)
         let image = await task.value
@@ -289,6 +341,47 @@ final class RemoteMediaThumbnailLoader {
                     * image.scale * image.scale * 4
             )
         )
+    }
+
+    private func persist(
+        _ image: UIImage,
+        key: String,
+        allowsDiskCache: Bool
+    ) {
+        store(image, key: key)
+        guard allowsDiskCache,
+              let data = image.jpegData(compressionQuality: 0.82)
+        else { return }
+        ResourceThumbnailCache.shared.writeDisk(
+            data,
+            key: Self.persistedCacheKey(for: key)
+        )
+    }
+
+    private func persistedImage(
+        key: String,
+        targetPixelSize: CGSize
+    ) async -> UIImage? {
+        let data: Data? = await withCheckedContinuation { continuation in
+            ResourceThumbnailCache.shared.readDisk(
+                key: Self.persistedCacheKey(for: key)
+            ) { data in
+                continuation.resume(returning: data)
+            }
+        }
+        guard let data, let image = UIImage(data: data) else { return nil }
+        return image.preparingThumbnail(of: targetPixelSize) ?? image
+    }
+
+    private static func persistedCacheKey(for value: String) -> String {
+        // ResourceThumbnailCache stores keys as file names. A stable FNV-1a
+        // digest avoids URL path separators and remains valid across launches.
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in value.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return "media-\(String(hash, radix: 16)).jpg"
     }
 
     /// HLS manifests can expose their track metadata later than direct files.

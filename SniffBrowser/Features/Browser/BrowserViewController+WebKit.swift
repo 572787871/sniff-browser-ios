@@ -400,26 +400,48 @@ extension BrowserViewController: WKScriptMessageHandler {
       $0.canonicalURL == detected.canonicalURL
     } ?? detected
 
-    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-    let beginDownload = { [weak self, weak webView] in
-      guard let self, let webView else { return }
-      self.startLongPressedVideoDownload(resource, webView: webView)
-    }
-    guard !DownloadComplianceAcknowledgement.hasAcknowledged else {
-      beginDownload()
-      return
-    }
-
     guard presentedViewController == nil else { return }
+    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    let pageTitle = resource.sourcePageTitle?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let displayTitle = pageTitle.map { $0.isEmpty ? resource.fileName : $0 }
+      ?? resource.fileName
+    var detailLines = [
+      "名称：\(displayTitle)",
+      "格式：\(resource.resourceType == .hls ? "HLS / M3U8" : (resource.fileExtension?.uppercased() ?? "视频"))"
+    ]
+    if let width = resource.width, let height = resource.height {
+      detailLines.append("分辨率：\(width) × \(height)")
+    }
+    if let duration = resource.duration, duration.isFinite, duration > 0 {
+      let seconds = Int(duration.rounded())
+      detailLines.append(
+        String(format: "时长：%d:%02d", seconds / 60, seconds % 60)
+      )
+    }
+    if let size = resource.estimatedSize, size > 0 {
+      detailLines.append(
+        "大小：\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))"
+      )
+    } else {
+      detailLines.append("大小：未知")
+    }
+    detailLines.append("来源：\(resource.canonicalURL.host ?? "当前网页")")
+    if !DownloadComplianceAcknowledgement.hasAcknowledged {
+      detailLines.append("")
+      detailLines.append("请仅下载已获授权或网站允许保存的内容。")
+    }
     let alert = UIAlertController(
-      title: "下载当前视频",
-      message: "请仅下载您拥有版权、已经获得授权或网站明确允许保存的内容。应用不支持受 DRM 保护的视频。",
+      title: "下载当前视频？",
+      message: detailLines.joined(separator: "\n"),
       preferredStyle: .alert
     )
     alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-    alert.addAction(UIAlertAction(title: "我已了解并下载", style: .default) { _ in
+    alert.addAction(UIAlertAction(title: "下载", style: .default) {
+      [weak self, weak webView] _ in
+      guard let self, let webView else { return }
       DownloadComplianceAcknowledgement.hasAcknowledged = true
-      beginDownload()
+      self.startLongPressedVideoDownload(resource, webView: webView)
     })
     present(alert, animated: true)
   }
