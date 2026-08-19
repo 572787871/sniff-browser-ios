@@ -1,5 +1,3 @@
-import AVFoundation
-import AVKit
 import SwiftUI
 import UIKit
 
@@ -56,7 +54,6 @@ final class ResourceSnifferViewController: BaseViewController {
     }
 
     private let viewModel: ResourceSnifferViewModel
-    private let automaticallyStartsSniffing: Bool
     private var resources: [DetectedResource] = []
     private var selectedFilter: ResourceSnifferFilter
     private var selectedSortOrder: ResourceSnifferSortOrder = .newest
@@ -68,7 +65,6 @@ final class ResourceSnifferViewController: BaseViewController {
     private var hasStarted = false
     private var renderedRows: [RenderedResourceRow] = []
     private var renderedContent: RenderedContent?
-    private var didPerformAutomaticStart = false
 
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
     private lazy var chromeHost = UIHostingController(
@@ -78,11 +74,9 @@ final class ResourceSnifferViewController: BaseViewController {
         rootView: makeEmptyStateView(state: viewModel.state)
     )
     init(
-        viewModel: ResourceSnifferViewModel,
-        automaticallyStartsSniffing: Bool = false
+        viewModel: ResourceSnifferViewModel
     ) {
         self.viewModel = viewModel
-        self.automaticallyStartsSniffing = automaticallyStartsSniffing
         selectedFilter = .all
         super.init(title: "资源嗅探", prefersLargeTitle: false)
     }
@@ -100,18 +94,6 @@ final class ResourceSnifferViewController: BaseViewController {
         configureEmptyState()
         bindViewModel()
         viewModel.start()
-    }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        guard automaticallyStartsSniffing,
-              !didPerformAutomaticStart,
-              !activationState.isEnabled,
-              !hasStarted,
-              resources.isEmpty
-        else { return }
-        didPerformAutomaticStart = true
-        startSniffing()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
@@ -205,11 +187,11 @@ final class ResourceSnifferViewController: BaseViewController {
 
     private var statusTitle: String {
         switch activationState {
-        case .starting: return "正在连接"
-        case .active: return "捕获中"
-        case .stopping: return "正在暂停"
-        case .failed: return "连接失败"
-        case .disabled: return hasStarted ? "已暂停" : "待检测"
+        case .starting: return "正在启动"
+        case .active: return scanState == .failed ? "检测失败" : "嗅探中"
+        case .stopping: return "正在停止"
+        case .failed: return "启动失败"
+        case .disabled: return hasStarted ? "已停止" : "未开始"
         }
     }
 
@@ -367,8 +349,8 @@ final class ResourceSnifferViewController: BaseViewController {
 
     private func makeManagementItem() -> UIBarButtonItem {
         let stop = UIAction(
-            title: "暂停捕获",
-            image: UIImage(systemName: "pause.circle"),
+            title: "停止嗅探",
+            image: UIImage(systemName: "stop.circle"),
             attributes: activationState.isEnabled ? [] : [.disabled]
         ) { [weak self] _ in self?.stopSniffing() }
         let clear = UIAction(
@@ -418,7 +400,7 @@ final class ResourceSnifferViewController: BaseViewController {
         scanTask?.cancel()
         scanTask = Task { [weak self] in
             do {
-                try await self?.viewModel.activateIfNeeded()
+                try await self?.viewModel.startSniffing()
             } catch is CancellationError {
                 return
             } catch {
@@ -563,22 +545,21 @@ final class ResourceSnifferViewController: BaseViewController {
                 let playbackURL = try await RemoteHLSPlaybackServer.shared
                     .playbackURL(context: context, kind: kind)
                 guard !Task.isCancelled else { return }
-                // Do not reject HLS during AVURLAsset's eager `isPlayable`
-                // probe. Several valid manifests return false until AVPlayerItem
-                // has followed the rewritten variant/segment requests.
-                let item = AVPlayerItem(url: playbackURL)
-                item.preferredForwardBufferDuration = 5
-                item.canUseNetworkResourcesForLiveStreamingWhilePaused = true
-                let player = AVPlayerViewController()
-                player.player = AVPlayer(playerItem: item)
-                player.player?.automaticallyWaitsToMinimizeStalling = true
-                player.showsPlaybackControls = true
-                player.allowsPictureInPicturePlayback = true
-                self.present(player, animated: true) { player.player?.play() }
+                let player = ResourceMediaPreviewViewController(
+                    title: resource.fileName,
+                    playbackURL: playbackURL,
+                    downloadTitle: resource.resourceType == .audio
+                        ? "下载音频"
+                        : "下载视频",
+                    onDownload: { [weak self] in
+                        self?.requestDownload(resource)
+                    }
+                )
+                self.present(player, animated: true)
             } catch {
                 self.showMessage(
-                    title: "无法在线播放",
-                    message: error.localizedDescription
+                    title: "无法准备播放",
+                    message: "视频代理连接失败，可以重试或直接下载此资源。\n\(error.localizedDescription)"
                 )
             }
         }

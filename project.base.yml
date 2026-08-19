@@ -79,12 +79,30 @@ targets:
         DEVELOPMENT_TEAM: ""
         TARGETED_DEVICE_FAMILY: "1"
 
+  SniffBrowserUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: SniffBrowserUITests
+    dependencies:
+      - target: SniffBrowser
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.SniffBrowserUITests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+        TARGETED_DEVICE_FAMILY: "1"
+
 schemes:
   SniffBrowser:
     build:
       targets:
         SniffBrowser: all
         SniffBrowserTests:
+          - test
+        SniffBrowserUITests:
           - test
     run:
       config: Debug
@@ -93,6 +111,9 @@ schemes:
       gatherCoverageData: true
       targets:
         - name: SniffBrowserTests
+          parallelizable: false
+          randomExecutionOrder: false
+        - name: SniffBrowserUITests
           parallelizable: false
           randomExecutionOrder: false
     profile:

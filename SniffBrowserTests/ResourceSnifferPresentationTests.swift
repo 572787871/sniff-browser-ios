@@ -16,8 +16,13 @@ final class ResourceSnifferPresentationTests: XCTestCase {
             selectedFilter: .all
         )
 
-        XCTAssertEqual(configuration.statusTitle, "待检测")
-        XCTAssertEqual(configuration.primaryTitle, "开始捕获")
+        XCTAssertEqual(configuration.statusTitle, "未开始")
+        XCTAssertEqual(configuration.primaryTitle, "开始嗅探")
+        XCTAssertEqual(
+            configuration.detail,
+            "点击开始嗅探后检测当前页面资源"
+        )
+        XCTAssertTrue(configuration.helper.contains("手动开启"))
         XCTAssertEqual(configuration.filters.map(\.count), [0, 0, 0, 0])
         XCTAssertFalse(configuration.showsResultControls)
     }
@@ -40,8 +45,8 @@ final class ResourceSnifferPresentationTests: XCTestCase {
             selectedFilter: .image
         )
 
-        XCTAssertEqual(configuration.statusTitle, "捕获中")
-        XCTAssertEqual(configuration.primaryTitle, "暂停捕获")
+        XCTAssertEqual(configuration.statusTitle, "嗅探中")
+        XCTAssertEqual(configuration.primaryTitle, "停止嗅探")
         XCTAssertEqual(configuration.filters.map(\.count), [3, 1, 1, 1])
         XCTAssertTrue(configuration.filters.last?.isSelected == true)
         XCTAssertEqual(configuration.resultCount, 1)
@@ -61,9 +66,9 @@ final class ResourceSnifferPresentationTests: XCTestCase {
             selectedFilter: .all
         )
 
-        XCTAssertEqual(configuration.statusTitle, "已暂停")
+        XCTAssertEqual(configuration.statusTitle, "已停止")
         XCTAssertEqual(configuration.filters.map(\.count), [1, 0, 0, 1])
-        XCTAssertEqual(configuration.detail, "已暂停新增，当前结果仍然保留")
+        XCTAssertEqual(configuration.detail, "已停止新增，当前结果仍然保留")
     }
 
     @MainActor
@@ -79,7 +84,7 @@ final class ResourceSnifferPresentationTests: XCTestCase {
             selectedFilter: .all
         )
 
-        XCTAssertTrue(configuration.helper.contains("无痕结果仅保留在本次会话"))
+        XCTAssertTrue(configuration.helper.contains("无痕结果只保留本次会话"))
     }
 
     @MainActor
@@ -97,12 +102,38 @@ final class ResourceSnifferPresentationTests: XCTestCase {
     }
 
     @MainActor
+    func testFailedScanKeepsResultsAndExposesRetryState() throws {
+        let tabID = UUID()
+        let state = makeState(
+            tabID: tabID,
+            resources: [try resource(type: .video, tabID: tabID)],
+            activationState: .active,
+            hasStarted: true,
+            scanState: .failed,
+            errorMessage: "扫描等待超时"
+        )
+        let chrome = ResourceSnifferChromeConfiguration(
+            state: state,
+            selectedFilter: .all
+        )
+        let empty = ResourceSnifferEmptyConfiguration(state: state)
+
+        XCTAssertEqual(chrome.statusTitle, "检测失败")
+        XCTAssertTrue(chrome.detail.contains("扫描等待超时"))
+        XCTAssertTrue(chrome.showsResultControls)
+        XCTAssertEqual(empty.title, "页面检测失败")
+        XCTAssertEqual(empty.actionTitle, "重新扫描页面")
+    }
+
+    @MainActor
     private func makeState(
         tabID: UUID,
         resources: [DetectedResource],
         isPrivate: Bool = false,
         activationState: SniffingActivationState,
-        hasStarted: Bool
+        hasStarted: Bool,
+        scanState: ResourceScanState? = nil,
+        errorMessage: String? = nil
     ) -> ResourceSnifferViewModel.State {
         ResourceSnifferViewModel.State(
             tabID: tabID,
@@ -110,9 +141,9 @@ final class ResourceSnifferPresentationTests: XCTestCase {
             pageURL: URL(string: "https://example.com/article"),
             isPrivate: isPrivate,
             resources: resources,
-            scanState: activationState == .active ? .completed : .idle,
+            scanState: scanState ?? (activationState == .active ? .completed : .idle),
             lastScanAt: nil,
-            errorMessage: nil,
+            errorMessage: errorMessage,
             activationState: activationState,
             hasStarted: hasStarted
         )

@@ -1630,8 +1630,7 @@ extension BrowserViewController: BrowserToolbarDelegate {
         }
       )
       let controller = ResourceSnifferViewController(
-        viewModel: viewModel,
-        automaticallyStartsSniffing: true
+        viewModel: viewModel
       )
       router?.showResources(controller)
     case .tabs:

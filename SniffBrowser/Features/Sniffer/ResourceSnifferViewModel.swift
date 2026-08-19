@@ -81,7 +81,11 @@ final class ResourceSnifferViewModel {
                 hasStarted: snapshot.hasStarted
             )
             self.onStateChange?(self.state)
-            self.resolveHLSMetadataIfNeeded(in: snapshot.resources)
+            // Opening the panel must not trigger follow-up network work. HLS
+            // metadata resolution is part of an active sniffing session only.
+            if snapshot.activationState.isEnabled {
+                self.resolveHLSMetadataIfNeeded(in: snapshot.resources)
+            }
         }
     }
 
@@ -100,6 +104,14 @@ final class ResourceSnifferViewModel {
             return
         }
         _ = try await service.scanResources(for: state.tabID)
+    }
+
+    /// Starts detection only after an explicit user action. The service's
+    /// activation path performs one bounded manual scan as part of enabling
+    /// the page bridge, so resources that were loaded before the panel opened
+    /// are still eligible without reloading the WKWebView.
+    func startSniffing() async throws {
+        try await activateIfNeeded()
     }
 
     func activateIfNeeded() async throws {
