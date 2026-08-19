@@ -28,7 +28,6 @@ final class ResourceMediaPreviewViewController: UIViewController {
     private var player: AVPlayer?
     private var playerItem: AVPlayerItem?
     private var observations: [NSKeyValueObservation] = []
-    private var notificationTokens: [NSObjectProtocol] = []
 
     init(
         title: String,
@@ -71,8 +70,12 @@ final class ResourceMediaPreviewViewController: UIViewController {
 
     deinit {
         observations.forEach { $0.invalidate() }
-        notificationTokens.forEach {
-            NotificationCenter.default.removeObserver($0)
+        if let playerItem {
+            NotificationCenter.default.removeObserver(
+                self,
+                name: Notification.Name.AVPlayerItemFailedToPlayToEndTime,
+                object: playerItem
+            )
         }
     }
 
@@ -91,10 +94,13 @@ final class ResourceMediaPreviewViewController: UIViewController {
     private func preparePlayer() {
         observations.forEach { $0.invalidate() }
         observations.removeAll()
-        notificationTokens.forEach {
-            NotificationCenter.default.removeObserver($0)
+        if let playerItem {
+            NotificationCenter.default.removeObserver(
+                self,
+                name: Notification.Name.AVPlayerItemFailedToPlayToEndTime,
+                object: playerItem
+            )
         }
-        notificationTokens.removeAll()
 
         let item = AVPlayerItem(url: playbackURL)
         item.preferredForwardBufferDuration = 5
@@ -139,18 +145,12 @@ final class ResourceMediaPreviewViewController: UIViewController {
                 }
             }
         )
-        let failureToken: NSObjectProtocol = NotificationCenter.default.addObserver(
-            forName: Notification.Name.AVPlayerItemFailedToPlayToEndTime,
-            object: item,
-            queue: .main
-        ) { [weak self] (notification: Notification) in
-            let error = notification.userInfo?
-                [AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
-            Task { @MainActor [weak self] in
-                self?.showPlaybackFailure(error)
-            }
-        }
-        notificationTokens.append(failureToken)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleFailedPlaybackNotification(_:)),
+            name: Notification.Name.AVPlayerItemFailedToPlayToEndTime,
+            object: item
+        )
     }
 
     private func configureOverlay() {
@@ -317,6 +317,14 @@ final class ResourceMediaPreviewViewController: UIViewController {
     private func showPlaybackFailure(_ error: Error?) {
         let message = Self.userFacingErrorMessage(error)
         updateStatus(.failed(message))
+    }
+
+    @objc private func handleFailedPlaybackNotification(_ notification: Notification) {
+        let error = notification.userInfo?
+            [AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+        Task { @MainActor [weak self] in
+            self?.showPlaybackFailure(error)
+        }
     }
 
     private static func userFacingErrorMessage(_ error: Error?) -> String {
