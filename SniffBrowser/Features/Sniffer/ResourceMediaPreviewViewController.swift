@@ -320,8 +320,7 @@ final class ResourceMediaPreviewViewController: UIViewController {
     }
 
     @objc private func handleFailedPlaybackNotification(_ notification: Notification) {
-        let error = notification.userInfo?
-            [AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+        let error: Error? = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
         Task { @MainActor [weak self] in
             self?.showPlaybackFailure(error)
         }
