@@ -1,5 +1,46 @@
 import Foundation
 
+struct FFmpegThumbnailDimensions: Equatable {
+    let width: Int
+    let height: Int
+}
+
+enum FFmpegThumbnailSizing {
+    static let maximumDimension = 320
+
+    /// Fits a decoded frame inside a small, even-sized JPEG canvas. Stream
+    /// metadata can be partially populated for HLS (for example width == 0
+    /// while height is present); never derive an unbounded allocation from
+    /// those values.
+    static func fittedSize(
+        sourceWidth: Int,
+        sourceHeight: Int
+    ) -> FFmpegThumbnailDimensions {
+        guard (1...32_768).contains(sourceWidth),
+              (1...32_768).contains(sourceHeight)
+        else {
+            return FFmpegThumbnailDimensions(width: 320, height: 180)
+        }
+        let scale = min(
+            Double(maximumDimension) / Double(sourceWidth),
+            Double(maximumDimension) / Double(sourceHeight),
+            1
+        )
+        return FFmpegThumbnailDimensions(
+            width: evenDimension(Double(sourceWidth) * scale),
+            height: evenDimension(Double(sourceHeight) * scale)
+        )
+    }
+
+    private static func evenDimension(_ value: Double) -> Int {
+        let bounded = min(
+            maximumDimension,
+            max(2, Int(value.rounded()))
+        )
+        return bounded.isMultiple(of: 2) ? bounded : max(2, bounded - 1)
+    }
+}
+
 // MARK: - 正式媒体引擎（libav C API）
 
 /// 使用捆绑 FFmpeg libav XCFrameworks 的正式实现。
@@ -773,14 +814,6 @@ fileprivate enum FFmpegCore {
             throw MediaProcessError.thumbnailFailed
         }
 
-        let sourceWidth = max(1, Int(codecpar.pointee.width))
-        let sourceHeight = max(1, Int(codecpar.pointee.height))
-        let targetWidth = 320
-        let targetHeight = max(
-            1,
-            Int((Double(targetWidth) * Double(sourceHeight) / Double(sourceWidth)).rounded())
-        )
-
         var frame: UnsafeMutablePointer<AVFrame>? = av_frame_alloc()
         guard frame != nil else {
             throw MediaProcessError.thumbnailFailed
@@ -794,10 +827,14 @@ fileprivate enum FFmpegCore {
             guard Int(packet.stream_index) == Int(videoIndex) else { continue }
             if avcodec_send_packet(decoderContext!, &packet) == 0 {
                 while avcodec_receive_frame(decoderContext!, frame!) == 0 {
+                    let target = FFmpegThumbnailSizing.fittedSize(
+                        sourceWidth: Int(frame!.pointee.width),
+                        sourceHeight: Int(frame!.pointee.height)
+                    )
                     succeeded = writeJPEG(
                         frame: frame!,
-                        targetWidth: targetWidth,
-                        targetHeight: targetHeight,
+                        targetWidth: target.width,
+                        targetHeight: target.height,
                         output: output
                     )
                     break
@@ -817,6 +854,16 @@ fileprivate enum FFmpegCore {
         targetHeight: Int,
         output: URL
     ) -> Bool {
+        guard frame.pointee.width > 0,
+              frame.pointee.height > 0,
+              (2...FFmpegThumbnailSizing.maximumDimension).contains(targetWidth),
+              (2...FFmpegThumbnailSizing.maximumDimension).contains(targetHeight)
+        else {
+            debugLog(
+                "拒绝异常封面尺寸 source=\(frame.pointee.width)x\(frame.pointee.height) target=\(targetWidth)x\(targetHeight)"
+            )
+            return false
+        }
         let sourceFormat = AVPixelFormat(rawValue: frame.pointee.format)
         guard let scaler = sws_getCachedContext(
             nil,

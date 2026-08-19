@@ -1,6 +1,39 @@
 import AVFoundation
 import UIKit
 
+/// Bounds remote frame extraction independently from the number of visible or
+/// recently reused cells. AVFoundation and the loopback proxy both allocate
+/// sizeable media buffers; starting one probe per discovered video can push a
+/// resource-heavy page over an iPhone's memory budget.
+private actor RemoteMediaPreviewPermitPool {
+    private let limit: Int
+    private var available: Int
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(limit: Int) {
+        self.limit = max(1, limit)
+        available = max(1, limit)
+    }
+
+    func acquire() async {
+        if available > 0 {
+            available -= 1
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            available = min(limit, available + 1)
+        } else {
+            waiters.removeFirst().resume()
+        }
+    }
+}
+
 @MainActor
 final class RemoteMediaThumbnailLoader {
     static let shared = RemoteMediaThumbnailLoader()
@@ -21,6 +54,7 @@ final class RemoteMediaThumbnailLoader {
     }
 
     private let cache = NSCache<NSString, UIImage>()
+    private let previewPermits = RemoteMediaPreviewPermitPool(limit: 2)
     private var pendingWork: [String: MediaWork] = [:]
     private var privateMemoryKeysByTab: [UUID: Set<String>] = [:]
 
@@ -61,19 +95,28 @@ final class RemoteMediaThumbnailLoader {
         } else {
             let task = Task { [weak self] () -> UIImage? in
                 guard let self else { return nil }
+                await self.previewPermits.acquire()
+                guard !Task.isCancelled else {
+                    await self.previewPermits.release()
+                    return nil
+                }
+                let image: UIImage?
                 if allowsSharedCache,
-                   let image = await self.persistedImage(
+                   let persisted = await self.persistedImage(
                     key: storageKey,
                     targetPixelSize: targetPixelSize
                 ) {
-                    self.store(image, key: storageKey)
-                    return image
+                    self.store(persisted, key: storageKey)
+                    image = persisted
+                } else {
+                    image = await self.generatePreview(
+                        resource: resource,
+                        context: context,
+                        targetPixelSize: targetPixelSize
+                    )
                 }
-                return await self.generatePreview(
-                    resource: resource,
-                    context: context,
-                    targetPixelSize: targetPixelSize
-                )
+                await self.previewPermits.release()
+                return image
             }
             work = MediaWork(tabID: resource.tabID, task: task)
             pendingWork[workKey] = work
@@ -127,10 +170,18 @@ final class RemoteMediaThumbnailLoader {
     func clearMemoryCache() {
         cache.removeAllObjects()
         privateMemoryKeysByTab.removeAll()
-        // Do not cancel in-flight frame extraction here. A memory warning may
-        // happen while the app is backgrounded; cancelling it would make the
-        // next presentation start the same network/decoder work again. The
-        // completed image is still written to the bounded disk cache.
+        // A memory warning is a hard pressure signal. Completed normal-tab
+        // frames remain in the bounded disk cache, while unfinished probes are
+        // cancelled so the app does not get jetsam-killed after opening the
+        // resource sheet on a media-heavy page.
+        let workItems = Array(pendingWork.values)
+        pendingWork.removeAll()
+        workItems.forEach { work in
+            let callbacks = Array(work.callbacks.values)
+            work.callbacks.removeAll()
+            work.task.cancel()
+            callbacks.forEach { $0(nil) }
+        }
     }
 
     /// Called only when a tab is actually closed. Leaving the resource sheet,
@@ -192,25 +243,9 @@ final class RemoteMediaThumbnailLoader {
             )
         }
 
-        // HLS manifests are often the most reliable source for a first frame:
-        // FFmpeg can send the page's Referer/UA directly to the origin without
-        // waiting for AVFoundation to decide whether a signed playlist is
-        // playable. Keep this fast path ahead of the loopback fallback.
-        if resource.resourceType == .hls,
-           let image = await generateFFmpegFrame(
-            from: resource.canonicalURL,
-            requestHeaders: Self.safeRemoteFrameHeaders(
-                context: context,
-                url: resource.canonicalURL
-            ),
-            targetPixelSize: targetPixelSize,
-            resourceURL: resource.canonicalURL
-           ) {
-            return image
-        }
-
         // AVFoundation is usually the fastest path for the first visible
-        // frame. Do not wait for `isPlayable` or a complete duration probe:
+        // frame and keeps malformed remote media outside the native FFmpeg C
+        // decoder. Do not wait for `isPlayable` or a complete duration probe:
         // both can take several seconds on a signed HLS origin.
         if let proxyURL,
            let image = await generateAVAssetFrame(

@@ -90,6 +90,31 @@ final class MediaPipelineTests: XCTestCase {
         )
     }
 
+    func testThumbnailSizingBoundsMalformedAndPortraitFrames() {
+        XCTAssertEqual(
+            FFmpegThumbnailSizing.fittedSize(
+                sourceWidth: 0,
+                sourceHeight: 2_160
+            ),
+            FFmpegThumbnailDimensions(width: 320, height: 180)
+        )
+        XCTAssertEqual(
+            FFmpegThumbnailSizing.fittedSize(
+                sourceWidth: 1_080,
+                sourceHeight: 1_920
+            ),
+            FFmpegThumbnailDimensions(width: 180, height: 320)
+        )
+        let extreme = FFmpegThumbnailSizing.fittedSize(
+            sourceWidth: Int.max,
+            sourceHeight: 1
+        )
+        XCTAssertLessThanOrEqual(
+            max(extreme.width, extreme.height),
+            FFmpegThumbnailSizing.maximumDimension
+        )
+    }
+
     func testCacheManagerCreatesAndRemovesWorkDirectory() throws {
         let taskID = UUID()
         let cache = CacheManager()
