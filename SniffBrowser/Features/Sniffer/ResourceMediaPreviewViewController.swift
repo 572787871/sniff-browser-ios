@@ -139,19 +139,18 @@ final class ResourceMediaPreviewViewController: UIViewController {
                 }
             }
         )
-        notificationTokens.append(
-            NotificationCenter.default.addObserver(
-                forName: .AVPlayerItemFailedToPlayToEndTime,
-                object: item,
-                queue: .main
-            ) { [weak self] notification in
-                let error = notification.userInfo?
-                    [AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
-                Task { @MainActor [weak self] in
-                    self?.showPlaybackFailure(error)
-                }
+        let failureToken = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] (notification: Notification) in
+            let error = notification.userInfo?
+                [AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+            Task { @MainActor [weak self] in
+                self?.showPlaybackFailure(error)
             }
-        )
+        }
+        notificationTokens.append(failureToken)
     }
 
     private func configureOverlay() {
