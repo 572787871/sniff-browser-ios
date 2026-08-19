@@ -5,30 +5,24 @@ import UIKit
 final class RemoteMediaThumbnailLoader {
     static let shared = RemoteMediaThumbnailLoader()
 
-    private struct HLSFrameWork {
-        let id: UUID
+    /// A media frame belongs to a resource, not to a particular table cell.
+    /// Cells are routinely reused when a sheet is resized or the app returns
+    /// from the background. Keeping one shared work item prevents those view
+    /// lifecycle events from starting the same remote probe again.
+    private final class MediaWork {
+        let tabID: UUID
         let task: Task<UIImage?, Never>
-    }
+        var callbacks: [UUID: (UIImage?) -> Void] = [:]
 
-    private final class Operation {
-        var task: Task<Void, Never>?
-        var imageGenerator: AVAssetImageGenerator?
-        var isCancelled = false
-        var isFinished = false
-        var remainingFrameRequests = 0
-
-        func cancel() {
-            guard !isCancelled else { return }
-            isCancelled = true
-            task?.cancel()
-            task = nil
-            imageGenerator?.cancelAllCGImageGeneration()
-            imageGenerator = nil
+        init(tabID: UUID, task: Task<UIImage?, Never>) {
+            self.tabID = tabID
+            self.task = task
         }
     }
 
     private let cache = NSCache<NSString, UIImage>()
-    private var pendingHLSFrames: [String: HLSFrameWork] = [:]
+    private var pendingWork: [String: MediaWork] = [:]
+    private var privateMemoryKeysByTab: [UUID: Set<String>] = [:]
 
     private init() {
         cache.countLimit = 100
@@ -42,168 +36,64 @@ final class RemoteMediaThumbnailLoader {
         allowsSharedCache: Bool,
         completion: @escaping (UIImage?) -> Void
     ) -> ResourceThumbnailToken {
-        let key = cacheKey(
+        let storageKey = cacheKey(
             resource: resource,
             targetPixelSize: targetPixelSize,
             allowsSharedCache: allowsSharedCache
         )
-        if let image = cache.object(forKey: key as NSString) {
+        if let image = cache.object(forKey: storageKey as NSString) {
             completion(image)
             return ResourceThumbnailToken(cancellation: {})
         }
 
-        let operation = Operation()
-        operation.task = Task { [weak self, weak operation] in
-            guard let self, let operation, !operation.isCancelled else {
-                return
-            }
-            if allowsSharedCache,
-               let image = await self.persistedImage(
-                key: key,
-                targetPixelSize: targetPixelSize
-               ) {
-                guard !Task.isCancelled, !operation.isCancelled else {
-                    return
+        // The disk/memory cache may be shared by normal tabs, but an in-flight
+        // request must not be shared across tabs: the first tab's cookies,
+        // Referer and signed URL context would otherwise determine the second
+        // tab's frame. Scope only the active work by tab ID.
+        let workKey = Self.previewWorkIdentity(
+            tabID: resource.tabID,
+            cacheKey: storageKey
+        )
+        let callbackID = UUID()
+        let work: MediaWork
+        if let existing = pendingWork[workKey] {
+            work = existing
+        } else {
+            let task = Task { [weak self] () -> UIImage? in
+                guard let self else { return nil }
+                if allowsSharedCache,
+                   let image = await self.persistedImage(
+                    key: storageKey,
+                    targetPixelSize: targetPixelSize
+                ) {
+                    self.store(image, key: storageKey)
+                    return image
                 }
-                self.store(image, key: key)
-                operation.isFinished = true
-                completion(image)
-                return
-            }
-            // HLS 先直接交给正式 FFmpeg 引擎。此前先走回环代理，代理
-            // 请求尚未准备好时所有卡片都会落到同一个占位图。直接取帧仍
-            // 携带网页 UA/Referer，但明确不跨 CDN 传播 Cookie/Authorization。
-            if resource.resourceType == .hls,
-               let image = await self.coalescedHLSFrame(
-                workKey: key,
-                cacheKey: key,
-                allowsDiskCache: allowsSharedCache,
-                sourceURL: resource.canonicalURL,
-                requestHeaders: Self.safeRemoteFrameHeaders(
+                return await self.generatePreview(
+                    resource: resource,
                     context: context,
-                    url: resource.canonicalURL
-                ),
-                targetPixelSize: targetPixelSize,
-                resourceURL: resource.canonicalURL
-               ) {
-                guard !Task.isCancelled, !operation.isCancelled else {
-                    return
-                }
-                operation.isFinished = true
-                completion(image)
-                return
-            }
-            let asset: AVURLAsset
-            do {
-                let kind: RemoteMediaPlaybackKind = resource.resourceType == .hls
-                    ? .hls
-                    : .direct
-                let playbackURL = try await RemoteHLSPlaybackServer.shared
-                    .playbackURL(context: context, kind: kind)
-                guard !Task.isCancelled, !operation.isCancelled else {
-                    return
-                }
-                if resource.resourceType == .hls,
-                   let image = await self.coalescedHLSFrame(
-                    workKey: "\(key)|proxy",
-                    cacheKey: key,
-                    allowsDiskCache: allowsSharedCache,
-                    sourceURL: playbackURL,
-                    requestHeaders: [:],
-                    targetPixelSize: targetPixelSize,
-                    resourceURL: resource.canonicalURL
-                   ) {
-                    guard !Task.isCancelled, !operation.isCancelled else {
-                        return
-                    }
-                    operation.isFinished = true
-                    completion(image)
-                    return
-                }
-                asset = AVURLAsset(url: playbackURL)
-            } catch {
-                guard !operation.isCancelled else { return }
-                AppLogger(.sniffer).debug(
-                    "视频预览代理创建失败 type=\(resource.resourceType.rawValue) url=\(resource.canonicalURL.absoluteString) error=\(error.localizedDescription)"
+                    targetPixelSize: targetPixelSize
                 )
-                completion(nil)
-                return
             }
-
-            do {
-                guard try await asset.load(.isPlayable) else {
-                    throw RemoteHLSPlaybackServerError.invalidResponse
-                }
-            } catch {
-                guard !operation.isCancelled else { return }
-                AppLogger(.sniffer).debug(
-                    "视频预览资源不可播放 type=\(resource.resourceType.rawValue) url=\(resource.canonicalURL.absoluteString) error=\(error.localizedDescription)"
-                )
-                completion(nil)
-                return
-            }
-
-            let generator = AVAssetImageGenerator(asset: asset)
-            generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = targetPixelSize
-            generator.requestedTimeToleranceBefore = .positiveInfinity
-            generator.requestedTimeToleranceAfter = .positiveInfinity
-            operation.imageGenerator = generator
-            let loadedDuration = try? await asset.load(.duration)
-            let duration = resource.duration.flatMap {
-                $0.isFinite && $0 > 0 ? $0 : nil
-            } ?? loadedDuration.flatMap {
-                let value = $0.seconds
-                return value.isFinite && value > 0 ? value : nil
-            }
-            let preferredSeconds = duration.map {
-                min(max($0 * 0.03, 0.35), 3)
-            } ?? 0.75
-            let candidateSeconds = Self.frameCandidateSeconds(
-                preferred: preferredSeconds,
-                duration: duration
+            work = MediaWork(tabID: resource.tabID, task: task)
+            pendingWork[workKey] = work
+            observeCompletion(
+                workKey: workKey,
+                cacheKey: storageKey,
+                work: work,
+                allowsSharedCache: allowsSharedCache
             )
-            let times = candidateSeconds.map {
-                NSValue(time: CMTime(seconds: $0, preferredTimescale: 600))
-            }
-            operation.remainingFrameRequests = times.count
-            generator.generateCGImagesAsynchronously(
-                forTimes: times
-            ) { [weak self, weak operation] requestedTime, cgImage, _, result, error in
-                Task { @MainActor in
-                    guard let self,
-                          let operation,
-                          !operation.isCancelled,
-                          !operation.isFinished
-                    else { return }
-                    operation.remainingFrameRequests -= 1
-                    guard result == .succeeded, let cgImage else {
-                        guard operation.remainingFrameRequests == 0 else {
-                            return
-                        }
-                        operation.isFinished = true
-                        operation.imageGenerator = nil
-                        AppLogger(.sniffer).debug(
-                            "视频预览取帧失败 type=\(resource.resourceType.rawValue) candidates=\(candidateSeconds) lastTime=\(requestedTime.seconds) url=\(resource.canonicalURL.absoluteString) error=\(error?.localizedDescription ?? "unknown")"
-                        )
-                        completion(nil)
-                        return
-                    }
-                    operation.isFinished = true
-                    operation.imageGenerator = nil
-                    generator.cancelAllCGImageGeneration()
-                    let image = UIImage(cgImage: cgImage)
-                    self.persist(
-                        image,
-                        key: key,
-                        allowsDiskCache: allowsSharedCache
-                    )
-                    completion(image)
-                }
-            }
         }
-        return ResourceThumbnailToken {
-            Task { @MainActor in operation.cancel() }
+        work.callbacks[callbackID] = completion
+
+        // Cancelling a cell subscription must not cancel the shared remote
+        // probe. Another visible cell, a recreated sheet, or the next run loop
+        // may still need the exact same frame.
+        return ResourceThumbnailToken { [weak self, weak work] in
+            Task { @MainActor in
+                guard self != nil, let work else { return }
+                work.callbacks[callbackID] = nil
+            }
         }
     }
 
@@ -236,57 +126,157 @@ final class RemoteMediaThumbnailLoader {
 
     func clearMemoryCache() {
         cache.removeAllObjects()
-        pendingHLSFrames.values.forEach { $0.task.cancel() }
-        pendingHLSFrames.removeAll()
+        privateMemoryKeysByTab.removeAll()
+        // Do not cancel in-flight frame extraction here. A memory warning may
+        // happen while the app is backgrounded; cancelling it would make the
+        // next presentation start the same network/decoder work again. The
+        // completed image is still written to the bounded disk cache.
     }
 
-    /// Signed HLS URLs for the same playlist are often discovered once from
-    /// the player config and again from pre/post-roll requests. They must keep
-    /// their original URL for playback/download, but thumbnail extraction can
-    /// safely share one short-lived task for the same playlist path.
-    private func coalescedHLSFrame(
+    /// Called only when a tab is actually closed. Leaving the resource sheet,
+    /// reusing a cell, or receiving a memory warning must not cross this
+    /// privacy/lifecycle boundary.
+    func cancelRequests(for tabID: UUID) {
+        let keys = pendingWork.compactMap { key, work in
+            work.tabID == tabID ? key : nil
+        }
+        keys.forEach { key in
+            guard let work = pendingWork.removeValue(forKey: key) else { return }
+            work.callbacks.removeAll()
+            work.task.cancel()
+        }
+        let privateKeys = privateMemoryKeysByTab.removeValue(forKey: tabID) ?? []
+        privateKeys.forEach { cache.removeObject(forKey: $0 as NSString) }
+    }
+
+    private func observeCompletion(
         workKey: String,
         cacheKey: String,
-        allowsDiskCache: Bool,
-        sourceURL: URL,
-        requestHeaders: [String: String],
-        targetPixelSize: CGSize,
-        resourceURL: URL
-    ) async -> UIImage? {
-        if let pending = pendingHLSFrames[workKey] {
-            return await pending.task.value
-        }
-        let workID = UUID()
-        let task: Task<UIImage?, Never> = Task { [weak self] in
-            guard let self else { return nil }
-            let image = await self.generateHLSFrame(
-                sourceURL: sourceURL,
-                requestHeaders: requestHeaders,
-                targetPixelSize: targetPixelSize,
-                resourceURL: resourceURL
-            )
+        work: MediaWork,
+        allowsSharedCache: Bool
+    ) {
+        Task { @MainActor [weak self, weak work] in
+            guard let self, let work else { return }
+            let image = await work.task.value
             if let image {
-                // Persist inside the shared work item. A table cell can be
-                // reused while FFmpeg is still extracting the frame; the
-                // completed cover must not be discarded with that cell.
                 self.persist(
                     image,
                     key: cacheKey,
-                    allowsDiskCache: allowsDiskCache
+                    allowsDiskCache: allowsSharedCache,
+                    privateTabID: allowsSharedCache ? nil : work.tabID
                 )
             }
-            return image
+            guard self.pendingWork[workKey] === work else { return }
+            self.pendingWork.removeValue(forKey: workKey)
+            let callbacks = Array(work.callbacks.values)
+            work.callbacks.removeAll()
+            callbacks.forEach { $0(image) }
         }
-        pendingHLSFrames[workKey] = HLSFrameWork(id: workID, task: task)
-        let image = await task.value
-        if pendingHLSFrames[workKey]?.id == workID {
-            pendingHLSFrames.removeValue(forKey: workKey)
-        }
-        return image
     }
 
-    private func generateHLSFrame(
-        sourceURL: URL,
+    private func generatePreview(
+        resource: DetectedResource,
+        context: DownloadRequestContext,
+        targetPixelSize: CGSize
+    ) async -> UIImage? {
+        let kind: RemoteMediaPlaybackKind = resource.resourceType == .hls
+            ? .hls
+            : .direct
+        var proxyURL: URL?
+        do {
+            proxyURL = try await RemoteHLSPlaybackServer.shared
+                .playbackURL(context: context, kind: kind)
+        } catch {
+            AppLogger(.sniffer).debug(
+                "视频预览代理创建失败 type=\(resource.resourceType.rawValue) url=\(resource.canonicalURL.absoluteString) error=\(error.localizedDescription)"
+            )
+        }
+
+        // HLS manifests are often the most reliable source for a first frame:
+        // FFmpeg can send the page's Referer/UA directly to the origin without
+        // waiting for AVFoundation to decide whether a signed playlist is
+        // playable. Keep this fast path ahead of the loopback fallback.
+        if resource.resourceType == .hls,
+           let image = await generateFFmpegFrame(
+            from: resource.canonicalURL,
+            requestHeaders: Self.safeRemoteFrameHeaders(
+                context: context,
+                url: resource.canonicalURL
+            ),
+            targetPixelSize: targetPixelSize,
+            resourceURL: resource.canonicalURL
+           ) {
+            return image
+        }
+
+        // AVFoundation is usually the fastest path for the first visible
+        // frame. Do not wait for `isPlayable` or a complete duration probe:
+        // both can take several seconds on a signed HLS origin.
+        if let proxyURL,
+           let image = await generateAVAssetFrame(
+            from: proxyURL,
+            targetPixelSize: targetPixelSize
+           ) {
+            return image
+        }
+
+        let headers = Self.safeRemoteFrameHeaders(
+            context: context,
+            url: resource.canonicalURL
+        )
+        if let image = await generateFFmpegFrame(
+            from: resource.canonicalURL,
+            requestHeaders: headers,
+            targetPixelSize: targetPixelSize,
+            resourceURL: resource.canonicalURL
+        ) {
+            return image
+        }
+
+        // Some servers only expose the media after the loopback server has
+        // rewritten the manifest/range response. Keep this as the final
+        // fallback, not the first path, so normal cards do not queue behind a
+        // slow decoder when AVFoundation can already produce a frame.
+        if let proxyURL {
+            return await generateFFmpegFrame(
+                from: proxyURL,
+                requestHeaders: [:],
+                targetPixelSize: targetPixelSize,
+                resourceURL: resource.canonicalURL
+            )
+        }
+        return nil
+    }
+
+    private func generateAVAssetFrame(
+        from url: URL,
+        targetPixelSize: CGSize
+    ) async -> UIImage? {
+        let asset = AVURLAsset(url: url)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = targetPixelSize
+        generator.requestedTimeToleranceBefore = .positiveInfinity
+        generator.requestedTimeToleranceAfter = .positiveInfinity
+
+        let requestedTime = CMTime(seconds: 0.8, preferredTimescale: 600)
+        let image: UIImage? = await withCheckedContinuation { continuation in
+            generator.generateCGImagesAsynchronously(
+                forTimes: [NSValue(time: requestedTime)]
+            ) { _, cgImage, _, result, _ in
+                guard result == .succeeded, let cgImage else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: UIImage(cgImage: cgImage))
+            }
+        }
+        guard let image else { return nil }
+        return image.preparingThumbnail(of: targetPixelSize) ?? image
+    }
+
+    private func generateFFmpegFrame(
+        from sourceURL: URL,
         requestHeaders: [String: String],
         targetPixelSize: CGSize,
         resourceURL: URL
@@ -308,7 +298,7 @@ final class RemoteMediaThumbnailLoader {
         } catch {
             guard !Task.isCancelled else { return nil }
             AppLogger(.sniffer).debug(
-                "HLS 视频预览 FFmpeg 取帧失败 url=\(resourceURL.absoluteString) error=\(error.localizedDescription)"
+                "媒体视频预览 FFmpeg 取帧失败 url=\(resourceURL.absoluteString) error=\(error.localizedDescription)"
             )
             return nil
         }
@@ -332,7 +322,11 @@ final class RemoteMediaThumbnailLoader {
         }
     }
 
-    private func store(_ image: UIImage, key: String) {
+    private func store(
+        _ image: UIImage,
+        key: String,
+        privateTabID: UUID? = nil
+    ) {
         cache.setObject(
             image,
             forKey: key as NSString,
@@ -341,14 +335,18 @@ final class RemoteMediaThumbnailLoader {
                     * image.scale * image.scale * 4
             )
         )
+        if let privateTabID {
+            privateMemoryKeysByTab[privateTabID, default: []].insert(key)
+        }
     }
 
     private func persist(
         _ image: UIImage,
         key: String,
-        allowsDiskCache: Bool
+        allowsDiskCache: Bool,
+        privateTabID: UUID?
     ) {
-        store(image, key: key)
+        store(image, key: key, privateTabID: privateTabID)
         guard allowsDiskCache,
               let data = image.jpegData(compressionQuality: 0.82)
         else { return }
@@ -382,26 +380,6 @@ final class RemoteMediaThumbnailLoader {
             hash &*= 1_099_511_628_211
         }
         return "media-\(String(hash, radix: 16)).jpg"
-    }
-
-    /// HLS manifests can expose their track metadata later than direct files.
-    /// Let AVAssetImageGenerator probe a few early key-frame positions instead
-    /// of rejecting the stream before frame extraction has started.
-    private static func frameCandidateSeconds(
-        preferred: TimeInterval,
-        duration: TimeInterval?
-    ) -> [TimeInterval] {
-        let upperBound = duration.map { max(0.05, $0 - 0.05) }
-        let raw = [preferred, 0.1, 1.5]
-        var result: [TimeInterval] = []
-        for value in raw {
-            let bounded = min(max(value, 0.05), upperBound ?? value)
-            guard !result.contains(where: { abs($0 - bounded) < 0.01 }) else {
-                continue
-            }
-            result.append(bounded)
-        }
-        return result
     }
 
     private func cacheKey(
@@ -438,6 +416,12 @@ final class RemoteMediaThumbnailLoader {
             components.queryItems = retained.isEmpty ? nil : retained
         }
         return components.string ?? url.absoluteString
+    }
+
+    /// Cache identity can be shared for normal tabs, while active work must
+    /// remain isolated to the tab whose request context created it.
+    static func previewWorkIdentity(tabID: UUID, cacheKey: String) -> String {
+        tabID.uuidString + "|" + cacheKey
     }
 
     private static let volatileSignatureQueryNames: Set<String> = [

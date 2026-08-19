@@ -11,6 +11,7 @@ final class ResourceListCell: UITableViewCell {
     private let nameLabel = UILabel()
     private let metadataLabel = UILabel()
     private let domainLabel = UILabel()
+    private let previewIndicator = UIActivityIndicatorView(style: .medium)
     private let downloadButton = UIButton(type: .system)
     private let moreButton = UIButton(type: .system)
     private var thumbnailTask: Task<Void, Never>?
@@ -43,6 +44,8 @@ final class ResourceListCell: UITableViewCell {
         representedResourceID = nil
         hasMediaFrame = false
         typeIconView.image = nil
+        previewIndicator.stopAnimating()
+        previewIndicator.isHidden = true
         moreButton.menu = nil
     }
 
@@ -68,6 +71,8 @@ final class ResourceListCell: UITableViewCell {
         mediaThumbnailToken = nil
         representedResourceID = resource.id
         hasMediaFrame = false
+        previewIndicator.stopAnimating()
+        previewIndicator.isHidden = true
         nameLabel.text = resource.fileName
         var metadata = [resource.fileExtension?.uppercased()
             ?? resource.resourceType.localizedTitle]
@@ -134,6 +139,8 @@ final class ResourceListCell: UITableViewCell {
             : .scaleAspectFill
         typeIconView.clipsToBounds = true
         if let thumbnailURL {
+            previewIndicator.isHidden = false
+            previewIndicator.startAnimating()
             let scale = UIScreen.main.scale
             thumbnailTask = Task { [weak self] in
                 guard let request = await thumbnailRequestProvider(thumbnailURL),
@@ -156,16 +163,23 @@ final class ResourceListCell: UITableViewCell {
                 ) { [weak self] image in
                     guard let self,
                           self.representedResourceID == resource.id,
-                          !self.hasMediaFrame,
-                          let image
+                          !self.hasMediaFrame
                     else { return }
-                    self.typeIconView.image = image
-                    self.typeIconView.contentMode = .scaleAspectFill
-                    self.typeIconView.backgroundColor = ResourceSnifferPalette.secondarySurface
+                    self.previewIndicator.stopAnimating()
+                    self.previewIndicator.isHidden = true
+                    if let image {
+                        self.typeIconView.image = image
+                        self.typeIconView.contentMode = .scaleAspectFill
+                        self.typeIconView.backgroundColor = ResourceSnifferPalette.secondarySurface
+                    } else {
+                        self.showFallbackIcon(for: resource.resourceType)
+                    }
                 }
             }
         }
         if supportsMediaFrame {
+            previewIndicator.isHidden = false
+            previewIndicator.startAnimating()
             let scale = UIScreen.main.scale
             let targetPixelSize = CGSize(
                 width: 80 * scale,
@@ -181,6 +195,8 @@ final class ResourceListCell: UITableViewCell {
                           !Task.isCancelled,
                           self.representedResourceID == resource.id
                     else { return }
+                    self.previewIndicator.stopAnimating()
+                    self.previewIndicator.isHidden = true
                     self.hasMediaFrame = true
                     self.thumbnailToken?.cancel()
                     self.thumbnailToken = nil
@@ -199,9 +215,14 @@ final class ResourceListCell: UITableViewCell {
                     allowsSharedCache: allowsThumbnailDiskCache
                 ) { [weak self] image in
                     guard let self,
-                          self.representedResourceID == resource.id,
-                          let image
+                          self.representedResourceID == resource.id
                     else { return }
+                    self.previewIndicator.stopAnimating()
+                    self.previewIndicator.isHidden = true
+                    guard let image else {
+                        self.showFallbackIcon(for: resource.resourceType)
+                        return
+                    }
                     self.hasMediaFrame = true
                     self.thumbnailToken?.cancel()
                     self.thumbnailToken = nil
@@ -279,6 +300,16 @@ final class ResourceListCell: UITableViewCell {
         typeIconView.backgroundColor = ResourceSnifferPalette.accentFill
         typeIconView.layer.cornerRadius = AppRadius.control
         typeIconView.translatesAutoresizingMaskIntoConstraints = false
+
+        previewIndicator.color = ResourceSnifferPalette.accent
+        previewIndicator.hidesWhenStopped = true
+        previewIndicator.isHidden = true
+        previewIndicator.translatesAutoresizingMaskIntoConstraints = false
+        typeIconView.addSubview(previewIndicator)
+        NSLayoutConstraint.activate([
+            previewIndicator.centerXAnchor.constraint(equalTo: typeIconView.centerXAnchor),
+            previewIndicator.centerYAnchor.constraint(equalTo: typeIconView.centerYAnchor)
+        ])
 
         nameLabel.font = UIFont.preferredFont(forTextStyle: .headline)
         nameLabel.textColor = ResourceSnifferPalette.primaryText
@@ -380,5 +411,11 @@ final class ResourceListCell: UITableViewCell {
         case .archive: return "archivebox"
         case .other: return "doc"
         }
+    }
+
+    private func showFallbackIcon(for type: ResourceType) {
+        typeIconView.image = UIImage(systemName: symbolName(for: type))
+        typeIconView.contentMode = .center
+        typeIconView.backgroundColor = ResourceSnifferPalette.accentFill
     }
 }

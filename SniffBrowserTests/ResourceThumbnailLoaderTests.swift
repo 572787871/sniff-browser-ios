@@ -35,6 +35,34 @@ final class ResourceThumbnailLoaderTests: XCTestCase {
     }
 
     @MainActor
+    func testMediaPreviewWorkIdentityIsScopedToTab() {
+        let firstTab = UUID()
+        let secondTab = UUID()
+        let cacheKey = "normal|https://cdn.example.com/video.m3u8|240x192"
+
+        XCTAssertEqual(
+            RemoteMediaThumbnailLoader.previewWorkIdentity(
+                tabID: firstTab,
+                cacheKey: cacheKey
+            ),
+            RemoteMediaThumbnailLoader.previewWorkIdentity(
+                tabID: firstTab,
+                cacheKey: cacheKey
+            )
+        )
+        XCTAssertNotEqual(
+            RemoteMediaThumbnailLoader.previewWorkIdentity(
+                tabID: firstTab,
+                cacheKey: cacheKey
+            ),
+            RemoteMediaThumbnailLoader.previewWorkIdentity(
+                tabID: secondTab,
+                cacheKey: cacheKey
+            )
+        )
+    }
+
+    @MainActor
     func testLoadsAndDownsamplesImageThenUsesMemoryCache() async throws {
         let fixture = try makeFixture(maximumBytes: 5 * 1_024 * 1_024)
         defer { try? FileManager.default.removeItem(at: fixture.root) }

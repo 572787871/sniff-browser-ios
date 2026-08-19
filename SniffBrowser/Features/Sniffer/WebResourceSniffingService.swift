@@ -71,6 +71,7 @@ final class WebResourceSniffingService: ResourceSniffingService {
         }
         unregister(tabID: tabID)
         ResourceThumbnailLoader.shared.cancelRequests(for: tabID)
+        RemoteMediaThumbnailLoader.shared.cancelRequests(for: tabID)
         let scans = pendingScans.filter { $0.value.tabID == tabID }.map(\.key)
         scans.forEach {
             finishPendingScan(
