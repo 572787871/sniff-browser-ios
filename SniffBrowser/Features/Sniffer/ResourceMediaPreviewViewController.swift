@@ -139,8 +139,8 @@ final class ResourceMediaPreviewViewController: UIViewController {
                 }
             }
         )
-        let failureToken = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemFailedToPlayToEndTime,
+        let failureToken: NSObjectProtocol = NotificationCenter.default.addObserver(
+            forName: Notification.Name.AVPlayerItemFailedToPlayToEndTime,
             object: item,
             queue: .main
         ) { [weak self] (notification: Notification) in
