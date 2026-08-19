@@ -109,7 +109,8 @@ final class DownloadManagerViewController: BaseViewController {
                 cell.configure(
                     task: task,
                     fileURL: task.state == .completed ? manager?.fileURL(for: task.id) : nil,
-                    localThumbnailURL: manager?.thumbnailFileURL(for: task.id)
+                    localThumbnailURL: manager?.thumbnailFileURL(for: task.id),
+                    manager: manager
                 )
             }
         }
@@ -429,7 +430,8 @@ extension DownloadManagerViewController: UITableViewDataSource, UITableViewDeleg
         cell.configure(
             task: task,
             fileURL: task.state == .completed ? manager?.fileURL(for: task.id) : nil,
-            localThumbnailURL: manager?.thumbnailFileURL(for: task.id)
+            localThumbnailURL: manager?.thumbnailFileURL(for: task.id),
+            manager: manager
         )
         return cell
     }
@@ -583,9 +585,11 @@ private final class DownloadTaskCell: UITableViewCell {
     private let indeterminateIndicator = UIActivityIndicatorView(style: .medium)
     private var thumbnailToken: FileThumbnailToken?
     private var posterToken: ResourceThumbnailToken?
+    private var mediaPreviewToken: ResourceThumbnailToken?
     private var representedTaskID: UUID?
     private var representedThumbnailURL: URL?
     private var representedFileURL: URL?
+    private var representedLocalThumbnailURL: URL?
     private var hasArtwork = false
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
@@ -603,25 +607,28 @@ private final class DownloadTaskCell: UITableViewCell {
         thumbnailToken = nil
         posterToken?.cancel()
         posterToken = nil
+        mediaPreviewToken?.cancel()
+        mediaPreviewToken = nil
         representedTaskID = nil
         representedThumbnailURL = nil
         representedFileURL = nil
+        representedLocalThumbnailURL = nil
         hasArtwork = false
         iconView.image = nil
     }
 
-    func configure(task: DownloadTaskModel, fileURL: URL?, localThumbnailURL: URL?) {
-        if let localThumbnailURL,
-           FileManager.default.fileExists(atPath: localThumbnailURL.path),
-           let image = UIImage(contentsOfFile: localThumbnailURL.path) {
-            iconView.image = image
-            iconView.contentMode = .scaleAspectFill
-            iconView.tintColor = nil
-            iconView.backgroundColor = AppColors.tertiarySurface
-            hasArtwork = true
-        } else {
-            updateArtworkSourceIfNeeded(for: task, fileURL: fileURL)
-        }
+    func configure(
+        task: DownloadTaskModel,
+        fileURL: URL?,
+        localThumbnailURL: URL?,
+        manager: DownloadManaging?
+    ) {
+        updateArtworkSourceIfNeeded(
+            for: task,
+            fileURL: fileURL,
+            localThumbnailURL: localThumbnailURL,
+            manager: manager
+        )
         nameLabel.text = task.fileName
         var statusParts = [task.state.localizedTitle]
         if task.state == .failed,
@@ -762,26 +769,44 @@ private final class DownloadTaskCell: UITableViewCell {
 
     private func updateArtworkSourceIfNeeded(
         for task: DownloadTaskModel,
-        fileURL: URL?
+        fileURL: URL?,
+        localThumbnailURL: URL?,
+        manager: DownloadManaging?
     ) {
         let taskChanged = representedTaskID != task.id
         let sourceChanged = representedThumbnailURL != task.thumbnailURL
             || representedFileURL != fileURL
+            || representedLocalThumbnailURL != localThumbnailURL
         guard taskChanged || sourceChanged else { return }
 
         thumbnailToken?.cancel()
         thumbnailToken = nil
         posterToken?.cancel()
         posterToken = nil
+        mediaPreviewToken?.cancel()
+        mediaPreviewToken = nil
         representedTaskID = task.id
         representedThumbnailURL = task.thumbnailURL
         representedFileURL = fileURL
+        representedLocalThumbnailURL = localThumbnailURL
         if taskChanged {
             hasArtwork = false
             iconView.image = nil
         }
 
+        if let localThumbnailURL,
+           FileManager.default.fileExists(atPath: localThumbnailURL.path),
+           let image = UIImage(contentsOfFile: localThumbnailURL.path) {
+            hasArtwork = true
+            iconView.image = image
+            iconView.contentMode = .scaleAspectFill
+            iconView.tintColor = nil
+            iconView.backgroundColor = AppColors.tertiarySurface
+            return
+        }
+
         guard let fileURL else {
+            loadMediaPreviewIfAvailable(for: task, manager: manager)
             loadPosterIfAvailable(for: task)
             return
         }
@@ -796,6 +821,7 @@ private final class DownloadTaskCell: UITableViewCell {
             else { return }
             guard let image else {
                 if !self.hasArtwork {
+                    self.loadMediaPreviewIfAvailable(for: task, manager: manager)
                     self.loadPosterIfAvailable(for: task)
                 }
                 return
@@ -803,6 +829,37 @@ private final class DownloadTaskCell: UITableViewCell {
             self.hasArtwork = true
             self.iconView.image = image
             self.iconView.tintColor = nil
+        }
+    }
+
+    private func loadMediaPreviewIfAvailable(
+        for task: DownloadTaskModel,
+        manager: DownloadManaging?
+    ) {
+        guard mediaPreviewToken == nil,
+              [.video, .hls].contains(task.resourceType),
+              let manager
+        else { return }
+
+        mediaPreviewToken = manager.loadPreview(
+            for: task.id,
+            targetPixelSize: CGSize(
+                width: 112 * UIScreen.main.scale,
+                height: 112 * UIScreen.main.scale
+            )
+        ) { [weak self] image in
+            guard let self,
+                  self.representedTaskID == task.id
+            else { return }
+            if let image {
+                self.hasArtwork = true
+                self.iconView.image = image
+                self.iconView.contentMode = .scaleAspectFill
+                self.iconView.tintColor = nil
+                self.iconView.backgroundColor = AppColors.tertiarySurface
+            } else if !self.hasArtwork {
+                self.loadPosterIfAvailable(for: task)
+            }
         }
     }
 

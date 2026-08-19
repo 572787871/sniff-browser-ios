@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 enum DownloadKind: String, Codable, Sendable {
     case regularFile
@@ -193,6 +194,26 @@ struct DownloadTaskModel: Identifiable, Codable, Hashable, Sendable {
             String.self,
             forKey: .destinationRelativePath
         )
+        thumbnailLocalPath = try container.decodeIfPresent(
+            String.self,
+            forKey: .thumbnailLocalPath
+        )
+        mediaDuration = try container.decodeIfPresent(
+            Double.self,
+            forKey: .mediaDuration
+        )
+        mediaWidth = try container.decodeIfPresent(
+            Int.self,
+            forKey: .mediaWidth
+        )
+        mediaHeight = try container.decodeIfPresent(
+            Int.self,
+            forKey: .mediaHeight
+        )
+        mediaBitrate = try container.decodeIfPresent(
+            Double.self,
+            forKey: .mediaBitrate
+        )
         errorCode = try container.decodeIfPresent(String.self, forKey: .errorCode)
         errorDescription = try container.decodeIfPresent(
             String.self,
@@ -298,4 +319,10 @@ protocol DownloadManaging: AnyObject {
     func deleteTask(id: UUID, deleteFile: Bool) async throws
     func fileURL(for taskID: UUID) -> URL?
     func thumbnailFileURL(for taskID: UUID) -> URL?
+    @discardableResult
+    func loadPreview(
+        for taskID: UUID,
+        targetPixelSize: CGSize,
+        completion: @escaping (UIImage?) -> Void
+    ) -> ResourceThumbnailToken?
 }

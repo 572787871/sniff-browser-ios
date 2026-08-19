@@ -17,6 +17,10 @@ final class DownloadRepositoryTests: XCTestCase {
             downloadedSize: 1_024,
             createdAt: timestamp,
             updatedAt: timestamp,
+            thumbnailLocalPath: "AppSupport/Thumbnails/movie.jpg",
+            mediaDuration: 12.5,
+            mediaWidth: 1_920,
+            mediaHeight: 1_080,
             resumeDataRelativePath: "Downloads/ResumeData/id.resume"
         )
 
@@ -25,6 +29,13 @@ final class DownloadRepositoryTests: XCTestCase {
 
         XCTAssertEqual(restored, [task])
         XCTAssertEqual(restored.first?.thumbnailURL?.lastPathComponent, "poster.jpg")
+        XCTAssertEqual(
+            restored.first?.thumbnailLocalPath,
+            "AppSupport/Thumbnails/movie.jpg"
+        )
+        XCTAssertEqual(restored.first?.mediaDuration, 12.5)
+        XCTAssertEqual(restored.first?.mediaWidth, 1_920)
+        XCTAssertEqual(restored.first?.mediaHeight, 1_080)
         let data = try Data(contentsOf: root.appendingPathComponent("tasks.json"))
         let json = String(decoding: data, as: UTF8.self)
         XCTAssertFalse(json.localizedCaseInsensitiveContains("cookie"))

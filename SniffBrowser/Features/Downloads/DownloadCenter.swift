@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 extension Notification.Name {
     static let downloadTasksDidChange = Notification.Name(
@@ -317,6 +318,54 @@ final class DownloadCenter: DownloadManaging {
 
     func thumbnailFileURL(for taskID: UUID) -> URL? {
         storage.fileURL(relativePath: task(id: taskID)?.thumbnailLocalPath)
+    }
+
+    @discardableResult
+    func loadPreview(
+        for taskID: UUID,
+        targetPixelSize: CGSize,
+        completion: @escaping (UIImage?) -> Void
+    ) -> ResourceThumbnailToken? {
+        guard let model = task(id: taskID),
+              [.video, .hls].contains(model.resourceType)
+        else {
+            return nil
+        }
+
+        let context = requestContexts[taskID] ?? DownloadRequestContext(
+            targetURL: model.sourceURL,
+            pageURL: nil,
+            headers: [:]
+        )
+        let resource = DetectedResource(
+            id: model.resourceID ?? model.id,
+            canonicalURL: model.sourceURL,
+            originalURLString: model.sourceURL.absoluteString,
+            sourcePageURL: context.pageURL,
+            sourcePageTitle: model.fileName,
+            fileName: model.fileName,
+            fileExtension: model.fileExtension,
+            mimeType: model.resourceType == .hls
+                ? "application/vnd.apple.mpegurl"
+                : "video/*",
+            resourceType: model.resourceType,
+            estimatedSize: model.expectedSize,
+            duration: model.mediaDuration,
+            width: model.mediaWidth,
+            height: model.mediaHeight,
+            bitrate: model.mediaBitrate.map { Int($0) },
+            thumbnailURL: model.thumbnailURL,
+            detectionSource: .manualScan,
+            tabID: model.id,
+            headersHint: context.headers
+        )
+        return RemoteMediaThumbnailLoader.shared.load(
+            resource: resource,
+            context: context,
+            targetPixelSize: targetPixelSize,
+            allowsSharedCache: true,
+            completion: completion
+        )
     }
 
     func renameCompletedTask(id: UUID, to requestedName: String) throws {

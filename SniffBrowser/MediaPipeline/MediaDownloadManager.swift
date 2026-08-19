@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// 统一下载入口：下载模块只面向 MediaDownloadManager，
 /// 媒体后处理统一由 Media Pipeline 负责，下载侧不直接调用 FFmpeg。
@@ -58,5 +59,18 @@ final class MediaDownloadManager: DownloadManaging {
 
     func thumbnailFileURL(for taskID: UUID) -> URL? {
         center.thumbnailFileURL(for: taskID)
+    }
+
+    @discardableResult
+    func loadPreview(
+        for taskID: UUID,
+        targetPixelSize: CGSize,
+        completion: @escaping (UIImage?) -> Void
+    ) -> ResourceThumbnailToken? {
+        center.loadPreview(
+            for: taskID,
+            targetPixelSize: targetPixelSize,
+            completion: completion
+        )
     }
 }
