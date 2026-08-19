@@ -301,20 +301,6 @@ final class TabOverviewViewController: BaseViewController {
         let isPrivate = pagingState.selectedMode.isPrivate
         let currentCount = allItems.filter { $0.isPrivate == isPrivate }.count
 
-        let selectAction = UIAction(
-            title: "选择标签页",
-            image: UIImage(systemName: "checkmark.circle")
-        ) { _ in
-            // Placeholder — no action yet
-        }
-
-        let groupAction = UIAction(
-            title: "按网站分组",
-            image: UIImage(systemName: "square.grid.2x2")
-        ) { _ in
-            // Placeholder — no action yet
-        }
-
         let closeAllAction = UIAction(
             title: "关闭全部标签页",
             image: UIImage(systemName: "trash"),
@@ -323,10 +309,11 @@ final class TabOverviewViewController: BaseViewController {
             self?.showCloseAllConfirmation()
         }
 
-        let groupMenu = UIMenu(options: .displayInline, children: [selectAction, groupAction])
         let closeMenu = UIMenu(options: .displayInline, children: [closeAllAction])
 
-        return UIMenu(children: [groupMenu, closeMenu])
+        // 只展示已经有完整行为和反馈的操作。批量选择与按站点分组在
+        // 真正实现前不暴露空入口，避免用户点击后没有任何响应。
+        return UIMenu(children: [closeMenu])
     }
 
     private func showCloseAllConfirmation() {

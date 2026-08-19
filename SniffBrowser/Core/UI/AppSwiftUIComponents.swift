@@ -1,4 +1,5 @@
 import Combine
+import Foundation
 import SwiftUI
 import UIKit
 
@@ -18,6 +19,56 @@ enum AppSwiftUIColors {
     static let separator = Color(uiColor: AppColors.separator)
     static let danger = Color(uiColor: AppColors.danger)
     static let success = Color(uiColor: AppColors.success)
+}
+
+/// 管理页面中可安全跨启动保留的展示偏好。这里只保存筛选/排序的原始值，
+/// 不保存搜索词、网页内容或任何敏感数据。
+struct AppManagementListPreferences {
+    private enum Key {
+        static let downloadScope = "management.download.scope"
+        static let fileCategory = "management.files.category"
+        static let fileSortOrder = "management.files.sortOrder"
+        static let contentBlockingStatisticsRange =
+            "management.contentBlocking.statisticsRange"
+    }
+
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    var downloadScopeRawValue: Int {
+        get { defaults.integer(forKey: Key.downloadScope) }
+        nonmutating set { defaults.set(newValue, forKey: Key.downloadScope) }
+    }
+
+    var fileCategoryRawValue: Int {
+        get { defaults.integer(forKey: Key.fileCategory) }
+        nonmutating set { defaults.set(newValue, forKey: Key.fileCategory) }
+    }
+
+    var fileSortOrderRawValue: Int {
+        get {
+            // 日期是文件页原有默认顺序。UserDefaults 在键不存在时返回 0，
+            // 会被误解为“名称”，因此显式区分首次使用和已保存的值。
+            guard defaults.object(forKey: Key.fileSortOrder) != nil else {
+                return 1
+            }
+            return defaults.integer(forKey: Key.fileSortOrder)
+        }
+        nonmutating set { defaults.set(newValue, forKey: Key.fileSortOrder) }
+    }
+
+    var contentBlockingStatisticsRangeRawValue: String {
+        get {
+            defaults.string(forKey: Key.contentBlockingStatisticsRange)
+                ?? "今日"
+        }
+        nonmutating set {
+            defaults.set(newValue, forKey: Key.contentBlockingStatisticsRange)
+        }
+    }
 }
 
 /// 全应用 SwiftUI 页面画布。背景只属于应用界面，不会覆盖 WKWebView 网页。
@@ -270,6 +321,47 @@ struct AppSwiftUIEmptyState: View {
         }
         .padding(28)
         .frame(maxWidth: 420)
+    }
+}
+
+/// 轻量、可撤销操作的统一反馈。用于单条收藏和历史记录删除；真正删除
+/// 文件或批量清空仍由确认弹窗保护。
+struct AppSwiftUIUndoBanner: View {
+    let message: String
+    let onUndo: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(AppSwiftUIColors.success)
+                .accessibilityHidden(true)
+
+            Text(message)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(AppSwiftUIColors.primaryText)
+                .lineLimit(2)
+
+            Spacer(minLength: 8)
+
+            Button("撤销", action: onUndo)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(AppSwiftUIColors.accent)
+                .frame(minWidth: 44, minHeight: 44)
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 8)
+        .padding(.vertical, 8)
+        .background(.regularMaterial)
+        .background(AppSwiftUIColors.surface.opacity(0.9))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(AppSwiftUIColors.separator, lineWidth: 0.7)
+        }
+        .shadow(color: .black.opacity(0.1), radius: 16, y: 6)
+        // 保留“撤销”按钮为独立可操作元素，VoiceOver 不会把它合并成
+        // 一段无法点击的静态文字。
+        .accessibilityElement(children: .contain)
     }
 }
 

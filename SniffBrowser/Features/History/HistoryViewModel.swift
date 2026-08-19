@@ -73,11 +73,29 @@ final class HistoryViewModel {
 
     @discardableResult
     func remove(_ item: HistoryItem) -> Bool {
+        removeForUndo(item) != nil
+    }
+
+    @discardableResult
+    func removeForUndo(_ item: HistoryItem) -> HistoryItem? {
         do {
             let removedItem = try service.removeEntry(id: item.id)
             allItems = try service.allEntries()
             publishState()
-            return removedItem != nil
+            return removedItem
+        } catch {
+            onError?(error)
+            return nil
+        }
+    }
+
+    @discardableResult
+    func restore(_ item: HistoryItem) -> Bool {
+        do {
+            _ = try service.restoreEntry(item)
+            allItems = try service.allEntries()
+            publishState()
+            return true
         } catch {
             onError?(error)
             return false

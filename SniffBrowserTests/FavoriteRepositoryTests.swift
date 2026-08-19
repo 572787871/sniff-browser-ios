@@ -79,6 +79,18 @@ final class FavoriteRepositoryTests: XCTestCase {
         XCTAssertFalse(try service.isFavorite(url))
     }
 
+    func testRemovedFavoriteCanBeRestoredForUndo() throws {
+        let service = makeService()
+        let url = try XCTUnwrap(URL(string: "https://example.com/undo"))
+        let saved = try service.addFavorite(title: "可撤销收藏", url: url)
+
+        let removed = try service.removeFavorite(id: saved.id)
+        let restored = try service.restoreFavorite(try XCTUnwrap(removed))
+
+        XCTAssertEqual(restored, saved)
+        XCTAssertEqual(try service.allFavorites(), [saved])
+    }
+
     func testNewRepositoryInstanceRestoresFavoritesFromDisk() throws {
         let firstService = makeService()
         let url = try XCTUnwrap(URL(string: "https://example.com/restored"))

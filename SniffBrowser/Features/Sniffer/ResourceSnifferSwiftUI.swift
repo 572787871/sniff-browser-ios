@@ -16,7 +16,7 @@ enum ResourceSnifferPalette {
     static let accentFill = AppColors.accentFill
 }
 
-enum ResourceSnifferFilter: Int, CaseIterable, Equatable {
+enum ResourceSnifferFilter: Int, CaseIterable, Equatable, Sendable {
     case all
     case video
     case audio
@@ -50,7 +50,7 @@ enum ResourceSnifferFilter: Int, CaseIterable, Equatable {
     }
 }
 
-enum ResourceSnifferSortOrder: Int, CaseIterable, Equatable {
+enum ResourceSnifferSortOrder: Int, CaseIterable, Equatable, Sendable {
     case newest
     case type
     case size
@@ -73,6 +73,13 @@ enum ResourceSnifferSortOrder: Int, CaseIterable, Equatable {
         case .resolution: return "rectangle.inset.filled"
         }
     }
+}
+
+/// 资源列表的展示偏好属于标签会话，而不是临时弹出的面板。
+/// 关闭并重新打开同一标签的资源面板时继续沿用；关闭标签后随资源桶释放。
+struct ResourceSnifferPresentationState: Equatable, Sendable {
+    var selectedFilter: ResourceSnifferFilter = .all
+    var selectedSortOrder: ResourceSnifferSortOrder = .newest
 }
 
 struct ResourceSnifferChromeConfiguration: Equatable {

@@ -126,6 +126,13 @@ final class FavoriteService {
     }
 
     @discardableResult
+    func restoreFavorite(_ item: FavoriteItem) throws -> FavoriteItem {
+        let restoredItem = try repository.save(item)
+        postChange()
+        return restoredItem
+    }
+
+    @discardableResult
     func toggleFavorite(
         title: String?,
         url: URL?,

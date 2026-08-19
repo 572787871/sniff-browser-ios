@@ -56,7 +56,7 @@ final class ResourceSnifferViewController: BaseViewController {
     private let viewModel: ResourceSnifferViewModel
     private var resources: [DetectedResource] = []
     private var selectedFilter: ResourceSnifferFilter
-    private var selectedSortOrder: ResourceSnifferSortOrder = .newest
+    private var selectedSortOrder: ResourceSnifferSortOrder
     private var scanTask: Task<Void, Never>?
     private var downloadTask: Task<Void, Never>?
     private var playbackTask: Task<Void, Never>?
@@ -77,7 +77,9 @@ final class ResourceSnifferViewController: BaseViewController {
         viewModel: ResourceSnifferViewModel
     ) {
         self.viewModel = viewModel
-        selectedFilter = .all
+        let presentationState = viewModel.presentationState
+        selectedFilter = presentationState.selectedFilter
+        selectedSortOrder = presentationState.selectedSortOrder
         super.init(title: "资源嗅探", prefersLargeTitle: false)
     }
 
@@ -618,17 +620,30 @@ final class ResourceSnifferViewController: BaseViewController {
     }
 
     private func selectFilter(_ filter: ResourceSnifferFilter) {
+        guard selectedFilter != filter else { return }
         selectedFilter = filter
+        savePresentationState()
         let state = viewModel.state
         updateContent(state: state)
+        UISelectionFeedbackGenerator().selectionChanged()
     }
 
     private func selectSortOrder(_ order: ResourceSnifferSortOrder) {
         guard selectedSortOrder != order else { return }
         selectedSortOrder = order
+        savePresentationState()
         renderedContent = nil
         updateContent(state: viewModel.state)
         UISelectionFeedbackGenerator().selectionChanged()
+    }
+
+    private func savePresentationState() {
+        viewModel.updatePresentationState(
+            ResourceSnifferPresentationState(
+                selectedFilter: selectedFilter,
+                selectedSortOrder: selectedSortOrder
+            )
+        )
     }
 
 }

@@ -71,11 +71,13 @@ final class FavoritesViewController: BaseViewController {
 @MainActor
 private final class FavoritesSwiftUIStore: ObservableObject {
     @Published private(set) var state = FavoritesViewState.empty
-    @Published var pendingDeletion: FavoriteItem?
     @Published var errorMessage: String?
+    @Published private(set) var undoMessage: String?
     var onError: ((Error) -> Void)?
 
     private let viewModel: FavoritesViewModel
+    private var pendingUndoItem: FavoriteItem?
+    private var undoDismissTask: Task<Void, Never>?
 
     init(viewModel: FavoritesViewModel) {
         self.viewModel = viewModel
@@ -98,10 +100,20 @@ private final class FavoritesSwiftUIStore: ObservableObject {
         viewModel.reload()
     }
 
-    func removePendingItem() {
-        guard let item = pendingDeletion else { return }
-        pendingDeletion = nil
-        if viewModel.remove(item) {
+    func remove(_ item: FavoriteItem) {
+        guard let removedItem = viewModel.removeForUndo(item) else { return }
+        pendingUndoItem = removedItem
+        undoMessage = "已删除“\(removedItem.title)”"
+        scheduleUndoDismissal()
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    func undoDeletion() {
+        guard let item = pendingUndoItem else { return }
+        undoDismissTask?.cancel()
+        pendingUndoItem = nil
+        undoMessage = nil
+        if viewModel.restore(item) {
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         }
     }
@@ -109,6 +121,20 @@ private final class FavoritesSwiftUIStore: ObservableObject {
     func copy(_ item: FavoriteItem) {
         UIPasteboard.general.url = item.url
         UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    private func scheduleUndoDismissal() {
+        undoDismissTask?.cancel()
+        undoDismissTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.pendingUndoItem = nil
+            self?.undoMessage = nil
+        }
+    }
+
+    deinit {
+        undoDismissTask?.cancel()
     }
 }
 
@@ -141,22 +167,17 @@ private struct FavoritesSwiftUIScreen: View {
                 }
             }
         }
-        .alert(
-            "删除收藏？",
-            isPresented: Binding(
-                get: { store.pendingDeletion != nil },
-                set: { if !$0 { store.pendingDeletion = nil } }
-            )
-        ) {
-            Button("删除", role: .destructive) {
-                store.removePendingItem()
+        .safeAreaInset(edge: .bottom, spacing: 8) {
+            if let undoMessage = store.undoMessage {
+                AppSwiftUIUndoBanner(
+                    message: undoMessage,
+                    onUndo: store.undoDeletion
+                )
+                .padding(.horizontal, 16)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            Button("取消", role: .cancel) {
-                store.pendingDeletion = nil
-            }
-        } message: {
-            Text("“\(store.pendingDeletion?.title ?? "此网页")”将从收藏夹中移除。")
         }
+        .animation(.easeOut(duration: 0.2), value: store.undoMessage)
         .alert(
             "无法更新收藏夹",
             isPresented: Binding(
@@ -179,7 +200,7 @@ private struct FavoritesSwiftUIScreen: View {
                         .onTapGesture { onOpen(item) }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button("删除", role: .destructive) {
-                                store.pendingDeletion = item
+                                store.remove(item)
                             }
                             .tint(AppSwiftUIColors.danger)
                         }
@@ -198,7 +219,7 @@ private struct FavoritesSwiftUIScreen: View {
                             }
                             Divider()
                             Button(role: .destructive) {
-                                store.pendingDeletion = item
+                                store.remove(item)
                             } label: {
                                 Label("删除", systemImage: "trash")
                             }

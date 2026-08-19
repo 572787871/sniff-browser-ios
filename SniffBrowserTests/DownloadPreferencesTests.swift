@@ -63,6 +63,39 @@ final class DownloadPreferencesTests: XCTestCase {
     }
 
     @MainActor
+    func testManagementListPresentationPreferencesPersist() {
+        let initial = AppManagementListPreferences(defaults: defaults)
+
+        XCTAssertEqual(initial.downloadScopeRawValue, 0)
+        XCTAssertEqual(initial.fileCategoryRawValue, 0)
+        XCTAssertEqual(
+            initial.fileSortOrderRawValue,
+            FileManagerViewController.SortOrder.date.rawValue
+        )
+        XCTAssertEqual(initial.contentBlockingStatisticsRangeRawValue, "今日")
+
+        initial.downloadScopeRawValue = 3
+        initial.fileCategoryRawValue = FileManagerViewController.Category.video.rawValue
+        initial.fileSortOrderRawValue = FileManagerViewController.SortOrder.size.rawValue
+        initial.contentBlockingStatisticsRangeRawValue = StatisticsRange.month.rawValue
+
+        let restored = AppManagementListPreferences(defaults: defaults)
+        XCTAssertEqual(restored.downloadScopeRawValue, 3)
+        XCTAssertEqual(
+            restored.fileCategoryRawValue,
+            FileManagerViewController.Category.video.rawValue
+        )
+        XCTAssertEqual(
+            restored.fileSortOrderRawValue,
+            FileManagerViewController.SortOrder.size.rawValue
+        )
+        XCTAssertEqual(
+            restored.contentBlockingStatisticsRangeRawValue,
+            StatisticsRange.month.rawValue
+        )
+    }
+
+    @MainActor
     func testNotificationPreferenceOnlyEnablesAfterSystemAuthorization() async throws {
         let preferences = DownloadPreferences(defaults: defaults)
         let authorizer = DownloadNotificationAuthorizerStub(isAuthorized: false)

@@ -17,6 +17,7 @@ final class TabResourceStore {
         var attemptedHLSMetadataURLs: Set<URL> = []
         var activationState: SniffingActivationState = .disabled
         var hasStarted = false
+        var presentationState = ResourceSnifferPresentationState()
     }
 
     private struct Observation {
@@ -228,6 +229,21 @@ final class TabResourceStore {
 
     func resources(for tabID: UUID) -> [DetectedResource] {
         sortedResources(in: buckets[tabID])
+    }
+
+    func presentationState(
+        for tabID: UUID
+    ) -> ResourceSnifferPresentationState {
+        buckets[tabID]?.presentationState ?? ResourceSnifferPresentationState()
+    }
+
+    func updatePresentationState(
+        _ state: ResourceSnifferPresentationState,
+        for tabID: UUID
+    ) {
+        var bucket = buckets[tabID] ?? Bucket()
+        bucket.presentationState = state
+        buckets[tabID] = bucket
     }
 
     /// Claims supplemental HLS resolution once per tab/page. The claim lives

@@ -130,6 +130,19 @@ final class ResourceSnifferViewModel {
         service.resetResources(for: state.tabID)
     }
 
+    var presentationState: ResourceSnifferPresentationState {
+        store.presentationState(for: state.tabID)
+    }
+
+    func updatePresentationState(
+        _ presentationState: ResourceSnifferPresentationState
+    ) {
+        store.updatePresentationState(
+            presentationState,
+            for: state.tabID
+        )
+    }
+
     func thumbnailRequest(for url: URL) async -> URLRequest {
         await requestContextProvider(url).makeRequest(
             cachePolicy: .returnCacheDataElseLoad

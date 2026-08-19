@@ -253,10 +253,20 @@ private final class ContentBlockingDashboardStore: ObservableObject {
     @Published private(set) var whitelistCount = 0
     @Published private(set) var blockedSeries: [Double] = []
     @Published private(set) var pageLoadSeries: [Double] = []
-    @Published private(set) var selectedRange: StatisticsRange = .today
+    @Published private(set) var selectedRange: StatisticsRange
 
     private let manager = ContentBlockManager.shared
     private let service = ContentBlockerService.shared
+    private let listPreferences: AppManagementListPreferences
+
+    init(
+        listPreferences: AppManagementListPreferences = AppManagementListPreferences()
+    ) {
+        self.listPreferences = listPreferences
+        selectedRange = StatisticsRange(
+            rawValue: listPreferences.contentBlockingStatisticsRangeRawValue
+        ) ?? .today
+    }
 
     func reload() {
         isEnabled = service.isEnabled
@@ -277,6 +287,7 @@ private final class ContentBlockingDashboardStore: ObservableObject {
     func selectRange(_ range: StatisticsRange) {
         guard selectedRange != range else { return }
         selectedRange = range
+        listPreferences.contentBlockingStatisticsRangeRawValue = range.rawValue
         updateStatistics()
         UISelectionFeedbackGenerator().selectionChanged()
     }

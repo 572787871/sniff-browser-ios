@@ -68,11 +68,29 @@ final class FavoritesViewModel {
 
     @discardableResult
     func remove(_ item: FavoriteItem) -> Bool {
+        removeForUndo(item) != nil
+    }
+
+    @discardableResult
+    func removeForUndo(_ item: FavoriteItem) -> FavoriteItem? {
         do {
             let removedItem = try service.removeFavorite(id: item.id)
             allItems = try service.allFavorites()
             publishState()
-            return removedItem != nil
+            return removedItem
+        } catch {
+            onError?(error)
+            return nil
+        }
+    }
+
+    @discardableResult
+    func restore(_ item: FavoriteItem) -> Bool {
+        do {
+            _ = try service.restoreFavorite(item)
+            allItems = try service.allFavorites()
+            publishState()
+            return true
         } catch {
             onError?(error)
             return false

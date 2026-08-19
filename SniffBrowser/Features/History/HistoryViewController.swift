@@ -53,7 +53,10 @@ private final class HistorySwiftUIStore: ObservableObject {
     @Published private(set) var state = HistoryViewState.empty
     @Published var confirmsClear = false
     @Published var errorMessage: String?
+    @Published private(set) var undoMessage: String?
     private let viewModel = HistoryViewModel()
+    private var pendingUndoItem: HistoryItem?
+    private var undoDismissTask: Task<Void, Never>?
 
     init() {
         viewModel.onStateChange = { [weak self] state in
@@ -74,7 +77,19 @@ private final class HistorySwiftUIStore: ObservableObject {
     }
 
     func remove(_ item: HistoryItem) {
-        if viewModel.remove(item) {
+        guard let removedItem = viewModel.removeForUndo(item) else { return }
+        pendingUndoItem = removedItem
+        undoMessage = "已删除“\(removedItem.title)”"
+        scheduleUndoDismissal()
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    func undoDeletion() {
+        guard let item = pendingUndoItem else { return }
+        undoDismissTask?.cancel()
+        pendingUndoItem = nil
+        undoMessage = nil
+        if viewModel.restore(item) {
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         }
     }
@@ -84,6 +99,20 @@ private final class HistorySwiftUIStore: ObservableObject {
         if viewModel.clearAll() {
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         }
+    }
+
+    private func scheduleUndoDismissal() {
+        undoDismissTask?.cancel()
+        undoDismissTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.pendingUndoItem = nil
+            self?.undoMessage = nil
+        }
+    }
+
+    deinit {
+        undoDismissTask?.cancel()
     }
 }
 
@@ -116,6 +145,17 @@ private struct HistorySwiftUIScreen: View {
                 }
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 8) {
+            if let undoMessage = store.undoMessage {
+                AppSwiftUIUndoBanner(
+                    message: undoMessage,
+                    onUndo: store.undoDeletion
+                )
+                .padding(.horizontal, 16)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: store.undoMessage)
         .alert("清除全部历史记录？", isPresented: $store.confirmsClear) {
             Button("清除", role: .destructive) { store.clearAll() }
             Button("取消", role: .cancel) {}

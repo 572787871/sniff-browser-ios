@@ -31,7 +31,17 @@ final class FileManagerViewController: BaseViewController {
         }
     }
 
-    enum SortOrder { case name, date, size }
+    enum SortOrder: Int, CaseIterable {
+        case name, date, size
+
+        var title: String {
+            switch self {
+            case .name: return "名称"
+            case .date: return "日期"
+            case .size: return "大小"
+            }
+        }
+    }
 
     var onImportFiles: (() -> Void)?
     var onCreateFolder: (() -> Void)?
@@ -41,6 +51,7 @@ final class FileManagerViewController: BaseViewController {
     var onSortOrderChanged: ((SortOrder) -> Void)?
 
     private let downloadCenter: DownloadCenter
+    private var listPreferences: AppManagementListPreferences
     private let searchController = UISearchController(searchResultsController: nil)
     private let categoryControl = UISegmentedControl(items: Category.allCases.map(\.title))
     private let tableView = UITableView(frame: .zero, style: .insetGrouped)
@@ -51,8 +62,8 @@ final class FileManagerViewController: BaseViewController {
         actionTitle: nil,
         secondaryActionTitle: "前往浏览器"
     ))
-    private var selectedCategory = Category.all
-    private var sortOrder = SortOrder.date
+    private var selectedCategory: Category
+    private var sortOrder: SortOrder
     private var searchText = ""
     private var observer: NSObjectProtocol?
     private var previewDataSource: FilePreviewDataSource?
@@ -77,8 +88,18 @@ final class FileManagerViewController: BaseViewController {
         }
     }
 
-    init(downloadCenter: DownloadCenter) {
+    init(
+        downloadCenter: DownloadCenter,
+        listPreferences: AppManagementListPreferences = AppManagementListPreferences()
+    ) {
         self.downloadCenter = downloadCenter
+        self.listPreferences = listPreferences
+        selectedCategory = Category(
+            rawValue: listPreferences.fileCategoryRawValue
+        ) ?? .all
+        sortOrder = SortOrder(
+            rawValue: listPreferences.fileSortOrderRawValue
+        ) ?? .date
         super.init(title: "文件", prefersLargeTitle: true)
     }
 
@@ -110,8 +131,12 @@ final class FileManagerViewController: BaseViewController {
     }
 
     func setSortOrder(_ order: SortOrder) {
+        guard sortOrder != order else { return }
         sortOrder = order
+        listPreferences.fileSortOrderRawValue = order.rawValue
+        updateSortMenu()
         reloadContent()
+        UISelectionFeedbackGenerator().selectionChanged()
     }
 
     private func configureNavigation() {
@@ -120,18 +145,24 @@ final class FileManagerViewController: BaseViewController {
         searchController.searchResultsUpdater = self
         navigationItem.searchController = searchController
         navigationItem.hidesSearchBarWhenScrolling = false
+        updateSortMenu()
+    }
+
+    private func updateSortMenu() {
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "arrow.up.arrow.down"),
             menu: UIMenu(title: "排序方式", options: .singleSelection, children: [
                 sortAction("名称", .name),
-                sortAction("日期", .date, selected: true),
+                sortAction("日期", .date),
                 sortAction("大小", .size)
             ])
         )
+        navigationItem.rightBarButtonItem?.accessibilityLabel = "文件排序"
+        navigationItem.rightBarButtonItem?.accessibilityValue = sortOrder.title
     }
 
     private func configureContent() {
-        categoryControl.selectedSegmentIndex = 0
+        categoryControl.selectedSegmentIndex = selectedCategory.rawValue
         categoryControl.addTarget(self, action: #selector(categoryChanged), for: .valueChanged)
         categoryControl.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(categoryControl)
@@ -185,8 +216,8 @@ final class FileManagerViewController: BaseViewController {
         updateEmptyState()
     }
 
-    private func sortAction(_ title: String, _ order: SortOrder, selected: Bool = false) -> UIAction {
-        UIAction(title: title, state: selected ? .on : .off) { [weak self] _ in
+    private func sortAction(_ title: String, _ order: SortOrder) -> UIAction {
+        UIAction(title: title, state: sortOrder == order ? .on : .off) { [weak self] _ in
             self?.setSortOrder(order)
             self?.onSortOrderChanged?(order)
         }
@@ -219,7 +250,9 @@ final class FileManagerViewController: BaseViewController {
 
     @objc private func categoryChanged() {
         selectedCategory = Category(rawValue: categoryControl.selectedSegmentIndex) ?? .all
+        listPreferences.fileCategoryRawValue = selectedCategory.rawValue
         reloadContent()
+        UISelectionFeedbackGenerator().selectionChanged()
     }
 
     private func open(_ task: DownloadTaskModel) {

@@ -105,6 +105,18 @@ final class HistoryRepositoryTests: XCTestCase {
         XCTAssertEqual(try service.count(), 0)
     }
 
+    func testRemovedHistoryEntryCanBeRestoredForUndo() throws {
+        let service = makeService()
+        let url = try XCTUnwrap(URL(string: "https://example.com/undo"))
+        let saved = try XCTUnwrap(service.recordVisit(title: "可撤销历史", url: url))
+
+        let removed = try service.removeEntry(id: saved.id)
+        let restored = try service.restoreEntry(try XCTUnwrap(removed))
+
+        XCTAssertEqual(restored, saved)
+        XCTAssertEqual(try service.allEntries(), [saved])
+    }
+
     func testClearAllRemovesEveryEntry() throws {
         let service = makeService()
         _ = try service.recordVisit(

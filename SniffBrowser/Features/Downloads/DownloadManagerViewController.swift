@@ -40,7 +40,8 @@ final class DownloadManagerViewController: BaseViewController {
     }
 
     private let manager: DownloadManaging?
-    private var selectedScope = Scope.all
+    private var listPreferences: AppManagementListPreferences
+    private var selectedScope: Scope
     private var displayedTasks: [DownloadTaskModel] = []
     private var operationTask: Task<Void, Never>?
     private var previewURL: URL?
@@ -69,8 +70,15 @@ final class DownloadManagerViewController: BaseViewController {
             }
     }
 
-    init(manager: DownloadManaging? = nil) {
+    init(
+        manager: DownloadManaging? = nil,
+        listPreferences: AppManagementListPreferences = AppManagementListPreferences()
+    ) {
         self.manager = manager
+        self.listPreferences = listPreferences
+        selectedScope = Scope(
+            rawValue: listPreferences.downloadScopeRawValue
+        ) ?? .all
         super.init(title: "下载", prefersLargeTitle: true)
     }
 
@@ -129,7 +137,7 @@ final class DownloadManagerViewController: BaseViewController {
     }
 
     private func configureScopeControl() {
-        scopeControl.selectedSegmentIndex = 0
+        scopeControl.selectedSegmentIndex = selectedScope.rawValue
         scopeControl.addTarget(self, action: #selector(scopeChanged), for: .valueChanged)
         scopeControl.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(scopeControl)
@@ -385,7 +393,9 @@ final class DownloadManagerViewController: BaseViewController {
 
     @objc private func scopeChanged() {
         selectedScope = Scope(rawValue: scopeControl.selectedSegmentIndex) ?? .all
+        listPreferences.downloadScopeRawValue = selectedScope.rawValue
         updateContent()
+        UISelectionFeedbackGenerator().selectionChanged()
     }
 
     @objc private func refreshChanged(_ sender: UIRefreshControl) {

@@ -244,6 +244,56 @@ final class TabResourceStoreTests: XCTestCase {
         XCTAssertEqual(store.resources(for: tabID).first?.canonicalURL, mainURL)
     }
 
+    @MainActor
+    func testPresentationStateIsRetainedPerTabForItsSession() {
+        let store = TabResourceStore()
+        let firstID = UUID()
+        let secondID = UUID()
+        store.prepare(tabID: firstID, isPrivate: false)
+        store.prepare(tabID: secondID, isPrivate: false)
+        let customState = ResourceSnifferPresentationState(
+            selectedFilter: .video,
+            selectedSortOrder: .resolution
+        )
+
+        store.updatePresentationState(customState, for: firstID)
+
+        XCTAssertEqual(store.presentationState(for: firstID), customState)
+        XCTAssertEqual(
+            store.presentationState(for: secondID),
+            ResourceSnifferPresentationState()
+        )
+
+        store.beginNavigation(
+            tabID: firstID,
+            pageURL: URL(string: "https://example.com/next"),
+            isPrivate: false
+        )
+        XCTAssertEqual(store.presentationState(for: firstID), customState)
+    }
+
+    @MainActor
+    func testPresentationStateIsDiscardedWhenTabCloses() {
+        let store = TabResourceStore()
+        let tabID = UUID()
+        store.prepare(tabID: tabID, isPrivate: true)
+        store.updatePresentationState(
+            ResourceSnifferPresentationState(
+                selectedFilter: .image,
+                selectedSortOrder: .size
+            ),
+            for: tabID
+        )
+
+        store.remove(tabID: tabID)
+        store.prepare(tabID: tabID, isPrivate: true)
+
+        XCTAssertEqual(
+            store.presentationState(for: tabID),
+            ResourceSnifferPresentationState()
+        )
+    }
+
     private func resource(
         tabID: UUID,
         name: String,

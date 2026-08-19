@@ -87,6 +87,13 @@ final class HistoryService {
         return removedItem
     }
 
+    @discardableResult
+    func restoreEntry(_ item: HistoryItem) throws -> HistoryItem {
+        let restoredItem = try repository.save(item)
+        postChange()
+        return restoredItem
+    }
+
     func clearAll() throws {
         try repository.deleteAll()
         postChange()
