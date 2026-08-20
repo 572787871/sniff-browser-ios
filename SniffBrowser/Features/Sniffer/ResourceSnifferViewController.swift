@@ -180,9 +180,11 @@ final class ResourceSnifferViewController: BaseViewController {
     private func configureNavigation() {
         let titleView = ResourceSnifferNavigationTitleView()
         navigationItem.titleView = titleView
+        navigationItem.leftBarButtonItem = makeCloseItem()
         navigationItem.rightBarButtonItem = makeManagementItem()
         titleView.configure(
             status: statusTitle,
+            style: statusStyle,
             accessibilityValue: statusTitle
         )
     }
@@ -194,6 +196,19 @@ final class ResourceSnifferViewController: BaseViewController {
         case .stopping: return "正在停止"
         case .failed: return "启动失败"
         case .disabled: return hasStarted ? "已停止" : "未开始"
+        }
+    }
+
+    private var statusStyle: ResourceSnifferChromeConfiguration.StatusStyle {
+        switch activationState {
+        case .starting, .stopping:
+            return .working
+        case .active:
+            return scanState == .failed ? .failed : .active
+        case .failed:
+            return .failed
+        case .disabled:
+            return .stopped
         }
     }
 
@@ -345,8 +360,20 @@ final class ResourceSnifferViewController: BaseViewController {
         navigationItem.rightBarButtonItem = makeManagementItem()
         (navigationItem.titleView as? ResourceSnifferNavigationTitleView)?.configure(
             status: statusTitle,
+            style: statusStyle,
             accessibilityValue: statusTitle
         )
+    }
+
+    private func makeCloseItem() -> UIBarButtonItem {
+        let button = makeNavigationCircleButton(
+            symbolName: "xmark",
+            accessibilityLabel: "关闭资源嗅探"
+        )
+        button.addAction(UIAction { [weak self] _ in
+            self?.dismiss(animated: true)
+        }, for: .touchUpInside)
+        return UIBarButtonItem(customView: button)
     }
 
     private func makeManagementItem() -> UIBarButtonItem {
@@ -360,12 +387,44 @@ final class ResourceSnifferViewController: BaseViewController {
             image: UIImage(systemName: "trash"),
             attributes: resources.isEmpty ? [.disabled] : [.destructive]
         ) { [weak self] _ in self?.confirmClearResults() }
-        let item = UIBarButtonItem(
-            image: UIImage(systemName: "ellipsis.circle"),
-            menu: UIMenu(children: [stop, clear])
+        let button = makeNavigationCircleButton(
+            symbolName: "ellipsis",
+            accessibilityLabel: "资源管理"
         )
-        item.accessibilityLabel = "资源管理"
-        return item
+        button.menu = UIMenu(children: [stop, clear])
+        button.showsMenuAsPrimaryAction = true
+        return UIBarButtonItem(customView: button)
+    }
+
+    private func makeNavigationCircleButton(
+        symbolName: String,
+        accessibilityLabel: String
+    ) -> UIButton {
+        let button = UIButton(type: .system)
+        let configuration = UIImage.SymbolConfiguration(
+            pointSize: 17,
+            weight: .semibold
+        )
+        button.setImage(
+            UIImage(systemName: symbolName, withConfiguration: configuration),
+            for: .normal
+        )
+        button.tintColor = ResourceSnifferPalette.primaryText
+        button.backgroundColor = ResourceSnifferPalette.secondarySurface
+            .withAlphaComponent(0.72)
+        button.layer.cornerRadius = AppMetrics.minimumTapSize / 2
+        button.layer.cornerCurve = .continuous
+        button.accessibilityLabel = accessibilityLabel
+        button.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(
+                equalToConstant: AppMetrics.minimumTapSize
+            ),
+            button.heightAnchor.constraint(
+                equalToConstant: AppMetrics.minimumTapSize
+            )
+        ])
+        return button
     }
 
     private func primarySniffingAction() {
@@ -834,9 +893,27 @@ private final class ResourceSnifferNavigationTitleView: UIView {
 
     required init?(coder: NSCoder) { return nil }
 
-    func configure(status: String, accessibilityValue: String) {
+    func configure(
+        status: String,
+        style: ResourceSnifferChromeConfiguration.StatusStyle,
+        accessibilityValue: String
+    ) {
         titleLabel.text = "资源嗅探"
         statusLabel.text = "  \(status)  "
+        switch style {
+        case .active:
+            statusLabel.textColor = ResourceSnifferPalette.accent
+            statusLabel.backgroundColor = ResourceSnifferPalette.accentFill
+        case .working:
+            statusLabel.textColor = AppColors.warning
+            statusLabel.backgroundColor = AppColors.warning.withAlphaComponent(0.14)
+        case .failed:
+            statusLabel.textColor = AppColors.danger
+            statusLabel.backgroundColor = AppColors.danger.withAlphaComponent(0.14)
+        case .stopped:
+            statusLabel.textColor = ResourceSnifferPalette.secondaryText
+            statusLabel.backgroundColor = ResourceSnifferPalette.secondarySurface
+        }
         accessibilityLabel = "资源嗅探，\(accessibilityValue)"
     }
 }

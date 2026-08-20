@@ -212,7 +212,7 @@ struct ResourceSnifferEmptyConfiguration: Equatable {
     let title: String
     let message: String
     let actionTitle: String?
-    let secondaryActionTitle: String
+    let secondaryActionTitle: String?
     let isWorking: Bool
 
     init(state: ResourceSnifferViewModel.State) {
@@ -225,13 +225,13 @@ struct ResourceSnifferEmptyConfiguration: Equatable {
                 : "dot.radiowaves.left.and.right"
             title = failed
                 ? "页面检测失败"
-                : (state.hasStarted ? "嗅探已停止" : "尚未开始嗅探")
+                : (state.hasStarted ? "嗅探已停止" : "尚未发现资源")
             message = state.errorMessage
                 ?? (state.hasStarted
                     ? "重新开始嗅探后，新发现的资源会追加到这里。"
-                    : "点击上方“开始嗅探”后显示发现的资源。")
+                    : "开始嗅探后将在此显示结果")
             actionTitle = canRetry ? "重新开始嗅探" : nil
-            secondaryActionTitle = "返回网页"
+            secondaryActionTitle = canRetry ? "返回网页" : nil
             isWorking = false
             return
         }
@@ -263,7 +263,7 @@ struct ResourceSnifferChromeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             pagePanel
             filterBar
             if configuration.showsResultControls {
@@ -271,7 +271,7 @@ struct ResourceSnifferChromeView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 10)
+        .padding(.top, 12)
         .padding(.bottom, 4)
         .animation(
             reduceMotion ? nil : .smooth(duration: 0.24),
@@ -280,12 +280,12 @@ struct ResourceSnifferChromeView: View {
     }
 
     private var pagePanel: some View {
-        VStack(spacing: 13) {
+        VStack(spacing: 16) {
             HStack(spacing: 8) {
-                Label("当前标签页", systemImage: "safari")
-                    .font(.caption.weight(.semibold))
+                Label("当前标签页", systemImage: "rectangle.stack")
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(
-                        Color(uiColor: ResourceSnifferPalette.secondaryText)
+                        Color(uiColor: ResourceSnifferPalette.accent)
                     )
                 Spacer()
                 SWResourceStatusBadge(
@@ -294,21 +294,22 @@ struct ResourceSnifferChromeView: View {
                 )
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: 14) {
                 ResourceSnifferFaviconView(
                     pageURL: configuration.pageURL,
                     isPrivate: configuration.isPrivate
                 )
-                .frame(width: 48, height: 48)
-                .padding(2)
+                .frame(width: 56, height: 56)
+                .padding(7)
                 .background(
                     Color(uiColor: ResourceSnifferPalette.accentFill),
-                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    in: Circle()
                 )
+                .clipShape(Circle())
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 5) {
                     Text(configuration.domain)
-                        .font(.headline)
+                        .font(.title3.weight(.semibold))
                         .foregroundStyle(
                             Color(uiColor: ResourceSnifferPalette.primaryText)
                         )
@@ -316,7 +317,7 @@ struct ResourceSnifferChromeView: View {
                         .truncationMode(.middle)
 
                     Text(configuration.detail)
-                        .font(.caption)
+                        .font(.subheadline)
                         .foregroundStyle(
                             Color(uiColor: ResourceSnifferPalette.secondaryText)
                         )
@@ -337,26 +338,23 @@ struct ResourceSnifferChromeView: View {
                 "当前网页，\(configuration.pageTitle)，\(configuration.domain)，\(configuration.detail)，\(configuration.statusTitle)"
             )
 
-            Divider()
-                .overlay(Color(uiColor: ResourceSnifferPalette.border))
-
             Button(action: onPrimaryAction) {
                 HStack(spacing: 8) {
                     Image(systemName: configuration.primarySymbol)
                     Text(configuration.primaryTitle)
                         .fontWeight(.semibold)
                 }
-                .font(.body)
-                .frame(maxWidth: .infinity, minHeight: 48)
+                .font(.title3)
+                .frame(maxWidth: .infinity, minHeight: 56)
                 .foregroundStyle(
                     Color(uiColor: ResourceSnifferPalette.accentContent)
                 )
                 .background(
                     Color(uiColor: ResourceSnifferPalette.accent),
-                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ResourceSnifferPrimaryButtonStyle())
             .disabled(!configuration.isPrimaryEnabled)
             .opacity(configuration.isPrimaryEnabled ? 1 : 0.58)
             .accessibilityHint(
@@ -370,41 +368,48 @@ struct ResourceSnifferChromeView: View {
                 configuration.helper,
                 systemImage: configuration.isPrivate ? "eye.slash" : "lock"
             )
-            .font(.caption)
+            .font(.footnote)
             .foregroundStyle(
                 Color(uiColor: ResourceSnifferPalette.tertiaryText)
             )
             .multilineTextAlignment(.center)
         }
-        .padding(16)
+        .padding(18)
         .background(
-            .thinMaterial,
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-        )
-        .background(
-            Color(uiColor: ResourceSnifferPalette.surface).opacity(0.78),
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+            Color(uiColor: ResourceSnifferPalette.surface),
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(
                     Color(uiColor: ResourceSnifferPalette.border),
                     lineWidth: 0.5
                 )
         }
+        .shadow(color: .black.opacity(0.045), radius: 16, y: 7)
     }
 
     private var filterBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
                 ForEach(configuration.filters) { item in
-                    SWResourceFilterButton(item: item) {
+                    SWResourceFilterButton(item: item, expands: true) {
                         onSelectFilter(item.filter)
                     }
                 }
             }
-            .padding(.horizontal, 1)
-            .padding(.vertical, 2)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(configuration.filters) { item in
+                        SWResourceFilterButton(item: item, expands: false) {
+                            onSelectFilter(item.filter)
+                        }
+                    }
+                }
+                .padding(.horizontal, 1)
+                .padding(.vertical, 3)
+            }
         }
         .accessibilityLabel("资源分类")
     }
@@ -482,6 +487,7 @@ private struct SWResourceStatusBadge: View {
 /// ShipSwift tab-button recipe adapted for resource counts.
 private struct SWResourceFilterButton: View {
     let item: ResourceSnifferChromeConfiguration.FilterItem
+    let expands: Bool
     let action: () -> Void
 
     var body: some View {
@@ -497,15 +503,15 @@ private struct SWResourceFilterButton: View {
 
             }
             .font(.subheadline.weight(item.isSelected ? .semibold : .medium))
-            .padding(.horizontal, 14)
-            .frame(minHeight: 38)
+            .padding(.horizontal, expands ? 10 : 15)
+            .frame(maxWidth: expands ? .infinity : nil, minHeight: 44)
             .foregroundStyle(item.isSelected
                 ? Color(uiColor: ResourceSnifferPalette.accentContent)
                 : Color(uiColor: ResourceSnifferPalette.primaryText))
             .background(
                 item.isSelected
                     ? Color(uiColor: ResourceSnifferPalette.accent)
-                    : Color(uiColor: ResourceSnifferPalette.secondarySurface),
+                    : Color(uiColor: ResourceSnifferPalette.surface),
                 in: Capsule()
             )
             .overlay {
@@ -516,8 +522,14 @@ private struct SWResourceFilterButton: View {
                     )
                 }
             }
+            .shadow(
+                color: item.isSelected ? Color.black.opacity(0.08) : .clear,
+                radius: 8,
+                y: 4
+            )
+            .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ResourceSnifferFilterButtonStyle())
         .accessibilityLabel("\(item.filter.title)资源")
         .accessibilityValue(
             item.count > 0
@@ -534,29 +546,10 @@ struct ResourceSnifferEmptyStateView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 14) {
-                ZStack {
-                    ForEach(0..<3, id: \.self) { index in
-                        Circle()
-                            .stroke(
-                                Color(uiColor: ResourceSnifferPalette.accent)
-                                    .opacity(0.10 + Double(index) * 0.07),
-                                lineWidth: 1
-                            )
-                            .frame(
-                                width: CGFloat(76 - index * 18),
-                                height: CGFloat(76 - index * 18)
-                            )
-                    }
-
-                    Image(systemName: configuration.symbolName)
-                        .font(.system(size: 28, weight: .regular))
-                        .foregroundStyle(
-                            Color(uiColor: ResourceSnifferPalette.accent)
-                        )
-                }
-                .frame(width: 82, height: 82)
-                .accessibilityHidden(true)
+            VStack(spacing: 11) {
+                ResourceSnifferStateIllustration(
+                    symbolName: configuration.symbolName
+                )
 
                 if configuration.isWorking {
                     ProgressView()
@@ -564,7 +557,7 @@ struct ResourceSnifferEmptyStateView: View {
                 }
 
                 Text(configuration.title)
-                    .font(.title3.weight(.semibold))
+                    .font(.headline.weight(.semibold))
                     .foregroundStyle(
                         Color(uiColor: ResourceSnifferPalette.primaryText)
                     )
@@ -586,19 +579,102 @@ struct ResourceSnifferEmptyStateView: View {
                         .accessibilityIdentifier("sniffer.empty-action")
                 }
 
-                Button(configuration.secondaryActionTitle, action: onSecondaryAction)
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(
-                        Color(uiColor: ResourceSnifferPalette.accent)
-                    )
-                    .frame(minHeight: 44)
+                if let secondaryActionTitle = configuration.secondaryActionTitle {
+                    Button(secondaryActionTitle, action: onSecondaryAction)
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(
+                            Color(uiColor: ResourceSnifferPalette.accent)
+                        )
+                        .frame(minHeight: 44)
+                }
             }
             .frame(maxWidth: 360)
             .padding(.horizontal, 28)
-            .padding(.vertical, 24)
-            .frame(maxWidth: .infinity, minHeight: 330)
+            .padding(.top, 34)
+            .padding(.bottom, 24)
+            .frame(maxWidth: .infinity, minHeight: 300, alignment: .top)
         }
         .scrollIndicators(.hidden)
+    }
+}
+
+private struct ResourceSnifferStateIllustration: View {
+    let symbolName: String
+
+    var body: some View {
+        if symbolName == "dot.radiowaves.left.and.right" {
+            radar
+        } else {
+            Image(systemName: symbolName)
+                .font(.system(size: 34, weight: .regular))
+                .foregroundStyle(Color(uiColor: ResourceSnifferPalette.accent))
+                .frame(width: 108, height: 108)
+                .background(
+                    Color(uiColor: ResourceSnifferPalette.accentFill),
+                    in: Circle()
+                )
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var radar: some View {
+        ZStack {
+            Circle()
+                .fill(Color(uiColor: ResourceSnifferPalette.accent).opacity(0.035))
+            ForEach([CGFloat(92), 66, 40], id: \.self) { diameter in
+                Circle()
+                    .stroke(
+                        Color(uiColor: ResourceSnifferPalette.accent).opacity(0.14),
+                        lineWidth: 1
+                    )
+                    .frame(width: diameter, height: diameter)
+            }
+
+            Capsule()
+                .fill(Color(uiColor: ResourceSnifferPalette.accent))
+                .frame(width: 42, height: 2)
+                .rotationEffect(.degrees(-45))
+                .offset(x: 15, y: -15)
+
+            Circle()
+                .fill(Color(uiColor: ResourceSnifferPalette.accent))
+                .frame(width: 12, height: 12)
+
+            Circle()
+                .fill(Color(uiColor: ResourceSnifferPalette.accent).opacity(0.62))
+                .frame(width: 7, height: 7)
+                .offset(x: 38, y: 20)
+
+            Circle()
+                .fill(Color(uiColor: ResourceSnifferPalette.accent).opacity(0.32))
+                .frame(width: 5, height: 5)
+                .offset(x: -42, y: 28)
+        }
+        .frame(width: 112, height: 112)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct ResourceSnifferPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.86 : 1)
+            .scaleEffect(
+                reduceMotion || !configuration.isPressed ? 1 : 0.985
+            )
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: 0.12),
+                value: configuration.isPressed
+            )
+    }
+}
+
+private struct ResourceSnifferFilterButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.72 : 1)
     }
 }
 

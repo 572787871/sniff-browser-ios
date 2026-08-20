@@ -343,8 +343,22 @@ final class AppCoordinator: NSObject, BrowserRouting {
 
   private func presentSheet(_ navigation: UINavigationController) {
     if let sheet = navigation.sheetPresentationController {
-      sheet.detents = [.medium(), .large()]
+      let preferredIdentifier = UISheetPresentationController.Detent.Identifier(
+        "resourceSniffer"
+      )
+      let preferredDetent = UISheetPresentationController.Detent.custom(
+        identifier: preferredIdentifier
+      ) { context in
+        let preferredHeight = context.maximumDetentValue * 0.76
+        return min(
+          context.maximumDetentValue,
+          max(440, preferredHeight)
+        )
+      }
+      sheet.detents = [preferredDetent, .large()]
+      sheet.selectedDetentIdentifier = preferredIdentifier
       sheet.prefersGrabberVisible = true
+      sheet.prefersScrollingExpandsWhenScrolledToEdge = false
       sheet.preferredCornerRadius = AppRadius.sheet
     }
     navigationController.present(navigation, animated: true)

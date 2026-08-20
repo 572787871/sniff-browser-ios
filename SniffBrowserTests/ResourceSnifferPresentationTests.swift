@@ -25,6 +25,19 @@ final class ResourceSnifferPresentationTests: XCTestCase {
         XCTAssertTrue(configuration.helper.contains("手动开启"))
         XCTAssertEqual(configuration.filters.map(\.count), [0, 0, 0, 0])
         XCTAssertFalse(configuration.showsResultControls)
+
+        let empty = ResourceSnifferEmptyConfiguration(
+            state: makeState(
+                tabID: tabID,
+                resources: [],
+                activationState: .disabled,
+                hasStarted: false
+            )
+        )
+        XCTAssertEqual(empty.title, "尚未发现资源")
+        XCTAssertEqual(empty.message, "开始嗅探后将在此显示结果")
+        XCTAssertNil(empty.actionTitle)
+        XCTAssertNil(empty.secondaryActionTitle)
     }
 
     @MainActor
