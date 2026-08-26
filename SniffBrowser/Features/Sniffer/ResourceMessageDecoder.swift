@@ -4,6 +4,7 @@ struct ResourceMessageDecoder: Sendable {
     static let maximumBatchCount = 500
     static let maximumURLLength = 8_192
     private static let maximumInlineImageURLLength = 1_500_000
+    private static let maximumInlineThumbnailURLLength = 180_000
     private static let maximumTextLength = 1_024
 
     enum DecodeError: Error, Equatable {
@@ -96,12 +97,15 @@ struct ResourceMessageDecoder: Sendable {
     }
 
     private func allowedThumbnailURL(_ value: Any?, pageURL: String?) -> String? {
-        guard let rawURL = boundedString(
-            value,
-            maximum: Self.maximumURLLength
-        ), isAllowed(rawURL, pageURL: pageURL),
-        let scheme = URL(string: rawURL)?.scheme?.lowercased(),
-        ["http", "https"].contains(scheme)
+        guard let rawValue = value as? String else { return nil }
+        let isInlineImage = rawValue.lowercased().hasPrefix("data:image/")
+        let maximumLength = isInlineImage
+            ? Self.maximumInlineThumbnailURLLength
+            : Self.maximumURLLength
+        guard let rawURL = boundedString(value, maximum: maximumLength),
+              isAllowed(rawURL, pageURL: pageURL),
+              let scheme = URL(string: rawURL)?.scheme?.lowercased(),
+              ["http", "https", "data"].contains(scheme)
         else { return nil }
         return rawURL
     }

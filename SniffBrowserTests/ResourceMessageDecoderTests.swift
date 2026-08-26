@@ -41,6 +41,38 @@ final class ResourceMessageDecoderTests: XCTestCase {
         )
     }
 
+    func testDecodesBoundedInlineVideoFrameThumbnail() throws {
+        let dataURL = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2Q=="
+        let batch = try decode([
+            "kind": "batch",
+            "pageURL": "https://example.com/page",
+            "candidates": [[
+                "url": "https://cdn.example.com/video.m3u8",
+                "thumbnailURL": dataURL,
+                "mimeType": "application/vnd.apple.mpegurl"
+            ]]
+        ])
+
+        XCTAssertEqual(
+            batch.candidates.first?.thumbnailURLString,
+            dataURL
+        )
+    }
+
+    func testRejectsNonImageInlineThumbnail() throws {
+        let batch = try decode([
+            "kind": "batch",
+            "pageURL": "https://example.com/page",
+            "candidates": [[
+                "url": "https://cdn.example.com/video.mp4",
+                "thumbnailURL": "data:text/html;base64,PGgxPkJhZDwvaDE+",
+                "mimeType": "video/mp4"
+            ]]
+        ])
+
+        XCTAssertNil(batch.candidates.first?.thumbnailURLString)
+    }
+
     func testMissingAndInvalidURLsAreRejected() throws {
         let batch = try decode([
             "kind": "batch",

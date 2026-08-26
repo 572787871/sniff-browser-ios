@@ -20,6 +20,7 @@ final class ResourceListCell: UITableViewCell {
     private var mediaThumbnailToken: ResourceThumbnailToken?
     private var representedResourceID: UUID?
     private var hasMediaFrame = false
+    private var hasThumbnailImage = false
     private var iconWidthConstraint: NSLayoutConstraint?
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
@@ -43,6 +44,7 @@ final class ResourceListCell: UITableViewCell {
         mediaThumbnailToken = nil
         representedResourceID = nil
         hasMediaFrame = false
+        hasThumbnailImage = false
         typeIconView.image = nil
         previewIndicator.stopAnimating()
         previewIndicator.isHidden = true
@@ -52,6 +54,7 @@ final class ResourceListCell: UITableViewCell {
     func configure(
         resource: DetectedResource,
         allowsThumbnailDiskCache: Bool,
+        allowsMediaFrameExtraction: Bool,
         thumbnailRequestProvider: @escaping @MainActor (URL) async -> URLRequest?,
         inlineDataProvider: @escaping @MainActor (URL) async -> Data?,
         mediaContextProvider: @escaping @MainActor (DetectedResource) async -> DownloadRequestContext?,
@@ -71,6 +74,7 @@ final class ResourceListCell: UITableViewCell {
         mediaThumbnailToken = nil
         representedResourceID = resource.id
         hasMediaFrame = false
+        hasThumbnailImage = false
         previewIndicator.stopAnimating()
         previewIndicator.isHidden = true
         nameLabel.text = resource.fileName
@@ -117,20 +121,25 @@ final class ResourceListCell: UITableViewCell {
         typeIconView.backgroundColor = ResourceSnifferPalette.accentFill
         let supportsMediaFrame = resource.resourceType == .video
             || resource.resourceType == .hls
-        // Video rows always start with a neutral media placeholder and then
-        // replace it with a frame extracted from that exact media URL. A page
-        // og:image is not a valid per-video preview and made every HLS row look
-        // identical on pages containing several streams.
         let thumbnailURL: URL?
         switch resource.resourceType {
         case .image:
             thumbnailURL = URL(string: resource.originalURLString)
                 ?? resource.canonicalURL
         case .video, .hls:
-            thumbnailURL = nil
+            // The page bridge now captures a real frame from the matching
+            // HTMLVideoElement when WebKit permits it. A configured poster is
+            // still a useful immediate fallback while bounded native frame
+            // extraction runs after the initial scan has completed.
+            thumbnailURL = resource.thumbnailURL
         default:
             thumbnailURL = resource.thumbnailURL
         }
+        let isInlineVideoFrame = supportsMediaFrame
+            && thumbnailURL?.scheme?.lowercased() == "data"
+        let shouldExtractMediaFrame = supportsMediaFrame
+            && allowsMediaFrameExtraction
+            && !isInlineVideoFrame
         iconWidthConstraint?.constant = (thumbnailURL != nil || supportsMediaFrame)
             ? 80
             : 48
@@ -168,6 +177,10 @@ final class ResourceListCell: UITableViewCell {
                     self.previewIndicator.stopAnimating()
                     self.previewIndicator.isHidden = true
                     if let image {
+                        self.hasThumbnailImage = true
+                        if isInlineVideoFrame {
+                            self.hasMediaFrame = true
+                        }
                         self.typeIconView.image = image
                         self.typeIconView.contentMode = .scaleAspectFill
                         self.typeIconView.backgroundColor = ResourceSnifferPalette.secondarySurface
@@ -177,7 +190,7 @@ final class ResourceListCell: UITableViewCell {
                 }
             }
         }
-        if supportsMediaFrame {
+        if shouldExtractMediaFrame {
             previewIndicator.isHidden = false
             previewIndicator.startAnimating()
             let scale = UIScreen.main.scale
@@ -220,7 +233,9 @@ final class ResourceListCell: UITableViewCell {
                     self.previewIndicator.stopAnimating()
                     self.previewIndicator.isHidden = true
                     guard let image else {
-                        self.showFallbackIcon(for: resource.resourceType)
+                        if !self.hasThumbnailImage {
+                            self.showFallbackIcon(for: resource.resourceType)
+                        }
                         return
                     }
                     self.hasMediaFrame = true

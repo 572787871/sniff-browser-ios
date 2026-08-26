@@ -34,6 +34,83 @@ private actor RemoteMediaPreviewPermitPool {
     }
 }
 
+/// AVAssetImageGenerator can call back from multiple queues and may never
+/// deliver a terminal callback for a malformed remote stream. This one-shot
+/// request owns the continuation, accepts the first valid frame, and enforces
+/// a hard timeout without allowing a late callback to resume twice.
+private final class RemoteMediaFrameRequest: @unchecked Sendable {
+    private let lock = NSLock()
+    private let generator: AVAssetImageGenerator
+    private var continuation: CheckedContinuation<UIImage?, Never>?
+    private var remainingAttempts: Int
+    private var result: UIImage?
+    private var isFinished = false
+
+    init(generator: AVAssetImageGenerator, attemptCount: Int) {
+        self.generator = generator
+        remainingAttempts = max(1, attemptCount)
+    }
+
+    func attach(_ continuation: CheckedContinuation<UIImage?, Never>) {
+        let completedResult: UIImage?
+        lock.lock()
+        if isFinished {
+            completedResult = result
+        } else {
+            self.continuation = continuation
+            lock.unlock()
+            return
+        }
+        lock.unlock()
+        continuation.resume(returning: completedResult)
+    }
+
+    func receive(_ image: UIImage?) {
+        var continuationToResume: CheckedContinuation<UIImage?, Never>?
+        var finalImage: UIImage?
+        var shouldFinish = false
+        lock.lock()
+        guard !isFinished else {
+            lock.unlock()
+            return
+        }
+        if let image {
+            result = image
+            finalImage = image
+            isFinished = true
+        } else {
+            remainingAttempts -= 1
+            if remainingAttempts <= 0 {
+                isFinished = true
+            }
+        }
+        if isFinished {
+            shouldFinish = true
+            continuationToResume = continuation
+            continuation = nil
+        }
+        lock.unlock()
+        guard shouldFinish else { return }
+        generator.cancelAllCGImageGeneration()
+        continuationToResume?.resume(returning: finalImage)
+    }
+
+    func cancel() {
+        var continuationToResume: CheckedContinuation<UIImage?, Never>?
+        lock.lock()
+        guard !isFinished else {
+            lock.unlock()
+            return
+        }
+        isFinished = true
+        continuationToResume = continuation
+        continuation = nil
+        lock.unlock()
+        generator.cancelAllCGImageGeneration()
+        continuationToResume?.resume(returning: nil)
+    }
+}
+
 @MainActor
 final class RemoteMediaThumbnailLoader {
     static let shared = RemoteMediaThumbnailLoader()
@@ -54,7 +131,7 @@ final class RemoteMediaThumbnailLoader {
     }
 
     private let cache = NSCache<NSString, UIImage>()
-    private let previewPermits = RemoteMediaPreviewPermitPool(limit: 2)
+    private let previewPermits = RemoteMediaPreviewPermitPool(limit: 1)
     private var pendingWork: [String: MediaWork] = [:]
     private var privateMemoryKeysByTab: [UUID: Set<String>] = [:]
 
@@ -255,31 +332,10 @@ final class RemoteMediaThumbnailLoader {
             return image
         }
 
-        let headers = Self.safeRemoteFrameHeaders(
-            context: context,
-            url: resource.canonicalURL
-        )
-        if let image = await generateFFmpegFrame(
-            from: resource.canonicalURL,
-            requestHeaders: headers,
-            targetPixelSize: targetPixelSize,
-            resourceURL: resource.canonicalURL
-        ) {
-            return image
-        }
-
-        // Some servers only expose the media after the loopback server has
-        // rewritten the manifest/range response. Keep this as the final
-        // fallback, not the first path, so normal cards do not queue behind a
-        // slow decoder when AVFoundation can already produce a frame.
-        if let proxyURL {
-            return await generateFFmpegFrame(
-                from: proxyURL,
-                requestHeaders: [:],
-                targetPixelSize: targetPixelSize,
-                resourceURL: resource.canonicalURL
-            )
-        }
+        // Never pass an untrusted remote playlist/segment into the native
+        // FFmpeg C decoder from a scrolling list. Downloaded local files still
+        // use the established FFmpeg pipeline; remote previews are isolated
+        // behind AVFoundation and the bounded loopback proxy only.
         return nil
     }
 
@@ -294,67 +350,36 @@ final class RemoteMediaThumbnailLoader {
         generator.requestedTimeToleranceBefore = .positiveInfinity
         generator.requestedTimeToleranceAfter = .positiveInfinity
 
-        let requestedTime = CMTime(seconds: 0.8, preferredTimescale: 600)
-        let image: UIImage? = await withCheckedContinuation { continuation in
-            generator.generateCGImagesAsynchronously(
-                forTimes: [NSValue(time: requestedTime)]
-            ) { _, cgImage, _, result, _ in
-                guard result == .succeeded, let cgImage else {
-                    continuation.resume(returning: nil)
-                    return
+        let requestedTimes = [0.1, 0.8, 2.0].map {
+            NSValue(time: CMTime(seconds: $0, preferredTimescale: 600))
+        }
+        let request = RemoteMediaFrameRequest(
+            generator: generator,
+            attemptCount: requestedTimes.count
+        )
+        let image: UIImage? = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                request.attach(continuation)
+                generator.generateCGImagesAsynchronously(
+                    forTimes: requestedTimes
+                ) { _, cgImage, _, result, _ in
+                    request.receive(
+                        result == .succeeded
+                            ? cgImage.map { UIImage(cgImage: $0) }
+                            : nil
+                    )
                 }
-                continuation.resume(returning: UIImage(cgImage: cgImage))
+                DispatchQueue.global(qos: .utility).asyncAfter(
+                    deadline: .now() + 8
+                ) {
+                    request.cancel()
+                }
             }
+        } onCancel: {
+            request.cancel()
         }
         guard let image else { return nil }
         return image.preparingThumbnail(of: targetPixelSize) ?? image
-    }
-
-    private func generateFFmpegFrame(
-        from sourceURL: URL,
-        requestHeaders: [String: String],
-        targetPixelSize: CGSize,
-        resourceURL: URL
-    ) async -> UIImage? {
-        let outputURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("sniff-preview-\(UUID().uuidString).jpg")
-        defer { try? FileManager.default.removeItem(at: outputURL) }
-        do {
-            try await FFmpegProcessorProvider.current.generateThumbnail(
-                from: sourceURL,
-                output: outputURL,
-                requestHeaders: requestHeaders
-            )
-            try Task.checkCancellation()
-            guard let image = UIImage(contentsOfFile: outputURL.path) else {
-                return nil
-            }
-            return image.preparingThumbnail(of: targetPixelSize) ?? image
-        } catch {
-            guard !Task.isCancelled else { return nil }
-            AppLogger(.sniffer).debug(
-                "媒体视频预览 FFmpeg 取帧失败 url=\(resourceURL.absoluteString) error=\(error.localizedDescription)"
-            )
-            return nil
-        }
-    }
-
-    private static func safeRemoteFrameHeaders(
-        context: DownloadRequestContext,
-        url: URL
-    ) -> [String: String] {
-        let requestHeaders = context.makeRequest(for: url).allHTTPHeaderFields ?? [:]
-        let allowedNames = Set([
-            "accept",
-            "accept-language",
-            "origin",
-            "referer",
-            "user-agent"
-        ])
-        return requestHeaders.reduce(into: [:]) { result, pair in
-            guard allowedNames.contains(pair.key.lowercased()) else { return }
-            result[pair.key] = pair.value
-        }
     }
 
     private func store(

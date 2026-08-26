@@ -1,5 +1,32 @@
 import Foundation
 
+private actor HLSMetadataPermitPool {
+    private let limit: Int
+    private var available: Int
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(limit: Int) {
+        self.limit = max(1, limit)
+        available = max(1, limit)
+    }
+
+    func acquire() async {
+        if available > 0 {
+            available -= 1
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            available = min(limit, available + 1)
+        } else {
+            waiters.removeFirst().resume()
+        }
+    }
+}
+
 @MainActor
 final class ResourceSnifferViewModel {
     typealias RequestContextProvider = @MainActor (URL) async -> DownloadRequestContext
@@ -25,6 +52,7 @@ final class ResourceSnifferViewModel {
     private let blobImageDataProvider: @MainActor (URL) async -> Data?
     private let downloadCenter: DownloadCenter
     private let hlsMetadataResolver = HLSResourceMetadataResolver()
+    private let hlsMetadataPermits = HLSMetadataPermitPool(limit: 2)
     private var observationToken: UUID?
     private var hlsMetadataTasks: [URL: Task<Void, Never>] = [:]
     private var attemptedHLSMetadataURLs: Set<URL> = []
@@ -83,7 +111,7 @@ final class ResourceSnifferViewModel {
             self.onStateChange?(self.state)
             // Opening the panel must not trigger follow-up network work. HLS
             // metadata resolution is part of an active sniffing session only.
-            if snapshot.activationState.isEnabled {
+            if snapshot.activationState == .active {
                 self.resolveHLSMetadataIfNeeded(in: snapshot.resources)
             }
         }
@@ -144,6 +172,9 @@ final class ResourceSnifferViewModel {
     }
 
     func thumbnailRequest(for url: URL) async -> URLRequest {
+        if url.scheme?.lowercased() == "data" {
+            return URLRequest(url: url)
+        }
         await requestContextProvider(url).makeRequest(
             cachePolicy: .returnCacheDataElseLoad
         )
@@ -184,20 +215,28 @@ final class ResourceSnifferViewModel {
             hlsMetadataTasks[url] = Task { [weak self] in
                 guard let self else { return }
                 defer { self.hlsMetadataTasks[url] = nil }
+                await self.hlsMetadataPermits.acquire()
+                guard !Task.isCancelled else {
+                    await self.hlsMetadataPermits.release()
+                    return
+                }
                 let context = await self.requestContextProvider(url)
+                let enriched: DetectedResource?
                 do {
-                    let enriched = try await self.hlsMetadataResolver.resolve(
+                    enriched = try await self.hlsMetadataResolver.resolve(
                         resource: resource,
                         context: context
                     )
-                    guard !Task.isCancelled else { return }
-                    self.store.upsert([enriched], tabID: resource.tabID)
                 } catch is CancellationError {
-                    return
+                    enriched = nil
                 } catch {
                     // Metadata is supplemental. A failure must not hide a
                     // resource that the established downloader can still use.
+                    enriched = nil
                 }
+                await self.hlsMetadataPermits.release()
+                guard !Task.isCancelled, let enriched else { return }
+                self.store.upsert([enriched], tabID: resource.tabID)
             }
         }
     }

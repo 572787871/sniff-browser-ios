@@ -31,6 +31,17 @@ final class ResourceSniffingScriptProviderTests: XCTestCase {
     XCTAssertTrue(source.contains("scanEmbeddedHLSURLs"))
   }
 
+  func testVideoFrameCaptureAndBridgeBatchingAreBounded() {
+    let source = ResourceSniffingScriptProvider.source
+
+    XCTAssertTrue(source.contains("capturedVideoFrames"))
+    XCTAssertTrue(source.contains("videoFrameDataURL"))
+    XCTAssertTrue(source.contains("canvas.toDataURL(\"image/jpeg\""))
+    XCTAssertTrue(source.contains("const maximumCount = 40"))
+    XCTAssertTrue(source.contains("const maximumApproximateLength = 1700000"))
+    XCTAssertTrue(source.contains("sentSignatures"))
+  }
+
   func testVideoLongPressResolvesPlayerConfigBeforeBlobPlaybackURL() {
     let source = WebVideoLongPressScriptProvider.source
 

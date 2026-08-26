@@ -24,13 +24,18 @@ enum ResourceSniffingScriptProvider {
       const state = {
         enabled: false,
         queue: new Map(),
+        sentSignatures: new Map(),
         flushTimer: 0,
         observerTimer: 0,
         observer: null,
         hooksInstalled: false,
+        capturedVideoFrames: new WeakMap(),
         maximumCandidates: 500
       };
-      const mediaEvents = ["loadedmetadata", "durationchange", "progress", "play", "canplay"];
+      const mediaEvents = [
+        "loadedmetadata", "loadeddata", "durationchange", "progress",
+        "play", "canplay", "seeked"
+      ];
       const lazyImageURLAttributes = [
         "z-image-loader-url", "data-src", "data-original", "data-lazy-src",
         "data-original-src", "data-actualsrc"
@@ -89,6 +94,17 @@ enum ResourceSniffingScriptProvider {
         clearTimeout(state.flushTimer);
         state.flushTimer = setTimeout(flush, 240);
       };
+      const candidateSignature = candidate => {
+        const thumbnail = String(candidate.thumbnailURL || "");
+        const thumbnailSignature = thumbnail.startsWith("data:image/")
+          ? `inline:${thumbnail.length}:${thumbnail.slice(-32)}`
+          : thumbnail;
+        return JSON.stringify([
+          candidate.mimeType, candidate.estimatedSize, candidate.duration,
+          candidate.width, candidate.height, candidate.bitrate,
+          thumbnailSignature, candidate.source, candidate.elementType
+        ]);
+      };
       const enqueue = item => {
         if (!state.enabled) return;
         const url = absoluteURL(item.url);
@@ -108,9 +124,12 @@ enum ResourceSniffingScriptProvider {
         };
         const previous = state.queue.get(url);
         if (previous) {
-          state.queue.set(url, { ...previous, ...Object.fromEntries(
+          const merged = { ...previous, ...Object.fromEntries(
             Object.entries(candidate).filter(([, value]) => value != null)
-          )});
+          )};
+          state.queue.set(url, merged);
+        } else if (state.sentSignatures.get(url) === candidateSignature(candidate)) {
+          return;
         } else if (state.queue.size < state.maximumCandidates) {
           state.queue.set(url, candidate);
         } else if (priority(candidate) > 1) {
@@ -123,13 +142,71 @@ enum ResourceSniffingScriptProvider {
         if (!state.enabled || !state.queue.size) return;
         const values = [...state.queue.values()];
         state.queue.clear();
-        for (let index = 0; index < values.length; index += 100) {
+        const maximumCount = 40;
+        const maximumApproximateLength = 1700000;
+        let batch = [];
+        let approximateLength = 0;
+        const postBatch = () => {
+          if (!batch.length) return;
+          batch.forEach(candidate => {
+            if (!state.sentSignatures.has(candidate.url)
+              && state.sentSignatures.size >= 1000) {
+              state.sentSignatures.delete(state.sentSignatures.keys().next().value);
+            }
+            state.sentSignatures.set(
+              candidate.url,
+              candidateSignature(candidate)
+            );
+          });
           safePost({
             kind: "batch",
             pageURL: String(location.href || ""),
             pageTitle: String(document.title || ""),
-            candidates: values.slice(index, index + 100)
+            candidates: batch
           });
+          batch = [];
+          approximateLength = 0;
+        };
+        values.forEach(candidate => {
+          const candidateLength = String(candidate.url || "").length
+            + String(candidate.thumbnailURL || "").length + 512;
+          if (batch.length >= maximumCount
+            || (batch.length && approximateLength + candidateLength > maximumApproximateLength)) {
+            postBatch();
+          }
+          batch.push(candidate);
+          approximateLength += candidateLength;
+        });
+        postBatch();
+      };
+      const videoFrameDataURL = element => {
+        if (!(element instanceof HTMLVideoElement)) return null;
+        const cached = state.capturedVideoFrames.get(element);
+        if (cached) return cached;
+        const width = Number(element.videoWidth || 0);
+        const height = Number(element.videoHeight || 0);
+        if (element.readyState < 2 || width < 2 || height < 2) return null;
+        try {
+          const maximumDimension = 320;
+          const scale = Math.min(
+            1,
+            maximumDimension / width,
+            maximumDimension / height
+          );
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(2, Math.round(width * scale));
+          canvas.height = Math.max(2, Math.round(height * scale));
+          const context = canvas.getContext("2d", { alpha: false });
+          if (!context) return null;
+          context.drawImage(element, 0, 0, canvas.width, canvas.height);
+          const dataURL = canvas.toDataURL("image/jpeg", 0.68);
+          if (!dataURL || dataURL.length > 180000) return null;
+          state.capturedVideoFrames.set(element, dataURL);
+          return dataURL;
+        } catch (_) {
+          // Cross-origin media can taint a canvas. Native AVFoundation remains
+          // the bounded fallback and the live page must never be disturbed.
+          return null;
         }
       };
       const mediaItem = (element, source) => ({
@@ -139,7 +216,7 @@ enum ResourceSniffingScriptProvider {
         width: element.videoWidth,
         height: element.videoHeight,
         thumbnailURL: element instanceof HTMLVideoElement
-          ? (element.poster || element.getAttribute?.("poster")
+          ? (videoFrameDataURL(element) || element.poster || element.getAttribute?.("poster")
             || element.dataset?.poster || element.dataset?.thumbnail)
           : null,
         source,
@@ -246,6 +323,7 @@ enum ResourceSniffingScriptProvider {
             if (!media || typeof media !== "object") return;
             const url = media.url || media.src || media.file;
             if (!url) return;
+            const configuredVideo = element.querySelector?.("video");
             enqueue({
               url,
               mimeType: String(media.type || "").toLowerCase() === "hls"
@@ -253,7 +331,8 @@ enum ResourceSniffingScriptProvider {
               duration: media.duration,
               width: media.width,
               height: media.height,
-              thumbnailURL: media.poster || media.pic || media.thumbnail || null,
+              thumbnailURL: videoFrameDataURL(configuredVideo)
+                || media.poster || media.pic || media.thumbnail || null,
               // A URL declared as the player's primary video is a stronger
               // signal than pre-roll playlists observed through Performance.
               // Rank it like a real media event so its preview is generated
@@ -287,6 +366,7 @@ enum ResourceSniffingScriptProvider {
       const scan = (reason = "dom", scanID = null) => {
         if (!state.enabled) return false;
         const source = reason === "manualScan" ? "manualScan" : "dom";
+        if (reason === "manualScan") state.sentSignatures.clear();
         scanDOM(source);
         scanCSSBackgrounds(source);
         scanPerformance(source);
@@ -392,6 +472,7 @@ enum ResourceSniffingScriptProvider {
         clearTimeout(state.flushTimer);
         clearTimeout(state.observerTimer);
         state.queue.clear();
+        state.sentSignatures.clear();
         state.observer?.disconnect();
         state.observer = null;
         mediaEvents.forEach(name => document.removeEventListener(name, mediaHandler, true));

@@ -325,6 +325,11 @@ final class ResourceSnifferViewController: BaseViewController {
     private func updateContent(state: ResourceSnifferViewModel.State) {
         let nextRows = filteredResources.map(RenderedResourceRow.init)
         let canShowResults = state.hasStarted || state.activationState.isEnabled
+        let previouslyAllowedMediaFrameExtraction = renderedContent.map {
+            $0.activationState == .active && $0.scanState == .completed
+        } ?? false
+        let allowsMediaFrameExtraction = state.activationState == .active
+            && state.scanState == .completed
         let nextContent = RenderedContent(
             pageTitle: state.pageTitle,
             pageURL: state.pageURL,
@@ -345,7 +350,8 @@ final class ResourceSnifferViewController: BaseViewController {
         guard nextContent != renderedContent else { return }
         renderedContent = nextContent
         chromeHost.rootView = makeChromeView(state: state)
-        if nextRows != renderedRows {
+        if nextRows != renderedRows
+            || previouslyAllowedMediaFrameExtraction != allowsMediaFrameExtraction {
             renderedRows = nextRows
             tableView.reloadData()
         }
@@ -736,6 +742,8 @@ extension ResourceSnifferViewController: UITableViewDataSource,
         cell.configure(
             resource: resource,
             allowsThumbnailDiskCache: !viewModel.state.isPrivate,
+            allowsMediaFrameExtraction: activationState == .active
+                && scanState == .completed,
             thumbnailRequestProvider: { [weak viewModel] url in
                 guard let viewModel else { return nil }
                 return await viewModel.thumbnailRequest(for: url)
