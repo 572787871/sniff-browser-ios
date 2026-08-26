@@ -175,7 +175,7 @@ final class ResourceSnifferViewModel {
         if url.scheme?.lowercased() == "data" {
             return URLRequest(url: url)
         }
-        await requestContextProvider(url).makeRequest(
+        return await requestContextProvider(url).makeRequest(
             cachePolicy: .returnCacheDataElseLoad
         )
     }
