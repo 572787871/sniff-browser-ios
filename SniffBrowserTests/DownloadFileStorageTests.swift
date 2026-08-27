@@ -156,6 +156,27 @@ final class DownloadFileStorageTests: XCTestCase {
         )
     }
 
+    func testStoresSnifferPreviewForAnInProgressDownload() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let taskID = UUID()
+        let preview = Data(repeating: 0xA5, count: 128)
+
+        let relativePath = try fixture.storage.storeThumbnailData(
+            preview,
+            taskID: taskID
+        )
+        let storedURL = try XCTUnwrap(
+            fixture.storage.fileURL(relativePath: relativePath)
+        )
+
+        XCTAssertEqual(
+            relativePath,
+            "AppSupport/Thumbnails/\(taskID.uuidString).jpg"
+        )
+        XCTAssertEqual(try Data(contentsOf: storedURL), preview)
+    }
+
     private func makeFixture() throws -> (root: URL, storage: DownloadFileStorage) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

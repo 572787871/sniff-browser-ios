@@ -119,7 +119,8 @@ final class DownloadCenter: DownloadManaging {
 
     func createDownload(
         resource: DetectedResource,
-        context: DownloadRequestContext
+        context: DownloadRequestContext,
+        previewImageData: Data? = nil
     ) async throws -> DownloadCreationResult {
         if !didLoad {
             await reloadTasks()
@@ -141,6 +142,10 @@ final class DownloadCenter: DownloadManaging {
         }
 
         if let existing = existingDownloadResult(for: resource.canonicalURL) {
+            attachSnifferPreviewIfNeeded(
+                previewImageData,
+                to: existing
+            )
             return existing
         }
 
@@ -155,7 +160,12 @@ final class DownloadCenter: DownloadManaging {
         // the existing asynchronous preparing phase and reports a real failure
         // on the task if the stream is invalid, live, expired, or protected.
         let fileName = preferredFileName(for: resource, kind: kind)
+        let taskID = UUID()
+        let thumbnailLocalPath = previewImageData.flatMap { data in
+            try? storage.storeThumbnailData(data, taskID: taskID)
+        }
         let model = DownloadTaskModel(
+            id: taskID,
             resourceID: resource.id,
             sourceURL: resource.canonicalURL,
             thumbnailURL: resource.resourceType == .image
@@ -165,7 +175,8 @@ final class DownloadCenter: DownloadManaging {
             fileExtension: resource.fileExtension,
             resourceType: resource.resourceType,
             downloadKind: kind,
-            expectedSize: kind == .hlsAsset ? nil : resource.estimatedSize
+            expectedSize: kind == .hlsAsset ? nil : resource.estimatedSize,
+            thumbnailLocalPath: thumbnailLocalPath
         )
         tasks.append(model)
         requestContexts[model.id] = context
@@ -300,6 +311,7 @@ final class DownloadCenter: DownloadManaging {
         if deleteFile {
             try storage.removeFile(relativePath: model.destinationRelativePath)
         }
+        try? storage.removeFile(relativePath: model.thumbnailLocalPath)
         storage.removeResumeData(relativePath: model.resumeDataRelativePath)
         tasks.removeAll { $0.id == id }
         requestContexts[id] = nil
@@ -563,6 +575,24 @@ final class DownloadCenter: DownloadManaging {
         return existing.state == .completed
             ? .fileAlreadyExists(existing.id)
             : .alreadyDownloading(existing.id)
+    }
+
+    private func attachSnifferPreviewIfNeeded(
+        _ data: Data?,
+        to result: DownloadCreationResult
+    ) {
+        guard let data else { return }
+        let taskID: UUID
+        switch result {
+        case let .created(id), let .alreadyDownloading(id), let .fileAlreadyExists(id):
+            taskID = id
+        }
+        guard task(id: taskID)?.thumbnailLocalPath == nil,
+              let path = try? storage.storeThumbnailData(data, taskID: taskID)
+        else { return }
+        updateTask(id: taskID) { task in
+            task.thumbnailLocalPath = path
+        }
     }
 
     private func task(id: UUID) -> DownloadTaskModel? {

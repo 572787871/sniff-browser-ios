@@ -257,22 +257,14 @@ struct ResourceSnifferEmptyConfiguration: Equatable {
 struct ResourceSnifferChromeView: View {
     let configuration: ResourceSnifferChromeConfiguration
     let onPrimaryAction: () -> Void
-    let onSelectFilter: (ResourceSnifferFilter) -> Void
-    let onSelectSortOrder: (ResourceSnifferSortOrder) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 16) {
-            pagePanel
-            filterBar
-            if configuration.showsResultControls {
-                resultControls
-            }
-        }
+        pagePanel
         .padding(.horizontal, 16)
         .padding(.top, 12)
-        .padding(.bottom, 4)
+        .padding(.bottom, 8)
         .animation(
             reduceMotion ? nil : .smooth(duration: 0.24),
             value: configuration
@@ -280,78 +272,57 @@ struct ResourceSnifferChromeView: View {
     }
 
     private var pagePanel: some View {
-        VStack(spacing: 16) {
-            HStack(spacing: 8) {
-                Label("当前标签页", systemImage: "rectangle.stack")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(
-                        Color(uiColor: ResourceSnifferPalette.accent)
-                    )
-                Spacer()
-                SWResourceStatusBadge(
-                    text: configuration.statusTitle,
-                    style: configuration.statusStyle
-                )
-            }
-
-            HStack(spacing: 14) {
-                ResourceSnifferFaviconView(
-                    pageURL: configuration.pageURL,
-                    isPrivate: configuration.isPrivate
-                )
-                .frame(width: 56, height: 56)
-                .padding(7)
-                .background(
-                    Color(uiColor: ResourceSnifferPalette.accentFill),
-                    in: Circle()
-                )
-                .clipShape(Circle())
-
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(configuration.domain)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(
-                            Color(uiColor: ResourceSnifferPalette.primaryText)
-                        )
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-
-                    Text(configuration.detail)
-                        .font(.subheadline)
-                        .foregroundStyle(
-                            Color(uiColor: ResourceSnifferPalette.secondaryText)
-                        )
-                        .lineLimit(2)
-                }
-
-                Spacer(minLength: 4)
-
-                if configuration.isWorking {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(Color(uiColor: ResourceSnifferPalette.accent))
-                        .accessibilityLabel("正在处理")
-                }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(
-                "当前网页，\(configuration.pageTitle)，\(configuration.domain)，\(configuration.detail)，\(configuration.statusTitle)"
+        HStack(spacing: 12) {
+            ResourceSnifferFaviconView(
+                pageURL: configuration.pageURL,
+                isPrivate: configuration.isPrivate
+            )
+            .frame(width: 36, height: 36)
+            .padding(6)
+            .background(
+                Color(uiColor: ResourceSnifferPalette.accentFill),
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
             )
 
+            VStack(alignment: .leading, spacing: 3) {
+                Text(configuration.domain)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(
+                        Color(uiColor: ResourceSnifferPalette.primaryText)
+                    )
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Text(configuration.detail)
+                    .font(.caption)
+                    .foregroundStyle(
+                        Color(uiColor: ResourceSnifferPalette.secondaryText)
+                    )
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 4)
+
             Button(action: onPrimaryAction) {
-                HStack(spacing: 8) {
-                    Image(systemName: configuration.primarySymbol)
+                HStack(spacing: 6) {
+                    if configuration.isWorking {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(Color(uiColor: ResourceSnifferPalette.accentContent))
+                    } else {
+                        Image(systemName: configuration.primarySymbol)
+                            .font(.caption.weight(.bold))
+                    }
                     Text(configuration.primaryTitle)
-                        .fontWeight(.semibold)
+                        .lineLimit(1)
                 }
-                .font(.title3)
-                .frame(maxWidth: .infinity, minHeight: 56)
-                .foregroundStyle(
-                    Color(uiColor: ResourceSnifferPalette.accentContent)
-                )
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 13)
+                .frame(minHeight: 44)
+                .foregroundStyle(Color(uiColor: ResourceSnifferPalette.accentContent))
                 .background(
                     Color(uiColor: ResourceSnifferPalette.accent),
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    in: Capsule()
                 )
             }
             .buttonStyle(ResourceSnifferPrimaryButtonStyle())
@@ -363,35 +334,51 @@ struct ResourceSnifferChromeView: View {
                     : "停止发现新资源并保留现有结果"
             )
             .accessibilityIdentifier("sniffer.primary-action")
-
-            Label(
-                configuration.helper,
-                systemImage: configuration.isPrivate ? "eye.slash" : "lock"
-            )
-            .font(.footnote)
-            .foregroundStyle(
-                Color(uiColor: ResourceSnifferPalette.tertiaryText)
-            )
-            .multilineTextAlignment(.center)
         }
-        .padding(18)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .background(
             Color(uiColor: ResourceSnifferPalette.surface),
-            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(
                     Color(uiColor: ResourceSnifferPalette.border),
                     lineWidth: 0.5
                 )
         }
-        .shadow(color: .black.opacity(0.045), radius: 16, y: 7)
+    }
+}
+
+/// The filter and sort controls live in the table section header so they stay
+/// reachable while the compact page summary scrolls away with the results.
+struct ResourceSnifferFilterHeaderView: View {
+    let configuration: ResourceSnifferChromeConfiguration
+    let onSelectFilter: (ResourceSnifferFilter) -> Void
+    let onSelectSortOrder: (ResourceSnifferSortOrder) -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            filterBar
+            if configuration.showsResultControls {
+                resultControls
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, configuration.showsResultControls ? 9 : 8)
+        .background(Color(uiColor: ResourceSnifferPalette.background))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color(uiColor: ResourceSnifferPalette.border))
+                .frame(height: 0.5)
+        }
     }
 
     private var filterBar: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 ForEach(configuration.filters) { item in
                     SWResourceFilterButton(item: item, expands: true) {
                         onSelectFilter(item.filter)
@@ -400,7 +387,7 @@ struct ResourceSnifferChromeView: View {
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     ForEach(configuration.filters) { item in
                         SWResourceFilterButton(item: item, expands: false) {
                             onSelectFilter(item.filter)
@@ -417,7 +404,7 @@ struct ResourceSnifferChromeView: View {
     private var resultControls: some View {
         HStack(spacing: 12) {
             Text("\(configuration.resultCount) 项结果")
-                .font(.subheadline.weight(.semibold))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(
                     Color(uiColor: ResourceSnifferPalette.primaryText)
                 )
@@ -440,12 +427,12 @@ struct ResourceSnifferChromeView: View {
                     configuration.selectedSortOrder.title,
                     systemImage: "arrow.up.arrow.down"
                 )
-                .font(.subheadline.weight(.medium))
+                .font(.caption.weight(.medium))
                 .foregroundStyle(
                     Color(uiColor: ResourceSnifferPalette.accent)
                 )
-                .padding(.horizontal, 12)
-                .frame(minHeight: 36)
+                .padding(.horizontal, 10)
+                .frame(minHeight: 32)
                 .background(
                     Color(uiColor: ResourceSnifferPalette.accentFill),
                     in: Capsule()
@@ -454,7 +441,6 @@ struct ResourceSnifferChromeView: View {
             .accessibilityLabel("资源排序")
             .accessibilityValue(configuration.selectedSortOrder.title)
         }
-        .padding(.horizontal, 2)
     }
 }
 
@@ -545,56 +531,53 @@ struct ResourceSnifferEmptyStateView: View {
     let onSecondaryAction: () -> Void
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 11) {
-                ResourceSnifferStateIllustration(
-                    symbolName: configuration.symbolName
-                )
+        VStack(spacing: 11) {
+            ResourceSnifferStateIllustration(
+                symbolName: configuration.symbolName
+            )
 
-                if configuration.isWorking {
-                    ProgressView()
-                        .tint(Color(uiColor: ResourceSnifferPalette.accent))
-                }
-
-                Text(configuration.title)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(
-                        Color(uiColor: ResourceSnifferPalette.primaryText)
-                    )
-                    .multilineTextAlignment(.center)
-
-                Text(configuration.message)
-                    .font(.subheadline)
-                    .foregroundStyle(
-                        Color(uiColor: ResourceSnifferPalette.secondaryText)
-                    )
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let actionTitle = configuration.actionTitle {
-                    Button(actionTitle, action: onAction)
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color(uiColor: ResourceSnifferPalette.accent))
-                        .controlSize(.large)
-                        .accessibilityIdentifier("sniffer.empty-action")
-                }
-
-                if let secondaryActionTitle = configuration.secondaryActionTitle {
-                    Button(secondaryActionTitle, action: onSecondaryAction)
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(
-                            Color(uiColor: ResourceSnifferPalette.accent)
-                        )
-                        .frame(minHeight: 44)
-                }
+            if configuration.isWorking {
+                ProgressView()
+                    .tint(Color(uiColor: ResourceSnifferPalette.accent))
             }
-            .frame(maxWidth: 360)
-            .padding(.horizontal, 28)
-            .padding(.top, 34)
-            .padding(.bottom, 24)
-            .frame(maxWidth: .infinity, minHeight: 300, alignment: .top)
+
+            Text(configuration.title)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(
+                    Color(uiColor: ResourceSnifferPalette.primaryText)
+                )
+                .multilineTextAlignment(.center)
+
+            Text(configuration.message)
+                .font(.subheadline)
+                .foregroundStyle(
+                    Color(uiColor: ResourceSnifferPalette.secondaryText)
+                )
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let actionTitle = configuration.actionTitle {
+                Button(actionTitle, action: onAction)
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color(uiColor: ResourceSnifferPalette.accent))
+                    .controlSize(.large)
+                    .accessibilityIdentifier("sniffer.empty-action")
+            }
+
+            if let secondaryActionTitle = configuration.secondaryActionTitle {
+                Button(secondaryActionTitle, action: onSecondaryAction)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(
+                        Color(uiColor: ResourceSnifferPalette.accent)
+                    )
+                    .frame(minHeight: 44)
+            }
         }
-        .scrollIndicators(.hidden)
+        .frame(maxWidth: 360)
+        .padding(.horizontal, 28)
+        .padding(.top, 34)
+        .padding(.bottom, 24)
+        .frame(maxWidth: .infinity, minHeight: 300, alignment: .top)
     }
 }
 

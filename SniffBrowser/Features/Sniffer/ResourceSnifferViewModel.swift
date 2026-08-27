@@ -190,12 +190,14 @@ final class ResourceSnifferViewModel {
     }
 
     func startDownload(
-        resource: DetectedResource
+        resource: DetectedResource,
+        previewImageData: Data? = nil
     ) async throws -> DownloadCreationResult {
         let context = await requestContextProvider(resource.canonicalURL)
         return try await downloadCenter.createDownload(
             resource: resource,
-            context: context
+            context: context,
+            previewImageData: previewImageData
         )
     }
 

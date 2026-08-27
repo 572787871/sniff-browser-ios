@@ -66,7 +66,9 @@ final class ResourceSnifferViewController: BaseViewController {
     private var renderedRows: [RenderedResourceRow] = []
     private var renderedContent: RenderedContent?
 
-    private let tableView = UITableView(frame: .zero, style: .insetGrouped)
+    private static let filterHeaderReuseIdentifier = "ResourceSnifferFilterHeader"
+
+    private let tableView = UITableView(frame: .zero, style: .plain)
     private lazy var chromeHost = UIHostingController(
         rootView: makeChromeView(state: viewModel.state)
     )
@@ -96,6 +98,12 @@ final class ResourceSnifferViewController: BaseViewController {
         configureEmptyState()
         bindViewModel()
         viewModel.start()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateTableHeaderSize()
+        updateTableFooterSize()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
@@ -232,40 +240,51 @@ final class ResourceSnifferViewController: BaseViewController {
 
     private func configureChrome() {
         addChild(chromeHost)
-        chromeHost.sizingOptions = [.intrinsicContentSize]
         chromeHost.view.backgroundColor = .clear
-        chromeHost.view.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(chromeHost.view)
         chromeHost.didMove(toParent: self)
-
-        NSLayoutConstraint.activate([
-            chromeHost.view.topAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.topAnchor
-            ),
-            chromeHost.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            chromeHost.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
-        ])
     }
 
     private func makeChromeView(
         state: ResourceSnifferViewModel.State
     ) -> ResourceSnifferChromeView {
         ResourceSnifferChromeView(
-            configuration: ResourceSnifferChromeConfiguration(
-                state: state,
-                selectedFilter: selectedFilter,
-                selectedSortOrder: selectedSortOrder
-            ),
+            configuration: makeChromeConfiguration(state: state),
             onPrimaryAction: { [weak self] in
                 self?.primarySniffingAction()
-            },
-            onSelectFilter: { [weak self] filter in
-                self?.selectFilter(filter)
-            },
-            onSelectSortOrder: { [weak self] order in
-                self?.selectSortOrder(order)
             }
         )
+    }
+
+    private func makeChromeConfiguration(
+        state: ResourceSnifferViewModel.State
+    ) -> ResourceSnifferChromeConfiguration {
+        ResourceSnifferChromeConfiguration(
+            state: state,
+            selectedFilter: selectedFilter,
+            selectedSortOrder: selectedSortOrder
+        )
+    }
+
+    private func configureFilterHeader(
+        _ header: UITableViewHeaderFooterView,
+        state: ResourceSnifferViewModel.State
+    ) {
+        var background = UIBackgroundConfiguration.clear()
+        background.backgroundColor = ResourceSnifferPalette.background
+        header.backgroundConfiguration = background
+        let configuration = makeChromeConfiguration(state: state)
+        header.contentConfiguration = UIHostingConfiguration {
+            ResourceSnifferFilterHeaderView(
+                configuration: configuration,
+                onSelectFilter: { [weak self] filter in
+                    self?.selectFilter(filter)
+                },
+                onSelectSortOrder: { [weak self] order in
+                    self?.selectSortOrder(order)
+                }
+            )
+        }
+        .margins(.all, 0)
     }
 
     private func makeEmptyStateView(
@@ -280,12 +299,27 @@ final class ResourceSnifferViewController: BaseViewController {
 
     private func configureTable() {
         tableView.backgroundColor = .clear
-        tableView.separatorStyle = .none
+        tableView.separatorStyle = .singleLine
+        tableView.separatorColor = ResourceSnifferPalette.border
+        tableView.separatorInset = UIEdgeInsets(
+            top: 0,
+            left: 112,
+            bottom: 0,
+            right: 16
+        )
+        tableView.sectionHeaderTopPadding = 0
         tableView.rowHeight = UITableView.automaticDimension
-        tableView.estimatedRowHeight = 118
+        tableView.estimatedRowHeight = 88
+        tableView.sectionHeaderHeight = UITableView.automaticDimension
+        tableView.estimatedSectionHeaderHeight = 100
+        tableView.contentInset.bottom = AppSpacing.lg
         tableView.register(
             ResourceListCell.self,
             forCellReuseIdentifier: ResourceListCell.reuseIdentifier
+        )
+        tableView.register(
+            UITableViewHeaderFooterView.self,
+            forHeaderFooterViewReuseIdentifier: Self.filterHeaderReuseIdentifier
         )
         tableView.dataSource = self
         tableView.delegate = self
@@ -294,32 +328,62 @@ final class ResourceSnifferViewController: BaseViewController {
 
         NSLayoutConstraint.activate([
             tableView.topAnchor.constraint(
-                equalTo: chromeHost.view.bottomAnchor,
-                constant: AppSpacing.xs
+                equalTo: view.safeAreaLayoutGuide.topAnchor
             ),
             tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+        tableView.tableHeaderView = chromeHost.view
     }
 
     private func configureEmptyState() {
         addChild(emptyStateHost)
         emptyStateHost.view.backgroundColor = .clear
-        emptyStateHost.view.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(emptyStateHost.view)
         emptyStateHost.didMove(toParent: self)
-        NSLayoutConstraint.activate([
-            emptyStateHost.view.topAnchor.constraint(
-                equalTo: chromeHost.view.bottomAnchor,
-                constant: AppSpacing.xs
-            ),
-            emptyStateHost.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            emptyStateHost.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            emptyStateHost.view.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor
+        tableView.tableFooterView = emptyStateHost.view
+    }
+
+    private func updateTableHeaderSize() {
+        let width = tableView.bounds.width
+        guard width > 0 else { return }
+        let size = chromeHost.sizeThatFits(
+            in: CGSize(width: width, height: .greatestFiniteMagnitude)
+        )
+        let height = ceil(size.height)
+        guard height > 0,
+              abs(chromeHost.view.frame.width - width) > 0.5
+                || abs(chromeHost.view.frame.height - height) > 0.5
+        else { return }
+        chromeHost.view.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        tableView.tableHeaderView = chromeHost.view
+    }
+
+    private func updateTableFooterSize() {
+        let width = tableView.bounds.width
+        guard width > 0 else { return }
+        let isVisible = filteredResources.isEmpty
+        let height: CGFloat
+        if isVisible {
+            let available = max(
+                260,
+                tableView.bounds.height
+                    - chromeHost.view.bounds.height
+                    - tableView.estimatedSectionHeaderHeight
             )
-        ])
+            let fitting = emptyStateHost.sizeThatFits(
+                in: CGSize(width: width, height: available)
+            )
+            height = max(260, min(available, ceil(fitting.height)))
+        } else {
+            height = 0.5
+        }
+        guard abs(emptyStateHost.view.frame.width - width) > 0.5
+                || abs(emptyStateHost.view.frame.height - height) > 0.5
+        else { return }
+        emptyStateHost.view.isHidden = !isVisible
+        emptyStateHost.view.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        tableView.tableFooterView = emptyStateHost.view
     }
 
     private func updateContent(state: ResourceSnifferViewModel.State) {
@@ -356,9 +420,13 @@ final class ResourceSnifferViewController: BaseViewController {
             tableView.reloadData()
         }
         let isEmpty = filteredResources.isEmpty
-        tableView.isHidden = isEmpty
         emptyStateHost.view.isHidden = !isEmpty
         emptyStateHost.rootView = makeEmptyStateView(state: state)
+        if let header = tableView.headerView(forSection: 0) {
+            configureFilterHeader(header, state: state)
+        }
+        updateTableHeaderSize()
+        updateTableFooterSize()
         updateNavigation()
     }
 
@@ -521,8 +589,12 @@ final class ResourceSnifferViewController: BaseViewController {
             )
             return
         }
+        // Copy the exact frame/poster already visible in the sniffer row.
+        // The download center persists it under the new task ID before the
+        // transfer starts, so waiting/downloading rows have artwork instantly.
+        let previewImage = displayedPreviewImage(for: resource)
         let beginDownload = { [weak self] in
-            self?.startDownload(resource)
+            self?.startDownload(resource, previewImage: previewImage)
         }
         guard !DownloadComplianceAcknowledgement.hasAcknowledged else {
             beginDownload()
@@ -541,12 +613,47 @@ final class ResourceSnifferViewController: BaseViewController {
         present(alert, animated: true)
     }
 
-    private func startDownload(_ resource: DetectedResource) {
+    private func displayedPreviewImage(
+        for resource: DetectedResource
+    ) -> UIImage? {
+        guard let row = filteredResources.firstIndex(where: {
+            $0.id == resource.id
+        }),
+        let cell = tableView.cellForRow(
+            at: IndexPath(row: row, section: 0)
+        ) as? ResourceListCell
+        else { return nil }
+        return cell.displayedPreviewImage
+    }
+
+    private func startDownload(
+        _ resource: DetectedResource,
+        previewImage: UIImage?
+    ) {
         downloadTask?.cancel()
         downloadTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await self.viewModel.startDownload(resource: resource)
+                var resolvedPreview = previewImage
+                if resolvedPreview == nil,
+                   [.video, .hls].contains(resource.resourceType) {
+                    let scale = UIScreen.main.scale
+                    resolvedPreview = await RemoteMediaThumbnailLoader.shared.cachedImage(
+                        resource: resource,
+                        targetPixelSize: CGSize(
+                            width: 80 * scale,
+                            height: 64 * scale
+                        ),
+                        allowsSharedCache: !self.viewModel.state.isPrivate
+                    )
+                }
+                let previewData = resolvedPreview?.jpegData(
+                    compressionQuality: 0.84
+                )
+                let result = try await self.viewModel.startDownload(
+                    resource: resource,
+                    previewImageData: previewData
+                )
                 switch result {
                 case .created:
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -715,6 +822,17 @@ final class ResourceSnifferViewController: BaseViewController {
 
 extension ResourceSnifferViewController: UITableViewDataSource,
     UITableViewDelegate {
+    func tableView(
+        _ tableView: UITableView,
+        viewForHeaderInSection section: Int
+    ) -> UIView? {
+        guard let header = tableView.dequeueReusableHeaderFooterView(
+            withIdentifier: Self.filterHeaderReuseIdentifier
+        ) else { return nil }
+        configureFilterHeader(header, state: viewModel.state)
+        return header
+    }
+
     func tableView(
         _ tableView: UITableView,
         numberOfRowsInSection section: Int

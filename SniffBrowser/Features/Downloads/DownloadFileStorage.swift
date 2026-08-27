@@ -197,6 +197,30 @@ final class DownloadFileStorage {
         return path
     }
 
+    /// Persists artwork that was already visible in the resource sniffer.
+    /// The media pipeline intentionally uses the same task-based filename, so
+    /// its final high-quality frame can replace this immediate preview in place.
+    func storeThumbnailData(_ data: Data, taskID: UUID) throws -> String {
+        guard !data.isEmpty else { throw DownloadCenterError.fileOperationFailed }
+        let directory = applicationSupportURL.appendingPathComponent(
+            "Thumbnails",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        let destination = directory.appendingPathComponent(
+            "\(taskID.uuidString).jpg"
+        )
+        do {
+            try data.write(to: destination, options: .atomic)
+        } catch {
+            throw DownloadCenterError.fileOperationFailed
+        }
+        return "AppSupport/Thumbnails/\(destination.lastPathComponent)"
+    }
+
     func saveResumeData(_ data: Data, taskID: UUID) throws -> String {
         let url = resumeDataRootURL.appendingPathComponent("\(taskID.uuidString).resume")
         try data.write(to: url, options: .atomic)

@@ -23,6 +23,14 @@ final class ResourceListCell: UITableViewCell {
     private var hasThumbnailImage = false
     private var iconWidthConstraint: NSLayoutConstraint?
 
+    /// The exact artwork currently shown by the sniffer row. Download creation
+    /// copies this frozen image into the task so an in-progress download never
+    /// falls back to a generic document icon while waiting for the media file.
+    var displayedPreviewImage: UIImage? {
+        guard hasMediaFrame || hasThumbnailImage else { return nil }
+        return typeIconView.image
+    }
+
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         configureView()
@@ -297,13 +305,10 @@ final class ResourceListCell: UITableViewCell {
     }
 
     private func configureView() {
-        backgroundColor = .clear
+        backgroundColor = ResourceSnifferPalette.surface
+        contentView.backgroundColor = ResourceSnifferPalette.surface
         selectionStyle = .none
         cardView.backgroundColor = ResourceSnifferPalette.surface
-        cardView.layer.cornerRadius = AppRadius.card
-        cardView.layer.cornerCurve = .continuous
-        cardView.layer.borderWidth = AppMetrics.separatorHeight
-        cardView.layer.borderColor = ResourceSnifferPalette.border.cgColor
         cardView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(cardView)
 
@@ -370,14 +375,18 @@ final class ResourceListCell: UITableViewCell {
 
         NSLayoutConstraint.activate([
             cardView.topAnchor.constraint(
-                equalTo: contentView.topAnchor,
-                constant: AppSpacing.xxs
+                equalTo: contentView.topAnchor
             ),
-            cardView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            cardView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            cardView.leadingAnchor.constraint(
+                equalTo: contentView.leadingAnchor,
+                constant: AppSpacing.md
+            ),
+            cardView.trailingAnchor.constraint(
+                equalTo: contentView.trailingAnchor,
+                constant: -AppSpacing.md
+            ),
             cardView.bottomAnchor.constraint(
-                equalTo: contentView.bottomAnchor,
-                constant: -AppSpacing.xxs
+                equalTo: contentView.bottomAnchor
             ),
             typeIconView.heightAnchor.constraint(equalToConstant: 64),
             moreButton.widthAnchor.constraint(
@@ -394,19 +403,17 @@ final class ResourceListCell: UITableViewCell {
             ),
             stack.topAnchor.constraint(
                 equalTo: cardView.topAnchor,
-                constant: AppSpacing.sm
+                constant: 10
             ),
             stack.leadingAnchor.constraint(
-                equalTo: cardView.leadingAnchor,
-                constant: AppSpacing.sm
+                equalTo: cardView.leadingAnchor
             ),
             stack.trailingAnchor.constraint(
-                equalTo: cardView.trailingAnchor,
-                constant: -AppSpacing.xs
+                equalTo: cardView.trailingAnchor
             ),
             stack.bottomAnchor.constraint(
                 equalTo: cardView.bottomAnchor,
-                constant: -AppSpacing.sm
+                constant: -10
             )
         ])
         iconWidthConstraint = typeIconView.widthAnchor.constraint(
