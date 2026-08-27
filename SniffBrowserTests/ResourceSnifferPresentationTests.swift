@@ -17,12 +17,11 @@ final class ResourceSnifferPresentationTests: XCTestCase {
         )
 
         XCTAssertEqual(configuration.statusTitle, "未开始")
-        XCTAssertEqual(configuration.primaryTitle, "开始嗅探")
         XCTAssertEqual(
             configuration.detail,
-            "点击开始嗅探后检测当前页面资源"
+            "正在连接当前网页…"
         )
-        XCTAssertTrue(configuration.helper.contains("手动开启"))
+        XCTAssertTrue(configuration.helper.contains("仅检测当前标签页"))
         XCTAssertEqual(configuration.filters.map(\.count), [0, 0, 0, 0])
         XCTAssertFalse(configuration.showsResultControls)
 
@@ -35,7 +34,7 @@ final class ResourceSnifferPresentationTests: XCTestCase {
             )
         )
         XCTAssertEqual(empty.title, "尚未发现资源")
-        XCTAssertEqual(empty.message, "开始嗅探后将在此显示结果")
+        XCTAssertEqual(empty.message, "发现的资源会显示在这里")
         XCTAssertNil(empty.actionTitle)
         XCTAssertNil(empty.secondaryActionTitle)
     }
@@ -59,7 +58,6 @@ final class ResourceSnifferPresentationTests: XCTestCase {
         )
 
         XCTAssertEqual(configuration.statusTitle, "嗅探中")
-        XCTAssertEqual(configuration.primaryTitle, "停止嗅探")
         XCTAssertEqual(configuration.filters.map(\.count), [3, 1, 1, 1])
         XCTAssertTrue(configuration.filters.last?.isSelected == true)
         XCTAssertEqual(configuration.resultCount, 1)

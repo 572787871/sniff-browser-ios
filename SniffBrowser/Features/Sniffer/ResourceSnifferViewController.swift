@@ -98,6 +98,11 @@ final class ResourceSnifferViewController: BaseViewController {
         configureEmptyState()
         bindViewModel()
         viewModel.start()
+        // Opening this controller is itself the explicit user action: it is
+        // only presented after the browser toolbar's sniffer button is tapped.
+        // Start immediately so the results sheet never needs a second start
+        // control (or a filter change to make that control appear).
+        startSniffing()
     }
 
     override func viewDidLayoutSubviews() {
@@ -248,10 +253,7 @@ final class ResourceSnifferViewController: BaseViewController {
         state: ResourceSnifferViewModel.State
     ) -> ResourceSnifferChromeView {
         ResourceSnifferChromeView(
-            configuration: makeChromeConfiguration(state: state),
-            onPrimaryAction: { [weak self] in
-                self?.primarySniffingAction()
-            }
+            configuration: makeChromeConfiguration(state: state)
         )
     }
 
@@ -499,14 +501,6 @@ final class ResourceSnifferViewController: BaseViewController {
             )
         ])
         return button
-    }
-
-    private func primarySniffingAction() {
-        if activationState.isEnabled {
-            stopSniffing()
-        } else {
-            startSniffing()
-        }
     }
 
     private func refreshResources() {
