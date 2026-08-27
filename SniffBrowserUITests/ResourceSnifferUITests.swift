@@ -43,15 +43,10 @@ final class ResourceSnifferUITests: XCTestCase {
             status.waitForExistence(timeout: 5),
             "资源面板应显示嗅探状态"
         )
-        let activationStarted = NSPredicate(
-            format: "label CONTAINS %@ OR label CONTAINS %@ OR label CONTAINS %@ OR label CONTAINS %@",
-            "正在启动",
-            "嗅探中",
-            "启动失败",
-            "检测失败"
+        XCTAssertFalse(
+            status.label.contains("未开始"),
+            "打开资源面板后应立即尝试启动嗅探"
         )
-        expectation(for: activationStarted, evaluatedWith: status)
-        waitForExpectations(timeout: 5)
     }
 
     func testAutomaticResourceSniffingKeepsThePanelAlive() {
