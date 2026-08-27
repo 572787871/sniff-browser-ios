@@ -997,8 +997,10 @@ private final class ResourceSnifferNavigationTitleView: UIView {
         ])
         titleLabel.font = AppTypography.headline
         titleLabel.textColor = ResourceSnifferPalette.primaryText
+        titleLabel.accessibilityIdentifier = "sniffer.title"
         statusLabel.font = AppTypography.caption
         statusLabel.textColor = ResourceSnifferPalette.accent
+        statusLabel.accessibilityIdentifier = "sniffer.status"
         statusLabel.backgroundColor = ResourceSnifferPalette.accentFill
         statusLabel.layer.cornerRadius = 9
         statusLabel.layer.cornerCurve = .continuous

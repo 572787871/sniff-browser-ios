@@ -19,7 +19,7 @@ final class ResourceSnifferUITests: XCTestCase {
         )
     }
 
-    func testResourcePanelRequiresExplicitStart() {
+    func testToolbarEntryStartsSniffingWithoutSecondAction() {
         let snifferButton = app.buttons["browser.toolbar.sniffer"]
         guard snifferButton.waitForExistence(timeout: 8) else {
             XCTFail("资源嗅探入口未出现")
@@ -28,40 +28,47 @@ final class ResourceSnifferUITests: XCTestCase {
 
         snifferButton.tap()
 
-        let startButton = app.buttons["sniffer.primary-action"]
+        let title = app.staticTexts["sniffer.title"]
         XCTAssertTrue(
-            startButton.waitForExistence(timeout: 5),
-            "资源嗅探面板应先显示开始嗅探按钮"
+            title.waitForExistence(timeout: 5),
+            "点击工具栏按钮后应打开资源嗅探面板"
         )
-        XCTAssertEqual(startButton.label, "开始嗅探")
         XCTAssertFalse(
-            app.staticTexts["嗅探中"].exists,
-            "未点击开始前不应进入嗅探中状态"
+            app.buttons["sniffer.primary-action"].exists,
+            "资源面板不应再要求二次点击开始嗅探"
         )
+
+        let status = app.staticTexts["sniffer.status"]
+        XCTAssertTrue(
+            status.waitForExistence(timeout: 5),
+            "资源面板应显示嗅探状态"
+        )
+        let activationStarted = NSPredicate(
+            format: "label CONTAINS %@ OR label CONTAINS %@ OR label CONTAINS %@ OR label CONTAINS %@",
+            "正在启动",
+            "嗅探中",
+            "启动失败",
+            "检测失败"
+        )
+        expectation(for: activationStarted, evaluatedWith: status)
+        waitForExpectations(timeout: 5)
     }
 
-    func testStartingResourceSnifferKeepsThePanelAlive() {
+    func testAutomaticResourceSniffingKeepsThePanelAlive() {
         let snifferButton = app.buttons["browser.toolbar.sniffer"]
         guard snifferButton.waitForExistence(timeout: 8) else {
             XCTFail("资源嗅探入口未出现")
             return
         }
         snifferButton.tap()
-
-        let startButton = app.buttons["sniffer.primary-action"]
-        guard startButton.waitForExistence(timeout: 5) else {
-            XCTFail("开始嗅探按钮未出现")
-            return
-        }
-        startButton.tap()
 
         XCTAssertTrue(
             app.wait(for: .runningForeground, timeout: 8),
-            "点击开始嗅探后应用不应退出"
+            "自动开始嗅探后应用不应退出"
         )
         XCTAssertTrue(
-            app.buttons["sniffer.primary-action"].waitForExistence(timeout: 5),
-            "启动完成或失败后资源面板都应保持可操作"
+            app.staticTexts["sniffer.title"].waitForExistence(timeout: 5),
+            "启动完成或失败后资源面板都应保持显示"
         )
     }
 }
