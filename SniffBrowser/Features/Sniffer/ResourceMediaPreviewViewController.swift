@@ -16,6 +16,8 @@ final class ResourceMediaPreviewViewController: UIViewController {
     private let onDownload: (() -> Void)?
 
     private let playerController = AVPlayerViewController()
+    private let headerView = UIView()
+    private let topBar = UIStackView()
     private let titleLabel = UILabel()
     private let downloadButton = UIButton(type: .system)
     private let closeButton = UIButton(type: .system)
@@ -83,6 +85,8 @@ final class ResourceMediaPreviewViewController: UIViewController {
         addChild(playerController)
         playerController.view.translatesAutoresizingMaskIntoConstraints = false
         playerController.view.backgroundColor = .black
+        playerController.view.accessibilityIdentifier =
+            "resource.media-preview.player"
         playerController.showsPlaybackControls = true
         playerController.allowsPictureInPicturePlayback = true
         view.addSubview(playerController.view)
@@ -154,12 +158,19 @@ final class ResourceMediaPreviewViewController: UIViewController {
     }
 
     private func configureOverlay() {
-        let topBar = UIStackView(arrangedSubviews: [titleLabel, downloadButton, closeButton])
+        headerView.backgroundColor = .black
+        headerView.translatesAutoresizingMaskIntoConstraints = false
+        headerView.accessibilityIdentifier = "resource.media-preview.header"
+        view.addSubview(headerView)
+
+        topBar.addArrangedSubview(titleLabel)
+        topBar.addArrangedSubview(downloadButton)
+        topBar.addArrangedSubview(closeButton)
         topBar.axis = .horizontal
         topBar.alignment = .center
         topBar.spacing = AppSpacing.xs
         topBar.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(topBar)
+        headerView.addSubview(topBar)
 
         titleLabel.text = titleText
         titleLabel.textColor = .white
@@ -168,6 +179,7 @@ final class ResourceMediaPreviewViewController: UIViewController {
         titleLabel.numberOfLines = 1
         titleLabel.lineBreakMode = .byTruncatingMiddle
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        titleLabel.accessibilityIdentifier = "resource.media-preview.title"
 
         if onDownload != nil {
             downloadButton.setTitle(downloadTitle, for: .normal)
@@ -225,15 +237,31 @@ final class ResourceMediaPreviewViewController: UIViewController {
     }
 
     private func configureConstraints() {
-        guard let topBar = view.subviews.first(where: { $0 is UIStackView }) else { return }
         NSLayoutConstraint.activate([
-            playerController.view.topAnchor.constraint(equalTo: view.topAnchor),
+            headerView.topAnchor.constraint(equalTo: view.topAnchor),
+            headerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            headerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            topBar.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor,
+                constant: 2
+            ),
+            topBar.leadingAnchor.constraint(
+                equalTo: headerView.leadingAnchor,
+                constant: 16
+            ),
+            topBar.trailingAnchor.constraint(
+                equalTo: headerView.trailingAnchor,
+                constant: -12
+            ),
+            topBar.bottomAnchor.constraint(
+                equalTo: headerView.bottomAnchor,
+                constant: -4
+            ),
+            topBar.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+            playerController.view.topAnchor.constraint(equalTo: headerView.bottomAnchor),
             playerController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             playerController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             playerController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            topBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
-            topBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            topBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
             statusView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             statusView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             statusView.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 32),
