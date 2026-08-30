@@ -105,6 +105,38 @@ final class UserCenterCountsTests: XCTestCase {
     }
 
     @MainActor
+    func testPrivacyDestinationOpensDedicatedPrivacyPage() {
+        let controller = UserCenterViewController()
+        let navigation = UINavigationController(rootViewController: controller)
+
+        controller.route(to: .privacy)
+
+        XCTAssertTrue(
+            navigation.topViewController is PrivacySecurityViewController
+        )
+        XCTAssertEqual(
+            navigation.topViewController?.navigationItem.title,
+            "隐私与安全"
+        )
+    }
+
+    @MainActor
+    func testAboutDestinationOpensAboutContentDirectly() {
+        let controller = UserCenterViewController()
+        let navigation = UINavigationController(rootViewController: controller)
+
+        controller.route(to: .about)
+
+        XCTAssertTrue(
+            navigation.topViewController is StaticContentViewController
+        )
+        XCTAssertEqual(
+            navigation.topViewController?.navigationItem.title,
+            "关于嗅探浏览器"
+        )
+    }
+
+    @MainActor
     private func layout(_ controller: UIViewController) {
         controller.loadViewIfNeeded()
         controller.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)

@@ -95,7 +95,13 @@ final class UserCenterViewController: BaseViewController {
         case .files: controller = FileManagerViewController()
         case .favorites: controller = FavoritesViewController()
         case .history: controller = HistoryViewController()
-        case .privacy, .about: controller = SettingsViewController()
+        case .privacy:
+            controller = PrivacySecurityViewController()
+        case .about:
+            controller = StaticContentViewController(
+                title: "关于嗅探浏览器",
+                segments: SettingsLegalContent.about()
+            )
         }
         if let controller {
             navigationController?.pushViewController(controller, animated: true)

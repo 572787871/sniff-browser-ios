@@ -217,8 +217,10 @@ final class AppCoordinator: NSObject, BrowserRouting {
         self.showFavorites(in: navigation)
       case .history:
         self.showHistory(in: navigation)
-      case .privacy, .about:
-        self.showSettings(in: navigation)
+      case .privacy:
+        self.showPrivacySecurity(in: navigation)
+      case .about:
+        self.showAbout(in: navigation)
       }
     }
     push(controller, in: navigation)
@@ -261,6 +263,32 @@ final class AppCoordinator: NSObject, BrowserRouting {
       }
     }
     push(controller, in: navigation)
+  }
+
+  private func showPrivacySecurity(in navigation: UINavigationController) {
+    let controller = PrivacySecurityViewController()
+    controller.onClearBrowsingData = { [weak self, weak controller] in
+      guard let self else { return }
+      Task { @MainActor in
+        await self.websiteDataManager.clearAllWebsiteData()
+        ResourceThumbnailLoader.shared.clearCache()
+        RemoteMediaThumbnailLoader.shared.clearMemoryCache()
+        FaviconLoader.shared.clearCache()
+        self.browserViewController?.reloadActivePageAfterClearingWebsiteData()
+        controller?.showBrowsingDataClearCompleted()
+      }
+    }
+    push(controller, in: navigation)
+  }
+
+  private func showAbout(in navigation: UINavigationController) {
+    push(
+      StaticContentViewController(
+        title: "关于嗅探浏览器",
+        segments: SettingsLegalContent.about()
+      ),
+      in: navigation
+    )
   }
 
   func navigate(to route: AppRoute) {
