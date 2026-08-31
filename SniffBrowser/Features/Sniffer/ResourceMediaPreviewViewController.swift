@@ -255,7 +255,7 @@ final class ResourceMediaPreviewViewController: UIViewController {
                 constant: -4
             ),
             topBar.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
-            playerController.view.topAnchor.constraint(equalTo: view.topAnchor),
+            playerController.view.topAnchor.constraint(equalTo: headerView.bottomAnchor),
             playerController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             playerController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             playerController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),

@@ -14,6 +14,11 @@ class BaseViewController: UIViewController {
         initialTitle = title
         self.prefersLargeTitle = prefersLargeTitle
         super.init(nibName: nil, bundle: nil)
+        // Navigation can inspect a pushed controller before its view is loaded.
+        // Publish identity-level navigation state during initialization so route
+        // titles never appear blank for the first frame (or in route tests).
+        navigationItem.title = title
+        navigationItem.largeTitleDisplayMode = prefersLargeTitle ? .always : .never
     }
 
     required init?(coder: NSCoder) {
