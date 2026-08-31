@@ -102,12 +102,7 @@ private struct StaticContentSwiftUIScreen: View {
                 Label(segment.text, systemImage: "arrow.up.right.square")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(AppSwiftUIColors.accent)
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 12)
-                    .background(
-                        AppSwiftUIColors.accentFill,
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    )
+                    .padding(.vertical, 6)
             }
             .padding(.bottom, 10)
         case .spacer:

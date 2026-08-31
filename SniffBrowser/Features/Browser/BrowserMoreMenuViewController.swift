@@ -114,6 +114,7 @@ final class BrowserMoreMenuViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        title = "浏览器菜单"
         view.backgroundColor = AppColors.background
         installSwiftUI(
             BrowserMoreMenuSwiftUIScreen(
@@ -138,7 +139,7 @@ final class BrowserMoreNavigationController: UINavigationController,
     init(root: BrowserMoreMenuViewController) {
         super.init(rootViewController: root)
         modalPresentationStyle = .pageSheet
-        navigationBar.prefersLargeTitles = true
+        navigationBar.prefersLargeTitles = false
         navigationBar.tintColor = AppColors.accent
         delegate = self
     }
@@ -152,10 +153,7 @@ final class BrowserMoreNavigationController: UINavigationController,
         willShow viewController: UIViewController,
         animated: Bool
     ) {
-        navigationController.setNavigationBarHidden(
-            viewController === viewControllers.first,
-            animated: animated
-        )
+        navigationController.setNavigationBarHidden(false, animated: animated)
     }
 }
 
@@ -175,36 +173,13 @@ private struct BrowserMoreMenuSwiftUIScreen: View {
         AppSwiftUIScreen {
             ScrollView {
                 VStack(spacing: 20) {
-                    Capsule()
-                        .fill(AppSwiftUIColors.tertiaryText.opacity(0.45))
-                        .frame(width: 38, height: 5)
-                        .padding(.top, 8)
-
-                    HStack {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("浏览器菜单")
-                                .font(.title2.weight(.bold))
-                            Text("当前页面操作与浏览数据")
-                                .font(.subheadline)
-                                .foregroundStyle(AppSwiftUIColors.secondaryText)
-                        }
-                        Spacer()
-                        Image(systemName: "safari")
-                            .font(.title2.weight(.medium))
-                            .foregroundStyle(AppSwiftUIColors.accent)
-                            .frame(width: 46, height: 46)
-                            .background(
-                                AppSwiftUIColors.accentFill,
-                                in: RoundedRectangle(cornerRadius: 15, style: .continuous)
-                            )
-                    }
-
                     quickActions
 
                     destinationSection(primaryDestinations)
                     destinationSection(accountDestinations)
                 }
                 .padding(.horizontal, 18)
+                .padding(.top, 16)
                 .padding(.bottom, 28)
             }
         }
@@ -222,13 +197,9 @@ private struct BrowserMoreMenuSwiftUIScreen: View {
                 } label: {
                     VStack(spacing: 9) {
                         Image(systemName: state.symbolName(for: action))
-                            .font(.system(size: 21, weight: .medium))
-                            .foregroundStyle(AppSwiftUIColors.accent)
-                            .frame(width: 46, height: 46)
-                            .background(
-                                AppSwiftUIColors.accentFill,
-                                in: RoundedRectangle(cornerRadius: 15, style: .continuous)
-                            )
+                            .font(.system(size: 22, weight: .regular))
+                            .foregroundStyle(AppSwiftUIColors.primaryText)
+                            .frame(width: 44, height: 44)
                         Text(state.title(for: action))
                             .font(.caption.weight(.medium))
                             .foregroundStyle(AppSwiftUIColors.primaryText)

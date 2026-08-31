@@ -23,12 +23,33 @@ final class WhitelistViewController: BaseViewController {
     }
 
     private func configureNavigation() {
+        let addActions = WhitelistMatchType.allCases.map { type in
+            UIAction(
+                title: "添加（\(type.displayName)）",
+                image: UIImage(
+                    systemName: type == .regex ? "curlybraces" : "globe"
+                )
+            ) { [weak self] _ in
+                self?.presentPatternInput(type: type)
+            }
+        }
+        let importAction = UIAction(
+            title: "导入白名单",
+            image: UIImage(systemName: "square.and.arrow.down")
+        ) { [weak self] _ in
+            self?.importWhitelist()
+        }
+        let exportAction = UIAction(
+            title: "导出白名单",
+            image: UIImage(systemName: "square.and.arrow.up")
+        ) { [weak self] _ in
+            self?.exportWhitelist()
+        }
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             image: UIImage(systemName: "plus"),
-            style: .plain,
-            target: self,
-            action: #selector(showAddMenu)
+            menu: UIMenu(children: addActions + [importAction, exportAction])
         )
+        navigationItem.rightBarButtonItem?.accessibilityLabel = "添加或管理白名单"
         navigationItem.leftBarButtonItem = nil
     }
 
@@ -68,26 +89,6 @@ final class WhitelistViewController: BaseViewController {
         let isEmpty = manager.whitelistManager.allPatterns().isEmpty
         tableView.isHidden = isEmpty
         emptyState.isHidden = !isEmpty
-    }
-
-    @objc private func showAddMenu() {
-        let alert = UIAlertController(title: "添加白名单", message: nil, preferredStyle: .actionSheet)
-        for type in WhitelistMatchType.allCases {
-            alert.addAction(
-                UIAlertAction(title: "添加（\(type.displayName)）", style: .default) {
-                    [weak self] _ in
-                    self?.presentPatternInput(type: type)
-                }
-            )
-        }
-        alert.addAction(UIAlertAction(title: "导入白名单", style: .default) { [weak self] _ in
-            self?.importWhitelist()
-        })
-        alert.addAction(UIAlertAction(title: "导出白名单", style: .default) { [weak self] _ in
-            self?.exportWhitelist()
-        })
-        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        present(alert, animated: true)
     }
 
     private func presentPatternInput(type: WhitelistMatchType) {

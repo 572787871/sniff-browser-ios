@@ -240,7 +240,6 @@ private struct DownloadSettingsSwiftUIScreen: View {
             AppSwiftUISectionHeader(title: "任务")
             AppSwiftUISectionCard {
                 HStack(spacing: 12) {
-                    AppSwiftUIIconBadge(systemName: "arrow.down.to.line.compact")
                     VStack(alignment: .leading, spacing: 3) {
                         Text("最大并发下载数量")
                             .font(.body.weight(.medium))
@@ -294,7 +293,6 @@ private struct DownloadSettingsSwiftUIScreen: View {
             AppSwiftUISectionHeader(title: "保存位置")
             AppSwiftUISectionCard {
                 HStack(spacing: 12) {
-                    AppSwiftUIIconBadge(systemName: "folder")
                     VStack(alignment: .leading, spacing: 3) {
                         Text("默认保存位置")
                             .font(.body.weight(.medium))
@@ -352,7 +350,6 @@ private struct DownloadSettingsSwiftUIScreen: View {
         isOn: Binding<Bool>
     ) -> some View {
         HStack(spacing: 12) {
-            AppSwiftUIIconBadge(systemName: symbol)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.body.weight(.medium))

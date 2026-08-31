@@ -85,45 +85,37 @@ private struct AppearanceSwiftUIScreen: View {
     private var themeSection: some View {
         VStack(alignment: .leading, spacing: 9) {
             AppSwiftUISectionHeader(title: "浏览器主题色", detail: store.theme.displayName)
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 96), spacing: 12)],
-                spacing: 12
-            ) {
-                ForEach(AppThemeColor.allCases, id: \.rawValue) { option in
+            AppSwiftUISectionCard {
+                ForEach(Array(AppThemeColor.allCases.enumerated()), id: \.element.rawValue) {
+                    index, option in
                     let color = Color(uiColor: option.previewColor)
                     Button {
                         store.selectTheme(option)
                     } label: {
-                        VStack(spacing: 10) {
-                            ZStack {
-                                Circle()
-                                    .fill(color)
-                                    .frame(width: 38, height: 38)
-                                if store.theme == option {
-                                    Image(systemName: "checkmark")
-                                        .font(.headline.weight(.bold))
-                                        .foregroundStyle(.white)
-                                }
-                            }
+                        HStack(spacing: 12) {
+                            Circle()
+                                .fill(color)
+                                .frame(width: 24, height: 24)
                             Text(option.displayName)
-                                .font(.subheadline.weight(.medium))
+                                .font(.body.weight(.medium))
                                 .foregroundStyle(AppSwiftUIColors.primaryText)
+                            Spacer()
+                            if store.theme == option {
+                                Image(systemName: "checkmark")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(AppSwiftUIColors.accent)
+                            }
                         }
-                        .frame(maxWidth: .infinity, minHeight: 88)
-                        .background(.regularMaterial)
-                        .background(AppSwiftUIColors.surface.opacity(0.72))
-                        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 17, style: .continuous)
-                                .stroke(
-                                    store.theme == option ? color : AppSwiftUIColors.separator,
-                                    lineWidth: store.theme == option ? 2 : 0.7
-                                )
-                        }
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 50)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(option.displayName)
                     .accessibilityAddTraits(store.theme == option ? .isSelected : [])
+                    if index < AppThemeColor.allCases.count - 1 {
+                        AppSwiftUIDivider(leading: 52)
+                    }
                 }
             }
             Text("主题色会统一应用到按钮、图标、选中状态、进度与徽标。")
@@ -142,13 +134,19 @@ private struct AppearanceSwiftUIScreen: View {
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                AppSwiftUIIconBadge(systemName: systemName, tint: tint)
+                Image(systemName: systemName)
+                    .font(.body)
+                    .foregroundStyle(AppSwiftUIColors.secondaryText)
+                    .frame(width: 24)
                 Text(title)
                     .font(.body.weight(.medium))
                 Spacer()
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(isSelected ? tint : AppSwiftUIColors.tertiaryText)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(tint)
+                        .accessibilityHidden(true)
+                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)

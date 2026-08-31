@@ -224,7 +224,7 @@ private struct FavoritesSwiftUIScreen: View {
                                 Label("删除", systemImage: "trash")
                             }
                         }
-                        .listRowBackground(AppSwiftUIColors.surface.opacity(0.78))
+                        .listRowBackground(AppSwiftUIColors.surface)
                 }
             } header: {
                 Text("已收藏 \(store.state.totalCount)")
@@ -266,7 +266,7 @@ private struct FavoriteSwiftUIRow: View {
             AppSwiftUIFavicon(
                 pageURL: item.url,
                 faviconURL: item.faviconURL,
-                fallbackSystemName: "star.fill"
+                fallbackSystemName: "globe"
             )
             // 与“文件”页面的缩略图使用同一尺寸，避免 favicon 在列表中
             // 看起来像一个被二次缩小的小徽标。

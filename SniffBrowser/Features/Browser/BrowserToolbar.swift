@@ -53,6 +53,16 @@ final class BrowserToolbar: UIView {
     updateResolvedColors()
   }
 
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    let radius = bounds.height / 2
+    materialView.layer.cornerRadius = radius
+    layer.shadowPath = UIBezierPath(
+      roundedRect: bounds,
+      cornerRadius: radius
+    ).cgPath
+  }
+
   func update(canGoBack: Bool, canGoForward: Bool, tabCount: Int) {
     backButton.isEnabled = canGoBack
     forwardButton.isEnabled = canGoForward
@@ -141,8 +151,8 @@ final class BrowserToolbar: UIView {
     translatesAutoresizingMaskIntoConstraints = false
     materialView.translatesAutoresizingMaskIntoConstraints = false
     materialView.layer.cornerCurve = .continuous
-    materialView.layer.cornerRadius = AppRadius.card
-    materialView.layer.borderWidth = 1
+    materialView.layer.cornerRadius = AppMetrics.toolbarHeight / 2
+    materialView.layer.borderWidth = AppMetrics.separatorHeight
     materialView.clipsToBounds = true
     addSubview(materialView)
     AppShadow.browserChrome.apply(to: self)
@@ -178,8 +188,12 @@ final class BrowserToolbar: UIView {
       )
     }
     sniffButton.setImage(
-      AppIconography.appIconMarkImage(
-        pointSize: AppMetrics.toolbarIconSize
+      UIImage(
+        systemName: "dot.radiowaves.left.and.right",
+        withConfiguration: UIImage.SymbolConfiguration(
+          pointSize: AppMetrics.toolbarIconSize,
+          weight: .regular
+        )
       ),
       for: .normal
     )
@@ -189,9 +203,12 @@ final class BrowserToolbar: UIView {
     sniffButton.accessibilityIdentifier = "browser.toolbar.sniffer"
 
     tabsButton.setImage(
-      AppIconography.tabStackImage(
-        pointSize: AppMetrics.toolbarIconSize,
-        weight: 1.8
+      UIImage(
+        systemName: "square.on.square",
+        withConfiguration: UIImage.SymbolConfiguration(
+          pointSize: AppMetrics.toolbarIconSize,
+          weight: .regular
+        )
       ),
       for: .normal
     )
@@ -288,7 +305,7 @@ final class BrowserToolbar: UIView {
       isPrivateMode
         ? AppColors.privateBrowsingAccent.withAlphaComponent(0.20)
         : pageForeground?.withAlphaComponent(
-          UIAccessibility.isDarkerSystemColorsEnabled ? 0.28 : 0.16
+          UIAccessibility.isDarkerSystemColorsEnabled ? 0.32 : 0.10
         ) ?? AppColors.browserChromeBorder.resolvedColor(with: traitCollection)
     ).cgColor
     materialView.contentView.backgroundColor = isPrivateMode
@@ -387,6 +404,7 @@ private final class BrowserChromeButton: UIButton {
       let changes = {
         self.alpha = self.isHighlighted ? 0.68 : 1
         self.transform = self.isHighlighted
+          && !UIAccessibility.isReduceMotionEnabled
           ? CGAffineTransform(scaleX: 0.97, y: 0.97)
           : .identity
       }

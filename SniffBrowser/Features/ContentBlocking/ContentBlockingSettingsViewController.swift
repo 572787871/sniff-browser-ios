@@ -344,29 +344,14 @@ private struct ContentBlockingDashboardView: View {
     private var protectionHeader: some View {
         AppSwiftUISectionCard {
             HStack(spacing: 16) {
-                ZStack {
-                    Circle()
-                        .fill(
-                            store.isEnabled
-                                ? AppSwiftUIColors.success.opacity(0.14)
-                                : AppSwiftUIColors.tertiarySurface.opacity(0.55)
-                        )
-                    Circle()
-                        .stroke(
-                            store.isEnabled
-                                ? AppSwiftUIColors.success.opacity(0.34)
-                                : AppSwiftUIColors.separator,
-                            lineWidth: 1
-                        )
-                    Image(systemName: store.isEnabled
-                        ? "shield.checkered"
-                        : "shield.slash")
-                        .font(.system(size: 31, weight: .medium))
-                        .foregroundStyle(store.isEnabled
-                            ? AppSwiftUIColors.success
-                            : AppSwiftUIColors.secondaryText)
-                }
-                .frame(width: 74, height: 74)
+                Image(systemName: store.isEnabled
+                    ? "shield.checkered"
+                    : "shield.slash")
+                    .font(.system(size: 30, weight: .regular))
+                    .foregroundStyle(store.isEnabled
+                        ? AppSwiftUIColors.accent
+                        : AppSwiftUIColors.secondaryText)
+                    .frame(width: 38, height: 44)
 
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 7) {
@@ -407,7 +392,7 @@ private struct ContentBlockingDashboardView: View {
 
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(formatted(store.blockedCount))
-                            .font(.system(size: 42, weight: .bold, design: .rounded))
+                            .font(.largeTitle.weight(.bold).monospacedDigit())
                             .contentTransition(.numericText())
                         Text(store.selectedRange.metricTitle(for: .blocked))
                             .font(.subheadline.weight(.medium))
@@ -423,18 +408,15 @@ private struct ContentBlockingDashboardView: View {
                     HStack(spacing: 0) {
                         metric(
                             title: store.selectedRange.metricTitle(for: .pageLoads),
-                            value: store.pageLoadCount,
-                            symbol: "globe"
+                            value: store.pageLoadCount
                         )
                         metric(
                             title: "生效规则",
-                            value: store.ruleCount,
-                            symbol: "list.bullet.rectangle"
+                            value: store.ruleCount
                         )
                         metric(
                             title: "规则组",
-                            value: store.filterCount,
-                            symbol: "square.stack.3d.up"
+                            value: store.filterCount
                         )
                     }
                 }
@@ -474,11 +456,10 @@ private struct ContentBlockingDashboardView: View {
 
     private func metric(
         title: String,
-        value: Int,
-        symbol: String
+        value: Int
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Label(title, systemImage: symbol)
+            Text(title)
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(AppSwiftUIColors.tertiaryText)
                 .lineLimit(1)

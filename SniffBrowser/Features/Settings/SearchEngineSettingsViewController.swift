@@ -47,19 +47,15 @@ private struct SearchEngineSwiftUIScreen: View {
                                 store.select(engine)
                             } label: {
                                 HStack(spacing: 12) {
-                                    AppSwiftUIIconBadge(systemName: "magnifyingglass")
                                     Text(engine.displayName)
                                         .font(.body.weight(.medium))
                                     Spacer()
-                                    Image(systemName: store.selected == engine
-                                          ? "checkmark.circle.fill"
-                                          : "circle")
-                                        .font(.title3)
-                                        .foregroundStyle(
-                                            store.selected == engine
-                                                ? AppSwiftUIColors.accent
-                                                : AppSwiftUIColors.tertiaryText
-                                        )
+                                    if store.selected == engine {
+                                        Image(systemName: "checkmark")
+                                            .font(.body.weight(.semibold))
+                                            .foregroundStyle(AppSwiftUIColors.accent)
+                                            .accessibilityHidden(true)
+                                    }
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 10)

@@ -188,7 +188,7 @@ private struct HistorySwiftUIScreen: View {
                                     store.remove(item)
                                 }
                             }
-                            .listRowBackground(AppSwiftUIColors.surface.opacity(0.78))
+                            .listRowBackground(AppSwiftUIColors.surface)
                     }
                 }
             }

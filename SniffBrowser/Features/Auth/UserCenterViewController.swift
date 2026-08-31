@@ -127,17 +127,16 @@ private struct UserCenterSwiftUIScreen: View {
     private struct Summary: Identifiable {
         let title: String
         let value: Int
-        let symbol: String
         let destination: UserCenterViewController.Destination
         var id: UserCenterViewController.Destination { destination }
     }
 
     private var summaries: [Summary] {
         [
-            Summary(title: "下载", value: store.counts.downloads, symbol: "arrow.down.circle", destination: .downloads),
-            Summary(title: "文件", value: store.counts.files, symbol: "folder", destination: .files),
-            Summary(title: "收藏", value: store.counts.favorites, symbol: "star", destination: .favorites),
-            Summary(title: "历史", value: store.counts.history, symbol: "clock", destination: .history)
+            Summary(title: "下载", value: store.counts.downloads, destination: .downloads),
+            Summary(title: "文件", value: store.counts.files, destination: .files),
+            Summary(title: "收藏", value: store.counts.favorites, destination: .favorites),
+            Summary(title: "历史", value: store.counts.history, destination: .history)
         ]
     }
 
@@ -157,14 +156,10 @@ private struct UserCenterSwiftUIScreen: View {
     private var profileCard: some View {
         VStack(spacing: 18) {
             HStack(spacing: 14) {
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 34))
-                    .foregroundStyle(AppSwiftUIColors.accent)
-                    .frame(width: 58, height: 58)
-                    .background(
-                        AppSwiftUIColors.accentFill,
-                        in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    )
+                Image(systemName: "person.crop.circle")
+                    .font(.system(size: 44, weight: .regular))
+                    .foregroundStyle(AppSwiftUIColors.secondaryText)
+                    .frame(width: 52, height: 52)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(profileTitle)
@@ -188,44 +183,33 @@ private struct UserCenterSwiftUIScreen: View {
             .buttonStyle(AppSwiftUIPrimaryButtonStyle())
             .accessibilityIdentifier("userCenter.primaryAction")
 
-            LazyVGrid(
-                columns: Array(repeating: GridItem(.flexible(), spacing: 9), count: 4),
-                spacing: 9
-            ) {
-                ForEach(summaries) { summary in
+            HStack(spacing: 0) {
+                ForEach(Array(summaries.enumerated()), id: \.element.id) { index, summary in
                     Button {
                         onSelect(summary.destination)
                     } label: {
-                        VStack(spacing: 5) {
-                            Image(systemName: summary.symbol)
-                                .font(.system(size: 17, weight: .medium))
-                                .foregroundStyle(AppSwiftUIColors.accent)
+                        VStack(spacing: 3) {
                             Text("\(summary.value)")
                                 .font(.headline.monospacedDigit())
                             Text(summary.title)
                                 .font(.caption)
                                 .foregroundStyle(AppSwiftUIColors.secondaryText)
                         }
-                        .frame(maxWidth: .infinity, minHeight: 78)
-                        .background(
-                            AppSwiftUIColors.secondarySurface.opacity(0.72),
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        )
+                        .frame(maxWidth: .infinity, minHeight: 58)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("userCenter.summary.\(summary.title)")
+                    if index < summaries.count - 1 {
+                        AppSwiftUIColors.separator
+                            .frame(width: 1 / UIScreen.main.scale, height: 34)
+                    }
                 }
             }
         }
         .padding(18)
-        .background(.regularMaterial)
-        .background(AppSwiftUIColors.surface.opacity(0.74))
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(AppSwiftUIColors.separator, lineWidth: 0.7)
-        }
-        .shadow(color: .black.opacity(0.06), radius: 16, y: 8)
+        .background(AppSwiftUIColors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.panel, style: .continuous))
     }
 
     private var accountSection: some View {

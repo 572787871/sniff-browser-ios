@@ -7,7 +7,6 @@ private struct BrowserSearchOverlayPalette {
   let accent: UIColor
   let separator: UIColor
   let selection: UIColor
-  let cardBackground: UIColor
 }
 
 @MainActor
@@ -462,7 +461,7 @@ final class BrowserViewController: UIViewController {
     quickLinksStack.translatesAutoresizingMaskIntoConstraints = false
     quickLinksStack.axis = .horizontal
     quickLinksStack.alignment = .fill
-    quickLinksStack.spacing = AppSpacing.sm
+    quickLinksStack.spacing = AppSpacing.xs
     quickLinksScrollView.addSubview(quickLinksStack)
 
     let heightConstraint = quickLinksScrollView.heightAnchor
@@ -485,7 +484,7 @@ final class BrowserViewController: UIViewController {
         equalTo: quickLinksScrollView.contentLayoutGuide.bottomAnchor,
         constant: -AppSpacing.xs
       ),
-      quickLinksStack.heightAnchor.constraint(equalToConstant: 76),
+      quickLinksStack.heightAnchor.constraint(equalToConstant: 64),
       heightConstraint,
     ])
   }
@@ -496,12 +495,12 @@ final class BrowserViewController: UIViewController {
     searchHistoryTableView.separatorColor = AppColors.browserChromeSeparator
     searchHistoryTableView.separatorInset = UIEdgeInsets(
       top: 0,
-      left: 72,
+      left: 56,
       bottom: 0,
       right: AppSpacing.lg
     )
-    searchHistoryTableView.rowHeight = 72
-    searchHistoryTableView.estimatedRowHeight = 72
+    searchHistoryTableView.rowHeight = 68
+    searchHistoryTableView.estimatedRowHeight = 68
     searchHistoryTableView.keyboardDismissMode = .none
     searchHistoryTableView.alwaysBounceVertical = true
     searchHistoryTableView.showsVerticalScrollIndicator = false
@@ -644,7 +643,7 @@ final class BrowserViewController: UIViewController {
     }
 
     let hasLinks = !visibleLinks.isEmpty
-    quickLinksHeightConstraint?.constant = hasLinks ? 92 : 0
+    quickLinksHeightConstraint?.constant = hasLinks ? 80 : 0
     quickLinksScrollView.isHidden = !hasLinks
     if hasLinks {
       quickLinksScrollView.setContentOffset(.zero, animated: false)
@@ -653,24 +652,21 @@ final class BrowserViewController: UIViewController {
 
   private func makeQuickLinkButton(_ link: BrowserQuickLink) -> UIButton {
     let palette = searchOverlayPalette
-    var configuration = UIButton.Configuration.tinted()
+    var configuration = UIButton.Configuration.plain()
     configuration.image = UIImage(systemName: link.symbolName)
     configuration.title = link.title
     configuration.subtitle = link.subtitle
     configuration.imagePlacement = .leading
     configuration.imagePadding = AppSpacing.xs
-    configuration.cornerStyle = .medium
+    configuration.cornerStyle = .small
     configuration.titleLineBreakMode = .byTruncatingTail
     configuration.subtitleLineBreakMode = .byTruncatingMiddle
     configuration.baseForegroundColor = palette.primary
-    configuration.baseBackgroundColor = palette.cardBackground
-    configuration.background.strokeColor = palette.separator
-    configuration.background.strokeWidth = 0.5
     configuration.contentInsets = NSDirectionalEdgeInsets(
       top: AppSpacing.xs,
-      leading: AppSpacing.sm,
+      leading: AppSpacing.xs,
       bottom: AppSpacing.xs,
-      trailing: AppSpacing.sm
+      trailing: AppSpacing.xs
     )
 
     let button = UIButton(configuration: configuration)
@@ -686,8 +682,8 @@ final class BrowserViewController: UIViewController {
       for: .touchUpInside
     )
     NSLayoutConstraint.activate([
-      button.widthAnchor.constraint(equalToConstant: 156),
-      button.heightAnchor.constraint(equalToConstant: 76),
+      button.widthAnchor.constraint(equalToConstant: 148),
+      button.heightAnchor.constraint(equalToConstant: 64),
     ])
     return button
   }
@@ -703,8 +699,7 @@ final class BrowserViewController: UIViewController {
         secondary: UIColor.white.withAlphaComponent(0.64),
         accent: UIColor.white.withAlphaComponent(0.82),
         separator: UIColor.white.withAlphaComponent(0.10),
-        selection: UIColor.white.withAlphaComponent(0.10),
-        cardBackground: UIColor.white.withAlphaComponent(0.07)
+        selection: UIColor.white.withAlphaComponent(0.10)
       )
     case .dark:
       return BrowserSearchOverlayPalette(
@@ -712,8 +707,7 @@ final class BrowserViewController: UIViewController {
         secondary: UIColor.black.withAlphaComponent(0.56),
         accent: UIColor.black.withAlphaComponent(0.72),
         separator: UIColor.black.withAlphaComponent(0.10),
-        selection: UIColor.black.withAlphaComponent(0.07),
-        cardBackground: UIColor.black.withAlphaComponent(0.045)
+        selection: UIColor.black.withAlphaComponent(0.07)
       )
     case nil:
       return BrowserSearchOverlayPalette(
@@ -721,8 +715,7 @@ final class BrowserViewController: UIViewController {
         secondary: AppColors.secondaryText,
         accent: AppColors.accent,
         separator: AppColors.browserChromeSeparator,
-        selection: AppColors.browserChromeSelection,
-        cardBackground: AppColors.surface
+        selection: AppColors.browserChromeSelection
       )
     }
   }
@@ -739,8 +732,6 @@ final class BrowserViewController: UIViewController {
       .forEach { button in
         guard var configuration = button.configuration else { return }
         configuration.baseForegroundColor = palette.primary
-        configuration.baseBackgroundColor = palette.cardBackground
-        configuration.background.strokeColor = palette.separator
         button.configuration = configuration
       }
   }
@@ -1718,15 +1709,15 @@ private final class BrowserSearchHistoryCell: UITableViewCell {
     NSLayoutConstraint.activate([
       iconView.leadingAnchor.constraint(
         equalTo: contentView.leadingAnchor,
-        constant: AppSpacing.xl
+        constant: AppSpacing.lg
       ),
       iconView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-      iconView.widthAnchor.constraint(equalToConstant: 28),
-      iconView.heightAnchor.constraint(equalToConstant: 28),
+      iconView.widthAnchor.constraint(equalToConstant: 24),
+      iconView.heightAnchor.constraint(equalToConstant: 24),
 
       titleLabel.leadingAnchor.constraint(
         equalTo: iconView.trailingAnchor,
-        constant: AppSpacing.lg
+        constant: AppSpacing.sm
       ),
       titleLabel.trailingAnchor.constraint(
         equalTo: arrowView.leadingAnchor,
@@ -1750,12 +1741,12 @@ private final class BrowserSearchHistoryCell: UITableViewCell {
 
       arrowView.trailingAnchor.constraint(
         equalTo: contentView.trailingAnchor,
-        constant: -AppSpacing.xl
+        constant: -AppSpacing.lg
       ),
       arrowView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-      arrowView.widthAnchor.constraint(equalToConstant: 28),
-      arrowView.heightAnchor.constraint(equalToConstant: 28),
-      contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 72),
+      arrowView.widthAnchor.constraint(equalToConstant: 24),
+      arrowView.heightAnchor.constraint(equalToConstant: 24),
+      contentView.heightAnchor.constraint(greaterThanOrEqualToConstant: 68),
     ])
 
     isAccessibilityElement = true

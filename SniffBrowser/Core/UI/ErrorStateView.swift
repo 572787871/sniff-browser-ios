@@ -62,7 +62,7 @@ final class ErrorStateView: UIView {
         buttonConfiguration.title = configuration.retryTitle
         buttonConfiguration.baseBackgroundColor = AppColors.accentFill
         buttonConfiguration.baseForegroundColor = AppColors.accent
-        buttonConfiguration.cornerStyle = .medium
+        buttonConfiguration.cornerStyle = .capsule
         buttonConfiguration.contentInsets = NSDirectionalEdgeInsets(
             top: AppSpacing.sm,
             leading: AppSpacing.lg,

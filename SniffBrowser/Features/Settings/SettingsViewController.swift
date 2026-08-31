@@ -257,6 +257,7 @@ private struct SettingsSwiftUIScreen: View {
                 title: "清除浏览数据",
                 subtitle: "Cookie、网站数据与缓存",
                 systemName: "trash",
+                showsLeadingIcon: false,
                 isDestructive: true,
                 isEnabled: store.canClearBrowsingData,
                 showsChevron: false
@@ -344,6 +345,7 @@ private struct SettingsSwiftUIScreen: View {
             title: title,
             subtitle: subtitle,
             systemName: symbol,
+            showsLeadingIcon: false,
             detail: detail
         ) {
             onSelect(destination)

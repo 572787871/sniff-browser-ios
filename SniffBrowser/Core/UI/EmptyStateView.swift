@@ -77,7 +77,7 @@ final class EmptyStateView: UIView {
         buttonConfiguration.title = configuration.actionTitle
         buttonConfiguration.baseBackgroundColor = AppColors.accent
         buttonConfiguration.baseForegroundColor = AppColors.accentContent
-        buttonConfiguration.cornerStyle = .medium
+        buttonConfiguration.cornerStyle = .capsule
         buttonConfiguration.contentInsets = NSDirectionalEdgeInsets(
             top: AppSpacing.sm,
             leading: AppSpacing.lg,
@@ -100,7 +100,7 @@ final class EmptyStateView: UIView {
         var secondaryConfiguration = UIButton.Configuration.tinted()
         secondaryConfiguration.title = configuration.secondaryActionTitle
         secondaryConfiguration.baseForegroundColor = AppColors.accent
-        secondaryConfiguration.cornerStyle = .medium
+        secondaryConfiguration.cornerStyle = .capsule
         secondaryConfiguration.contentInsets = NSDirectionalEdgeInsets(
             top: AppSpacing.sm,
             leading: AppSpacing.lg,
@@ -143,8 +143,8 @@ final class EmptyStateView: UIView {
             trailing: AppSpacing.xl
         )
 
-        symbolContainer.backgroundColor = AppColors.stateSymbolBackground
-        symbolContainer.layer.cornerRadius = AppRadius.card
+        symbolContainer.backgroundColor = .clear
+        symbolContainer.layer.cornerRadius = 0
         symbolContainer.translatesAutoresizingMaskIntoConstraints = false
         symbolContainer.isAccessibilityElement = false
 
@@ -239,7 +239,7 @@ final class EmptyStateView: UIView {
             ),
             viewportHeightConstraint,
 
-            symbolContainer.widthAnchor.constraint(equalToConstant: 72),
+            symbolContainer.widthAnchor.constraint(equalToConstant: 64),
             symbolContainer.heightAnchor.constraint(equalTo: symbolContainer.widthAnchor),
             symbolView.centerXAnchor.constraint(equalTo: symbolContainer.centerXAnchor),
             symbolView.centerYAnchor.constraint(equalTo: symbolContainer.centerYAnchor),

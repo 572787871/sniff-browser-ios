@@ -458,29 +458,41 @@ extension AppCoordinator: UINavigationControllerDelegate,
   ) {
     let isBrowser = viewController === browserViewController
     navigationController.setNavigationBarHidden(isBrowser, animated: false)
-    let appearance = UINavigationBarAppearance()
+    let standardAppearance = UINavigationBarAppearance()
+    let scrollEdgeAppearance = UINavigationBarAppearance()
     if isBrowser {
-      appearance.configureWithTransparentBackground()
-      appearance.shadowColor = .clear
+      standardAppearance.configureWithTransparentBackground()
+      standardAppearance.shadowColor = .clear
+      scrollEdgeAppearance.configureWithTransparentBackground()
+      scrollEdgeAppearance.shadowColor = .clear
     } else {
-      appearance.configureWithOpaqueBackground()
-      appearance.backgroundColor = AppColors.background
-      appearance.shadowColor = .clear
-      appearance.titleTextAttributes = [
+      if UIAccessibility.isReduceTransparencyEnabled {
+        standardAppearance.configureWithOpaqueBackground()
+        standardAppearance.backgroundColor = AppColors.background
+        scrollEdgeAppearance.configureWithOpaqueBackground()
+        scrollEdgeAppearance.backgroundColor = AppColors.background
+      } else {
+        standardAppearance.configureWithDefaultBackground()
+        scrollEdgeAppearance.configureWithTransparentBackground()
+      }
+      standardAppearance.titleTextAttributes = [
         .foregroundColor: AppColors.primaryText,
         .font: AppTypography.headline,
       ]
-      appearance.largeTitleTextAttributes = [
+      standardAppearance.largeTitleTextAttributes = [
         .foregroundColor: AppColors.primaryText,
         .font: AppTypography.largeTitle,
       ]
+      scrollEdgeAppearance.titleTextAttributes = standardAppearance.titleTextAttributes
+      scrollEdgeAppearance.largeTitleTextAttributes = standardAppearance.largeTitleTextAttributes
+      scrollEdgeAppearance.shadowColor = .clear
     }
     // 根浏览器使用自己的地址栏并隐藏系统导航栏，避免透明导航栏覆盖其触摸区。
     // 进入独立页面后恢复系统导航栏与交互。
     navigationController.navigationBar.isUserInteractionEnabled = !isBrowser
-    navigationController.navigationBar.standardAppearance = appearance
-    navigationController.navigationBar.compactAppearance = appearance
-    navigationController.navigationBar.scrollEdgeAppearance = appearance
+    navigationController.navigationBar.standardAppearance = standardAppearance
+    navigationController.navigationBar.compactAppearance = standardAppearance
+    navigationController.navigationBar.scrollEdgeAppearance = scrollEdgeAppearance
   }
 }
 

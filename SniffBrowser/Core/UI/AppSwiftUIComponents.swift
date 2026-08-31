@@ -83,19 +83,6 @@ struct AppSwiftUIScreen<Content: View>: View {
         ZStack {
             AppSwiftUIColors.background
                 .ignoresSafeArea()
-
-            LinearGradient(
-                colors: [
-                    AppSwiftUIColors.accent.opacity(0.075),
-                    .clear,
-                    AppSwiftUIColors.secondarySurface.opacity(0.22)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-
             content
         }
         .tint(AppSwiftUIColors.accent)
@@ -124,9 +111,10 @@ struct AppSwiftUISectionHeader: View {
     }
 }
 
-/// ShipSwift Settings recipe 的分区容器，调整为项目的蓝灰玻璃材质。
+/// 同类内容共享一个不透明面板，以细分隔线组织层级；平面内容不使用玻璃。
 struct AppSwiftUISectionCard<Content: View>: View {
     private let content: Content
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
 
     init(@ViewBuilder content: () -> Content) {
         self.content = content()
@@ -136,31 +124,27 @@ struct AppSwiftUISectionCard<Content: View>: View {
         VStack(spacing: 0) {
             content
         }
-        .background(.regularMaterial)
-        .background(AppSwiftUIColors.surface.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(AppSwiftUIColors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.panel, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(AppSwiftUIColors.separator, lineWidth: 0.7)
+            if colorSchemeContrast == .increased {
+                RoundedRectangle(cornerRadius: AppRadius.panel, style: .continuous)
+                    .stroke(AppSwiftUIColors.separator, lineWidth: 1)
+            }
         }
-        .shadow(color: .black.opacity(0.055), radius: 14, y: 7)
     }
 }
 
 struct AppSwiftUIIconBadge: View {
     let systemName: String
-    var tint: Color = AppSwiftUIColors.accent
-    var size: CGFloat = 38
+    var tint: Color = AppSwiftUIColors.secondaryText
+    var size: CGFloat = 28
 
     var body: some View {
         Image(systemName: systemName)
-            .font(.system(size: size * 0.43, weight: .medium))
+            .font(.system(size: min(22, size * 0.72), weight: .regular))
             .foregroundStyle(tint)
             .frame(width: size, height: size)
-            .background(tint.opacity(0.12), in: RoundedRectangle(
-                cornerRadius: max(9, size * 0.28),
-                style: .continuous
-            ))
             .accessibilityHidden(true)
     }
 }
@@ -170,6 +154,7 @@ struct AppSwiftUIActionRow: View {
     let title: String
     var subtitle: String? = nil
     let systemName: String
+    var showsLeadingIcon = true
     var detail: String? = nil
     var tint: Color = AppSwiftUIColors.accent
     var isDestructive = false
@@ -180,10 +165,12 @@ struct AppSwiftUIActionRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                AppSwiftUIIconBadge(
-                    systemName: systemName,
-                    tint: isDestructive ? AppSwiftUIColors.danger : tint
-                )
+                if showsLeadingIcon {
+                    AppSwiftUIIconBadge(
+                        systemName: systemName,
+                        tint: isDestructive ? AppSwiftUIColors.danger : tint
+                    )
+                }
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
@@ -230,11 +217,11 @@ struct AppSwiftUIActionRow: View {
 }
 
 struct AppSwiftUIDivider: View {
-    var leading: CGFloat = 64
+    var leading: CGFloat = 16
 
     var body: some View {
         AppSwiftUIColors.separator
-            .frame(height: 0.7)
+            .frame(height: 1 / UIScreen.main.scale)
             .padding(.leading, leading)
     }
 }
@@ -265,14 +252,9 @@ struct AppSwiftUISearchField: View {
             }
         }
         .padding(.horizontal, 14)
-        .frame(minHeight: 48)
-        .background(.regularMaterial)
-        .background(AppSwiftUIColors.surface.opacity(0.76))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(AppSwiftUIColors.separator, lineWidth: 0.7)
-        }
+        .frame(minHeight: 44)
+        .background(AppSwiftUIColors.secondarySurface)
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
     }
 }
 
@@ -288,13 +270,9 @@ struct AppSwiftUIEmptyState: View {
     var body: some View {
         VStack(spacing: 14) {
             Image(systemName: systemName)
-                .font(.system(size: 34, weight: .medium))
-                .foregroundStyle(AppSwiftUIColors.accent)
-                .frame(width: 76, height: 76)
-                .background(
-                    AppSwiftUIColors.accentFill,
-                    in: RoundedRectangle(cornerRadius: 24, style: .continuous)
-                )
+                .font(.system(size: 46, weight: .regular))
+                .foregroundStyle(AppSwiftUIColors.tertiaryText)
+                .frame(width: 64, height: 64)
 
             Text(title)
                 .font(.title3.weight(.bold))
@@ -309,6 +287,7 @@ struct AppSwiftUIEmptyState: View {
                 Button(primaryTitle, action: primaryAction)
                     .font(.headline)
                     .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
                     .controlSize(.large)
             }
             if let secondaryTitle, let secondaryAction {
@@ -352,13 +331,10 @@ struct AppSwiftUIUndoBanner: View {
         .padding(.trailing, 8)
         .padding(.vertical, 8)
         .background(.regularMaterial)
-        .background(AppSwiftUIColors.surface.opacity(0.9))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(AppSwiftUIColors.separator, lineWidth: 0.7)
-        }
-        .shadow(color: .black.opacity(0.1), radius: 16, y: 6)
+        .background(AppSwiftUIColors.surface.opacity(0.82))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.overlayControl, style: .continuous))
+        .shadow(color: .black.opacity(0.05), radius: 3, y: 1)
+        .shadow(color: .black.opacity(0.12), radius: 20, y: 8)
         // 保留“撤销”按钮为独立可操作元素，VoiceOver 不会把它合并成
         // 一段无法点击的静态文字。
         .accessibilityElement(children: .contain)
@@ -366,6 +342,8 @@ struct AppSwiftUIUndoBanner: View {
 }
 
 struct AppSwiftUIPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
@@ -373,10 +351,15 @@ struct AppSwiftUIPrimaryButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity, minHeight: 52)
             .background(
                 AppSwiftUIColors.accent.opacity(configuration.isPressed ? 0.78 : 1),
-                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                in: Capsule(style: .continuous)
             )
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
+            .scaleEffect(
+                reduceMotion ? 1 : (configuration.isPressed ? 0.985 : 1)
+            )
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: 0.14),
+                value: configuration.isPressed
+            )
     }
 }
 

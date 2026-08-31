@@ -26,7 +26,7 @@ final class DesignSystemTests: XCTestCase {
     XCTAssertEqual(alpha(of: dark), 0.88, accuracy: 0.01)
   }
 
-  func testPaperSignalAccentUsesWarmHue() {
+  func testDefaultAccentUsesAppleBlueHue() {
     let accent = AppColors.accent.resolvedColor(
       with: UITraitCollection(userInterfaceStyle: .light)
     )
@@ -38,8 +38,8 @@ final class DesignSystemTests: XCTestCase {
     XCTAssertTrue(
       accent.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
     )
-    XCTAssertGreaterThan(red, green)
-    XCTAssertGreaterThan(green, blue)
+    XCTAssertGreaterThan(blue, red)
+    XCTAssertGreaterThanOrEqual(green, red)
     XCTAssertEqual(alpha, 1, accuracy: 0.01)
   }
 

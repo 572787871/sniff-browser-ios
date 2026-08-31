@@ -503,7 +503,10 @@ extension BrowserViewController {
     let remove = {
       cover.removeFromSuperview()
     }
-    guard animated, view.window != nil else {
+    guard animated,
+          !UIAccessibility.isReduceMotionEnabled,
+          view.window != nil
+    else {
       remove()
       return
     }
@@ -919,7 +922,8 @@ extension BrowserViewController {
     }
     let navigation = BrowserMoreNavigationController(root: controller)
     if let sheet = navigation.sheetPresentationController {
-      sheet.detents = [.large()]
+      sheet.detents = [.medium(), .large()]
+      sheet.selectedDetentIdentifier = .medium
       sheet.prefersGrabberVisible = true
       sheet.preferredCornerRadius = AppRadius.sheet
       sheet.prefersScrollingExpandsWhenScrolledToEdge = true

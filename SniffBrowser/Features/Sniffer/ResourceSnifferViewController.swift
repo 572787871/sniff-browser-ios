@@ -228,18 +228,6 @@ final class ResourceSnifferViewController: BaseViewController {
     private func configureAppearance() {
         view.backgroundColor = ResourceSnifferPalette.background
         contentView.backgroundColor = ResourceSnifferPalette.background
-
-        let appearance = UINavigationBarAppearance()
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = ResourceSnifferPalette.background
-        appearance.shadowColor = ResourceSnifferPalette.border
-        appearance.titleTextAttributes = [
-            .foregroundColor: ResourceSnifferPalette.primaryText,
-            .font: AppTypography.headline
-        ]
-        navigationController?.navigationBar.standardAppearance = appearance
-        navigationController?.navigationBar.compactAppearance = appearance
-        navigationController?.navigationBar.scrollEdgeAppearance = appearance
         navigationController?.navigationBar.tintColor = ResourceSnifferPalette.accent
     }
 
@@ -442,14 +430,15 @@ final class ResourceSnifferViewController: BaseViewController {
     }
 
     private func makeCloseItem() -> UIBarButtonItem {
-        let button = makeNavigationCircleButton(
-            symbolName: "xmark",
-            accessibilityLabel: "关闭资源嗅探"
-        )
-        button.addAction(UIAction { [weak self] _ in
+        let action = UIAction { [weak self] _ in
             self?.dismiss(animated: true)
-        }, for: .touchUpInside)
-        return UIBarButtonItem(customView: button)
+        }
+        let item = UIBarButtonItem(
+            image: UIImage(systemName: "xmark"),
+            primaryAction: action
+        )
+        item.accessibilityLabel = "关闭资源嗅探"
+        return item
     }
 
     private func makeManagementItem() -> UIBarButtonItem {
@@ -463,44 +452,12 @@ final class ResourceSnifferViewController: BaseViewController {
             image: UIImage(systemName: "trash"),
             attributes: resources.isEmpty ? [.disabled] : [.destructive]
         ) { [weak self] _ in self?.confirmClearResults() }
-        let button = makeNavigationCircleButton(
-            symbolName: "ellipsis",
-            accessibilityLabel: "资源管理"
+        let item = UIBarButtonItem(
+            image: UIImage(systemName: "ellipsis.circle"),
+            menu: UIMenu(children: [stop, clear])
         )
-        button.menu = UIMenu(children: [stop, clear])
-        button.showsMenuAsPrimaryAction = true
-        return UIBarButtonItem(customView: button)
-    }
-
-    private func makeNavigationCircleButton(
-        symbolName: String,
-        accessibilityLabel: String
-    ) -> UIButton {
-        let button = UIButton(type: .system)
-        let configuration = UIImage.SymbolConfiguration(
-            pointSize: 17,
-            weight: .semibold
-        )
-        button.setImage(
-            UIImage(systemName: symbolName, withConfiguration: configuration),
-            for: .normal
-        )
-        button.tintColor = ResourceSnifferPalette.primaryText
-        button.backgroundColor = ResourceSnifferPalette.secondarySurface
-            .withAlphaComponent(0.72)
-        button.layer.cornerRadius = AppMetrics.minimumTapSize / 2
-        button.layer.cornerCurve = .continuous
-        button.accessibilityLabel = accessibilityLabel
-        button.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            button.widthAnchor.constraint(
-                equalToConstant: AppMetrics.minimumTapSize
-            ),
-            button.heightAnchor.constraint(
-                equalToConstant: AppMetrics.minimumTapSize
-            )
-        ])
-        return button
+        item.accessibilityLabel = "资源管理"
+        return item
     }
 
     private func refreshResources() {
@@ -1180,19 +1137,20 @@ private final class ResourceImageCell: UICollectionViewCell {
         imageView.translatesAutoresizingMaskIntoConstraints = false
         cardView.addSubview(imageView)
 
-        moreButton.setImage(UIImage(systemName: "ellipsis.circle.fill"), for: .normal)
+        moreButton.setImage(UIImage(systemName: "ellipsis.circle"), for: .normal)
         moreButton.tintColor = ResourceSnifferPalette.primaryText
         moreButton.backgroundColor = ResourceSnifferPalette.surface.withAlphaComponent(0.88)
-        moreButton.layer.cornerRadius = 16
+        moreButton.layer.cornerRadius = AppMetrics.minimumTapSize / 2
         moreButton.translatesAutoresizingMaskIntoConstraints = false
         moreButton.showsMenuAsPrimaryAction = true
         cardView.addSubview(moreButton)
 
-        retryButton.setTitle("重试", for: .normal)
-        retryButton.titleLabel?.font = AppTypography.caption
-        retryButton.tintColor = ResourceSnifferPalette.accent
-        retryButton.backgroundColor = ResourceSnifferPalette.surface
-        retryButton.layer.cornerRadius = AppRadius.control
+        var retryConfiguration = UIButton.Configuration.tinted()
+        retryConfiguration.title = "重试"
+        retryConfiguration.baseForegroundColor = ResourceSnifferPalette.accent
+        retryConfiguration.baseBackgroundColor = ResourceSnifferPalette.surface
+        retryConfiguration.cornerStyle = .capsule
+        retryButton.configuration = retryConfiguration
         retryButton.isHidden = true
         retryButton.translatesAutoresizingMaskIntoConstraints = false
         retryButton.addTarget(self, action: #selector(retryPressed), for: .touchUpInside)
@@ -1230,12 +1188,12 @@ private final class ResourceImageCell: UICollectionViewCell {
             imageView.heightAnchor.constraint(equalToConstant: 148),
             moreButton.topAnchor.constraint(equalTo: cardView.topAnchor, constant: AppSpacing.xs),
             moreButton.trailingAnchor.constraint(equalTo: cardView.trailingAnchor, constant: -AppSpacing.xs),
-            moreButton.widthAnchor.constraint(equalToConstant: 32),
-            moreButton.heightAnchor.constraint(equalToConstant: 32),
+            moreButton.widthAnchor.constraint(equalToConstant: AppMetrics.minimumTapSize),
+            moreButton.heightAnchor.constraint(equalToConstant: AppMetrics.minimumTapSize),
             retryButton.centerXAnchor.constraint(equalTo: imageView.centerXAnchor),
             retryButton.centerYAnchor.constraint(equalTo: imageView.centerYAnchor),
-            retryButton.widthAnchor.constraint(equalToConstant: 54),
-            retryButton.heightAnchor.constraint(equalToConstant: 30),
+            retryButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 64),
+            retryButton.heightAnchor.constraint(equalToConstant: AppMetrics.minimumTapSize),
             indicator.centerXAnchor.constraint(equalTo: imageView.centerXAnchor),
             indicator.centerYAnchor.constraint(equalTo: imageView.centerYAnchor),
             metadata.topAnchor.constraint(equalTo: imageView.bottomAnchor, constant: AppSpacing.xs),

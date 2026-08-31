@@ -111,11 +111,10 @@ final class TabOverviewCell: UICollectionViewCell {
         didSet {
             let changes = {
                 self.contentView.alpha = self.isHighlighted ? 0.76 : 1
-                if !UIAccessibility.isReduceMotionEnabled {
-                    self.contentView.transform = self.isHighlighted
+                self.contentView.transform = self.isHighlighted
+                    && !UIAccessibility.isReduceMotionEnabled
                         ? CGAffineTransform(scaleX: 0.985, y: 0.985)
                         : .identity
-                }
             }
             UIView.animate(
                 withDuration: 0.14,
@@ -490,6 +489,10 @@ final class TabOverviewCell: UICollectionViewCell {
     @objc
     private func closeButtonTouchDown() {
         closeButton.backgroundColor = AppColors.accentFill
+        guard !UIAccessibility.isReduceMotionEnabled else {
+            closeButton.transform = .identity
+            return
+        }
         UIView.animate(
             withDuration: 0.12,
             delay: 0,
@@ -501,6 +504,12 @@ final class TabOverviewCell: UICollectionViewCell {
 
     @objc
     private func closeButtonTouchUp() {
+        guard !UIAccessibility.isReduceMotionEnabled else {
+            closeButton.transform = .identity
+            closeButton.backgroundColor = AppColors.elevatedSurface
+                .withAlphaComponent(0.86)
+            return
+        }
         UIView.animate(
             withDuration: 0.12,
             delay: 0,

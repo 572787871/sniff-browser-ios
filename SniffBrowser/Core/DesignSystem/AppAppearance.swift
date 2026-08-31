@@ -26,23 +26,37 @@ enum AppAppearance {
     }
 
     private static func applyNavigationAppearance() {
-        let navigationAppearance = UINavigationBarAppearance()
-        navigationAppearance.configureWithOpaqueBackground()
-        navigationAppearance.backgroundColor = AppColors.background
-        navigationAppearance.shadowColor = AppColors.separator
-        navigationAppearance.titleTextAttributes = [
+        let standardAppearance = UINavigationBarAppearance()
+        if UIAccessibility.isReduceTransparencyEnabled {
+            standardAppearance.configureWithOpaqueBackground()
+            standardAppearance.backgroundColor = AppColors.background
+        } else {
+            standardAppearance.configureWithDefaultBackground()
+        }
+        standardAppearance.titleTextAttributes = [
             .foregroundColor: AppColors.primaryText,
             .font: AppTypography.headline
         ]
-        navigationAppearance.largeTitleTextAttributes = [
+        standardAppearance.largeTitleTextAttributes = [
             .foregroundColor: AppColors.primaryText,
             .font: AppTypography.largeTitle
         ]
 
+        let scrollEdgeAppearance = UINavigationBarAppearance()
+        if UIAccessibility.isReduceTransparencyEnabled {
+            scrollEdgeAppearance.configureWithOpaqueBackground()
+            scrollEdgeAppearance.backgroundColor = AppColors.background
+        } else {
+            scrollEdgeAppearance.configureWithTransparentBackground()
+        }
+        scrollEdgeAppearance.shadowColor = .clear
+        scrollEdgeAppearance.titleTextAttributes = standardAppearance.titleTextAttributes
+        scrollEdgeAppearance.largeTitleTextAttributes = standardAppearance.largeTitleTextAttributes
+
         let navigationBar = UINavigationBar.appearance()
-        navigationBar.standardAppearance = navigationAppearance
-        navigationBar.compactAppearance = navigationAppearance
-        navigationBar.scrollEdgeAppearance = navigationAppearance
+        navigationBar.standardAppearance = standardAppearance
+        navigationBar.compactAppearance = standardAppearance
+        navigationBar.scrollEdgeAppearance = scrollEdgeAppearance
         navigationBar.tintColor = AppColors.accent
 
         UIBarButtonItem.appearance().tintColor = AppColors.accent
@@ -51,13 +65,16 @@ enum AppAppearance {
 
     private static func applyControlAppearance() {
         UISwitch.appearance().onTintColor = AppColors.accent
-        UISegmentedControl.appearance().selectedSegmentTintColor = AppColors.accentFill
+        // Keep the native segmented-control surface and use the global accent
+        // only for the selected label. This avoids a translucent colored slab
+        // while still making the user's theme choice visible.
+        UISegmentedControl.appearance().selectedSegmentTintColor = AppColors.surface
         UISegmentedControl.appearance().setTitleTextAttributes(
             [.foregroundColor: AppColors.secondaryText],
             for: .normal
         )
         UISegmentedControl.appearance().setTitleTextAttributes(
-            [.foregroundColor: AppColors.primaryText],
+            [.foregroundColor: AppColors.accent],
             for: .selected
         )
         UISearchBar.appearance().tintColor = AppColors.accent

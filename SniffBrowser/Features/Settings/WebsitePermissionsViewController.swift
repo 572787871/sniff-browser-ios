@@ -119,25 +119,24 @@ private struct WebsitePermissionsSwiftUIScreen: View {
     }
 
     private var privacyOverview: some View {
-        AppSwiftUISectionCard {
-            HStack(alignment: .top, spacing: 14) {
-                AppSwiftUIIconBadge(
-                    systemName: "hand.raised.fill",
-                    tint: AppSwiftUIColors.accent,
-                    size: 52
-                )
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("权限由你掌控")
-                        .font(.title3.weight(.bold))
-                    Text("摄像头、麦克风和位置默认不会静默开放。先设置全局行为，再为特定网站添加例外。")
-                        .font(.subheadline)
-                        .foregroundStyle(AppSwiftUIColors.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: "hand.raised")
+                .font(.system(size: 28, weight: .regular))
+                .foregroundStyle(AppSwiftUIColors.secondaryText)
+                .frame(width: 36, height: 40)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 5) {
+                Text("权限由你掌控")
+                    .font(.title3.weight(.bold))
+                Text("摄像头、麦克风和位置默认不会静默开放。先设置全局行为，再为特定网站添加例外。")
+                    .font(.subheadline)
+                    .foregroundStyle(AppSwiftUIColors.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(16)
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 8)
     }
 
     private var defaultBehavior: some View {
@@ -178,10 +177,11 @@ private struct WebsitePermissionsSwiftUIScreen: View {
                     Button {
                         store.setDefaultPolicy(option, for: permission)
                     } label: {
-                        Label(
-                            option.displayName,
-                            systemImage: option == policy ? "checkmark" : "circle"
-                        )
+                        if option == policy {
+                            Label(option.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(option.displayName)
+                        }
                     }
                 }
             } label: {
@@ -193,11 +193,7 @@ private struct WebsitePermissionsSwiftUIScreen: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(AppSwiftUIColors.accent)
                 .padding(.horizontal, 10)
-                .frame(minHeight: 36)
-                .background(
-                    AppSwiftUIColors.accentFill,
-                    in: Capsule(style: .continuous)
-                )
+                .frame(minHeight: 44)
             }
             .accessibilityIdentifier("websitePermission.default.\(permission.rawValue)")
         }
@@ -411,21 +407,24 @@ private struct WebsiteSitePermissionSwiftUIScreen: View {
         AppSwiftUIScreen {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    AppSwiftUISectionCard {
-                        HStack(spacing: 13) {
-                            AppSwiftUIIconBadge(systemName: "network", size: 48)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(store.host)
-                                    .font(.headline)
-                                    .lineLimit(2)
-                                Text("单独设置会覆盖浏览器默认行为")
-                                    .font(.caption)
-                                    .foregroundStyle(AppSwiftUIColors.secondaryText)
-                            }
-                            Spacer()
+                    HStack(spacing: 13) {
+                        Image(systemName: "network")
+                            .font(.system(size: 24, weight: .regular))
+                            .foregroundStyle(AppSwiftUIColors.secondaryText)
+                            .frame(width: 32, height: 40)
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(store.host)
+                                .font(.headline)
+                                .lineLimit(2)
+                            Text("单独设置会覆盖浏览器默认行为")
+                                .font(.caption)
+                                .foregroundStyle(AppSwiftUIColors.secondaryText)
                         }
-                        .padding(16)
+                        Spacer()
                     }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 8)
 
                     VStack(alignment: .leading, spacing: 9) {
                         AppSwiftUISectionHeader(title: "此网站的权限")
@@ -451,6 +450,7 @@ private struct WebsiteSitePermissionSwiftUIScreen: View {
                             title: "清除此网站的全部例外",
                             subtitle: "摄像头、麦克风和位置恢复为默认行为",
                             systemName: "arrow.counterclockwise",
+                            showsLeadingIcon: false,
                             isDestructive: true,
                             showsChevron: false
                         ) {
@@ -506,13 +506,7 @@ private struct WebsiteSitePermissionSwiftUIScreen: View {
                     ? AppSwiftUIColors.danger
                     : AppSwiftUIColors.accent)
                 .padding(.horizontal, 10)
-                .frame(minHeight: 36)
-                .background(
-                    (decision == .deny
-                        ? AppSwiftUIColors.danger.opacity(0.10)
-                        : AppSwiftUIColors.accentFill),
-                    in: Capsule(style: .continuous)
-                )
+                .frame(minHeight: 44)
             }
             .accessibilityIdentifier("sitePermission.\(permission.rawValue)")
         }

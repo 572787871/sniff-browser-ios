@@ -138,7 +138,6 @@ struct NewTabSettingsSwiftUIScreen: View {
         isOn: Binding<Bool>
     ) -> some View {
         HStack(spacing: 12) {
-            AppSwiftUIIconBadge(systemName: symbol)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.body.weight(.medium))

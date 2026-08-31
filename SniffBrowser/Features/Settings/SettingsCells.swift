@@ -64,8 +64,8 @@ final class SettingsCheckmarkCell: UITableViewCell {
             systemName: symbol,
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 17, weight: .medium)
         )
-        iconView.tintColor = AppColors.accent
-        iconContainer.backgroundColor = AppColors.accent.withAlphaComponent(0.12)
+        iconView.tintColor = AppColors.secondaryText
+        iconContainer.backgroundColor = .clear
         accessoryType = isSelected ? .checkmark : .none
         accessibilityLabel = title
         accessibilityTraits = isSelected ? [.button, .selected] : [.button]
@@ -108,7 +108,7 @@ final class SettingsCheckmarkCell: UITableViewCell {
                 constant: AppSpacing.sm
             ),
             iconContainer.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
-            iconContainer.widthAnchor.constraint(equalToConstant: 34),
+            iconContainer.widthAnchor.constraint(equalToConstant: 28),
             iconContainer.heightAnchor.constraint(equalTo: iconContainer.widthAnchor),
 
             iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
@@ -167,8 +167,7 @@ final class SettingsToggleCell: UITableViewCell {
         var configuration = UIListContentConfiguration.subtitleCell()
         configuration.text = title
         configuration.secondaryText = subtitle
-        configuration.image = UIImage(systemName: symbol)
-        configuration.imageProperties.tintColor = AppColors.accent
+        configuration.image = nil
         configuration.textProperties.color = AppColors.primaryText
         configuration.secondaryTextProperties.color = AppColors.secondaryText
         contentConfiguration = configuration

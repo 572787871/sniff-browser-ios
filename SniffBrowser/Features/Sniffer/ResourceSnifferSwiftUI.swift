@@ -263,12 +263,7 @@ struct ResourceSnifferChromeView: View {
                 pageURL: configuration.pageURL,
                 isPrivate: configuration.isPrivate
             )
-            .frame(width: 36, height: 36)
-            .padding(6)
-            .background(
-                Color(uiColor: ResourceSnifferPalette.accentFill),
-                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-            )
+            .frame(width: 40, height: 40)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(configuration.domain)
@@ -304,15 +299,8 @@ struct ResourceSnifferChromeView: View {
         .padding(.vertical, 12)
         .background(
             Color(uiColor: ResourceSnifferPalette.surface),
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
         )
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(
-                    Color(uiColor: ResourceSnifferPalette.border),
-                    lineWidth: 0.5
-                )
-        }
     }
 }
 
@@ -350,17 +338,25 @@ struct ResourceSnifferFilterHeaderView: View {
                     }
                 }
             }
+            .padding(3)
+            .background(
+                Color(uiColor: ResourceSnifferPalette.secondarySurface),
+                in: Capsule(style: .continuous)
+            )
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: 2) {
                     ForEach(configuration.filters) { item in
                         SWResourceFilterButton(item: item, expands: false) {
                             onSelectFilter(item.filter)
                         }
                     }
                 }
-                .padding(.horizontal, 1)
-                .padding(.vertical, 3)
+                .padding(3)
+                .background(
+                    Color(uiColor: ResourceSnifferPalette.secondarySurface),
+                    in: Capsule(style: .continuous)
+                )
             }
         }
         .accessibilityLabel("资源分类")
@@ -457,26 +453,13 @@ private struct SWResourceFilterButton: View {
             .padding(.horizontal, expands ? 10 : 15)
             .frame(maxWidth: expands ? .infinity : nil, minHeight: 44)
             .foregroundStyle(item.isSelected
-                ? Color(uiColor: ResourceSnifferPalette.accentContent)
+                ? Color(uiColor: ResourceSnifferPalette.accent)
                 : Color(uiColor: ResourceSnifferPalette.primaryText))
             .background(
                 item.isSelected
-                    ? Color(uiColor: ResourceSnifferPalette.accent)
-                    : Color(uiColor: ResourceSnifferPalette.surface),
+                    ? Color(uiColor: ResourceSnifferPalette.surface)
+                    : Color.clear,
                 in: Capsule()
-            )
-            .overlay {
-                if !item.isSelected {
-                    Capsule().stroke(
-                        Color(uiColor: ResourceSnifferPalette.border),
-                        lineWidth: 0.5
-                    )
-                }
-            }
-            .shadow(
-                color: item.isSelected ? Color.black.opacity(0.08) : .clear,
-                radius: 8,
-                y: 4
             )
             .contentShape(Capsule())
         }
@@ -550,55 +533,10 @@ private struct ResourceSnifferStateIllustration: View {
     let symbolName: String
 
     var body: some View {
-        if symbolName == "dot.radiowaves.left.and.right" {
-            radar
-        } else {
-            Image(systemName: symbolName)
-                .font(.system(size: 34, weight: .regular))
-                .foregroundStyle(Color(uiColor: ResourceSnifferPalette.accent))
-                .frame(width: 108, height: 108)
-                .background(
-                    Color(uiColor: ResourceSnifferPalette.accentFill),
-                    in: Circle()
-                )
-                .accessibilityHidden(true)
-        }
-    }
-
-    private var radar: some View {
-        ZStack {
-            Circle()
-                .fill(Color(uiColor: ResourceSnifferPalette.accent).opacity(0.035))
-            ForEach([CGFloat(92), 66, 40], id: \.self) { diameter in
-                Circle()
-                    .stroke(
-                        Color(uiColor: ResourceSnifferPalette.accent).opacity(0.14),
-                        lineWidth: 1
-                    )
-                    .frame(width: diameter, height: diameter)
-            }
-
-            Capsule()
-                .fill(Color(uiColor: ResourceSnifferPalette.accent))
-                .frame(width: 42, height: 2)
-                .rotationEffect(.degrees(-45))
-                .offset(x: 15, y: -15)
-
-            Circle()
-                .fill(Color(uiColor: ResourceSnifferPalette.accent))
-                .frame(width: 12, height: 12)
-
-            Circle()
-                .fill(Color(uiColor: ResourceSnifferPalette.accent).opacity(0.62))
-                .frame(width: 7, height: 7)
-                .offset(x: 38, y: 20)
-
-            Circle()
-                .fill(Color(uiColor: ResourceSnifferPalette.accent).opacity(0.32))
-                .frame(width: 5, height: 5)
-                .offset(x: -42, y: 28)
-        }
-        .frame(width: 112, height: 112)
+        Image(systemName: symbolName)
+            .font(.system(size: 46, weight: .regular))
+            .foregroundStyle(Color(uiColor: ResourceSnifferPalette.tertiaryText))
+            .frame(width: 72, height: 72)
         .accessibilityHidden(true)
     }
 }

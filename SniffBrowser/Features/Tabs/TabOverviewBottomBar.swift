@@ -44,10 +44,15 @@ final class TabOverviewBottomBar: UIView {
         )
     }
 
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        materialView.layer.cornerRadius = bounds.height / 2
+    }
+
     private func configureView() {
         backgroundColor = .clear
 
-        materialView.layer.cornerRadius = AppRadius.sheet
+        materialView.layer.cornerRadius = 32
         materialView.layer.cornerCurve = .continuous
         materialView.layer.borderWidth = AppMetrics.separatorHeight
         materialView.clipsToBounds = true
@@ -109,10 +114,10 @@ final class TabOverviewBottomBar: UIView {
     }
 
     private func configureNewTabButton() {
-        var configuration = UIButton.Configuration.tinted()
+        var configuration = UIButton.Configuration.plain()
         configuration.image = UIImage(systemName: "plus")
         configuration.baseForegroundColor = AppColors.accent
-        configuration.baseBackgroundColor = AppColors.accentFill
+        configuration.baseBackgroundColor = .clear
         configuration.cornerStyle = .capsule
         configuration.contentInsets = .zero
         newTabButton.configuration = configuration
@@ -161,7 +166,7 @@ final class TabOverviewBottomBar: UIView {
         overrideUserInterfaceStyle = .unspecified
         materialView.contentView.backgroundColor = .clear
         newTabButton.configuration?.baseForegroundColor = AppColors.accent
-        newTabButton.configuration?.baseBackgroundColor = AppColors.accentFill
+        newTabButton.configuration?.baseBackgroundColor = .clear
         doneButton.configuration?.baseForegroundColor = AppColors.accent
         tabCountLabel.textColor = AppColors.primaryText
         newTabButton.accessibilityLabel = mode.isPrivate

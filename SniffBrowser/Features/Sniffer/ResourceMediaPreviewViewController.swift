@@ -158,7 +158,7 @@ final class ResourceMediaPreviewViewController: UIViewController {
     }
 
     private func configureOverlay() {
-        headerView.backgroundColor = .black
+        headerView.backgroundColor = UIColor.black.withAlphaComponent(0.58)
         headerView.translatesAutoresizingMaskIntoConstraints = false
         headerView.accessibilityIdentifier = "resource.media-preview.header"
         view.addSubview(headerView)
@@ -182,11 +182,9 @@ final class ResourceMediaPreviewViewController: UIViewController {
         titleLabel.accessibilityIdentifier = "resource.media-preview.title"
 
         if onDownload != nil {
-            downloadButton.setTitle(downloadTitle, for: .normal)
-            downloadButton.setImage(UIImage(systemName: "arrow.down.circle"), for: .normal)
+            downloadButton.setImage(UIImage(systemName: "arrow.down"), for: .normal)
             downloadButton.tintColor = .white
-            downloadButton.setTitleColor(.white, for: .normal)
-            downloadButton.titleLabel?.font = .preferredFont(forTextStyle: .subheadline)
+            downloadButton.accessibilityLabel = downloadTitle
             downloadButton.accessibilityIdentifier = "resource.media-preview.download"
             downloadButton.addTarget(self, action: #selector(downloadPressed), for: .touchUpInside)
         } else {
@@ -195,7 +193,7 @@ final class ResourceMediaPreviewViewController: UIViewController {
         downloadButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
         downloadButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
 
-        closeButton.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
+        closeButton.setImage(UIImage(systemName: "xmark"), for: .normal)
         closeButton.tintColor = .white
         closeButton.accessibilityLabel = "关闭播放器"
         closeButton.accessibilityIdentifier = "resource.media-preview.close"
@@ -225,13 +223,12 @@ final class ResourceMediaPreviewViewController: UIViewController {
         statusDetailLabel.adjustsFontForContentSizeCategory = true
         statusDetailLabel.numberOfLines = 0
         statusDetailLabel.textAlignment = .center
-        retryButton.setTitle("重试播放", for: .normal)
-        retryButton.setTitleColor(.white, for: .normal)
-        retryButton.titleLabel?.font = .preferredFont(forTextStyle: .body)
-        retryButton.layer.cornerRadius = AppRadius.control
-        retryButton.layer.borderWidth = 1
-        retryButton.layer.borderColor = UIColor.white.withAlphaComponent(0.5).cgColor
-        retryButton.contentEdgeInsets = UIEdgeInsets(top: 8, left: 16, bottom: 8, right: 16)
+        var retryConfiguration = UIButton.Configuration.tinted()
+        retryConfiguration.title = "重试播放"
+        retryConfiguration.baseForegroundColor = .white
+        retryConfiguration.baseBackgroundColor = UIColor.white.withAlphaComponent(0.14)
+        retryConfiguration.cornerStyle = .capsule
+        retryButton.configuration = retryConfiguration
         retryButton.accessibilityIdentifier = "resource.media-preview.retry"
         retryButton.addTarget(self, action: #selector(retryPressed), for: .touchUpInside)
     }
@@ -258,7 +255,7 @@ final class ResourceMediaPreviewViewController: UIViewController {
                 constant: -4
             ),
             topBar.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
-            playerController.view.topAnchor.constraint(equalTo: headerView.bottomAnchor),
+            playerController.view.topAnchor.constraint(equalTo: view.topAnchor),
             playerController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             playerController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             playerController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),

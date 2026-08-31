@@ -56,9 +56,11 @@ final class AddressBarView: UIView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
+    let radius = bounds.height / 2
+    materialView.layer.cornerRadius = radius
     layer.shadowPath = UIBezierPath(
       roundedRect: bounds,
-      cornerRadius: AppRadius.input
+      cornerRadius: radius
     ).cgPath
   }
 
@@ -131,7 +133,7 @@ final class AddressBarView: UIView {
       self.textField.textAlignment = self.textField.isFirstResponder
         ? .left
         : .center
-      self.layer.shadowOpacity = compact ? 0.04 : AppShadow.browserChrome.opacity
+      self.layer.shadowOpacity = compact ? 0.025 : AppShadow.browserChrome.opacity
     }
     // 收缩时图标只作为视觉元素隐藏；地址栏本身仍要保留可触摸区域，
     // 点击收缩后的地址栏可以恢复编辑状态。
@@ -154,10 +156,10 @@ final class AddressBarView: UIView {
     )
 
     materialView.translatesAutoresizingMaskIntoConstraints = false
-    materialView.layer.cornerRadius = AppRadius.input
+    materialView.layer.cornerRadius = AppMetrics.addressBarHeight / 2
     materialView.layer.cornerCurve = .continuous
     materialView.clipsToBounds = true
-    materialView.layer.borderWidth = 1
+    materialView.layer.borderWidth = AppMetrics.separatorHeight
     addSubview(materialView)
     AppShadow.browserChrome.apply(to: self)
 
@@ -270,11 +272,11 @@ final class AddressBarView: UIView {
 
       progressView.leadingAnchor.constraint(
         equalTo: materialView.contentView.leadingAnchor,
-        constant: AppRadius.input
+        constant: AppMetrics.addressBarHeight / 2
       ),
       progressView.trailingAnchor.constraint(
         equalTo: materialView.contentView.trailingAnchor,
-        constant: -AppRadius.input
+        constant: -AppMetrics.addressBarHeight / 2
       ),
       progressView.bottomAnchor.constraint(
         equalTo: materialView.contentView.bottomAnchor
@@ -300,7 +302,7 @@ final class AddressBarView: UIView {
       )
       : pageThemeForegroundStyle?.color
     let borderColor = foreground?.withAlphaComponent(
-      UIAccessibility.isDarkerSystemColorsEnabled ? 0.28 : 0.16
+      UIAccessibility.isDarkerSystemColorsEnabled ? 0.32 : 0.10
     ) ?? AppColors.browserChromeBorder.resolvedColor(with: traitCollection)
     materialView.layer.borderColor = borderColor.cgColor
     if isPrivateMode {
@@ -351,7 +353,7 @@ final class AddressBarView: UIView {
     } else {
       switch url?.scheme?.lowercased() {
       case "https":
-        symbol = "text.page"
+        symbol = "lock.fill"
         color = pageThemeForegroundStyle?.color ?? AppColors.secondaryText
         securityImageView.accessibilityLabel = "网页设置，安全连接"
       case "http":

@@ -223,7 +223,7 @@ final class NewTabView: UIView {
 
     titleLabel.translatesAutoresizingMaskIntoConstraints = false
     titleLabel.text = "嗅探浏览器"
-    titleLabel.font = AppTypography.title
+    titleLabel.font = AppTypography.title3
     titleLabel.textColor = AppColors.primaryText
     titleLabel.textAlignment = .left
     titleLabel.numberOfLines = 1
@@ -246,22 +246,22 @@ final class NewTabView: UIView {
     headerContainer.addSubview(welcomeLabel)
 
     let preferredHeaderHeight = headerContainer.heightAnchor.constraint(
-      equalToConstant: 88
+      equalToConstant: 68
     )
     preferredHeaderHeight.priority = UILayoutPriority(999)
     NSLayoutConstraint.activate([
-      headerContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 88),
+      headerContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 68),
       preferredHeaderHeight,
       logoContainer.leadingAnchor.constraint(equalTo: headerContainer.leadingAnchor),
       logoContainer.topAnchor.constraint(equalTo: headerContainer.topAnchor),
-      logoContainer.widthAnchor.constraint(equalToConstant: 56),
-      logoContainer.heightAnchor.constraint(equalToConstant: 88),
-      logoView.topAnchor.constraint(equalTo: logoContainer.topAnchor, constant: 6),
+      logoContainer.widthAnchor.constraint(equalToConstant: 48),
+      logoContainer.heightAnchor.constraint(equalToConstant: 68),
+      logoView.topAnchor.constraint(equalTo: logoContainer.topAnchor, constant: 2),
       logoView.leadingAnchor.constraint(equalTo: logoContainer.leadingAnchor),
-      logoView.widthAnchor.constraint(equalToConstant: 52),
+      logoView.widthAnchor.constraint(equalToConstant: 44),
       logoView.heightAnchor.constraint(equalTo: logoView.widthAnchor),
 
-      titleLabel.topAnchor.constraint(equalTo: headerContainer.topAnchor, constant: 7),
+      titleLabel.topAnchor.constraint(equalTo: headerContainer.topAnchor, constant: 2),
       titleLabel.leadingAnchor.constraint(
         equalTo: logoContainer.trailingAnchor,
         constant: AppSpacing.sm
@@ -285,7 +285,7 @@ final class NewTabView: UIView {
     searchMaterial.translatesAutoresizingMaskIntoConstraints = false
     searchMaterial.layer.cornerRadius = AppRadius.input
     searchMaterial.layer.cornerCurve = .continuous
-    searchMaterial.layer.borderWidth = 1
+    searchMaterial.layer.borderWidth = AppMetrics.separatorHeight
     searchMaterial.accessibilityIdentifier = "newTab.searchSurface"
 
     searchImageView.translatesAutoresizingMaskIntoConstraints = false
@@ -331,7 +331,7 @@ final class NewTabView: UIView {
     searchMaterial.addSubview(submitButton)
 
     NSLayoutConstraint.activate([
-      searchMaterial.heightAnchor.constraint(greaterThanOrEqualToConstant: 58),
+      searchMaterial.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
       searchImageView.leadingAnchor.constraint(
         equalTo: searchMaterial.leadingAnchor,
         constant: AppSpacing.md
@@ -354,7 +354,7 @@ final class NewTabView: UIView {
         constant: -AppSpacing.sm
       ),
       submitButton.centerYAnchor.constraint(equalTo: searchMaterial.centerYAnchor),
-      submitButton.widthAnchor.constraint(equalToConstant: 36),
+      submitButton.widthAnchor.constraint(equalToConstant: 34),
       submitButton.heightAnchor.constraint(equalTo: submitButton.widthAnchor),
     ])
   }
@@ -376,7 +376,7 @@ final class NewTabView: UIView {
       button.addTarget(self, action: #selector(quickActionPressed(_:)), for: .touchUpInside)
       quickActionsStack.addArrangedSubview(button)
     }
-    quickActionsStack.heightAnchor.constraint(greaterThanOrEqualToConstant: 76).isActive = true
+    quickActionsStack.heightAnchor.constraint(greaterThanOrEqualToConstant: 72).isActive = true
   }
 
   private func configureFavorites() {
@@ -445,7 +445,7 @@ final class NewTabView: UIView {
     contentStack.addArrangedSubview(headerContainer)
     contentStack.setCustomSpacing(AppSpacing.sm, after: headerContainer)
     contentStack.addArrangedSubview(searchMaterial)
-    contentStack.setCustomSpacing(AppSpacing.xl, after: searchMaterial)
+    contentStack.setCustomSpacing(AppSpacing.lg, after: searchMaterial)
     contentStack.addArrangedSubview(quickActionsTitleLabel)
     contentStack.setCustomSpacing(AppSpacing.sm, after: quickActionsTitleLabel)
     contentStack.addArrangedSubview(quickActionsStack)
@@ -493,11 +493,11 @@ final class NewTabView: UIView {
       contentTopConstraint!,
       contentStack.leadingAnchor.constraint(
         equalTo: contentContainer.leadingAnchor,
-        constant: AppSpacing.xl
+        constant: AppSpacing.lg
       ),
       contentStack.trailingAnchor.constraint(
         equalTo: contentContainer.trailingAnchor,
-        constant: -AppSpacing.xl
+        constant: -AppSpacing.lg
       ),
       contentStack.bottomAnchor.constraint(
         lessThanOrEqualTo: contentContainer.bottomAnchor,
@@ -573,8 +573,10 @@ final class NewTabView: UIView {
       : AppColors.surface.withAlphaComponent(hasCustomBackground ? 0.94 : 1)
     searchMaterial.layer.borderColor = (
       isPrivateMode
-        ? AppColors.privateBrowsingAccent.withAlphaComponent(0.30)
-        : AppColors.browserChromeBorder.resolvedColor(with: traitCollection)
+        ? AppColors.privateBrowsingAccent.withAlphaComponent(0.24)
+        : (hasCustomBackground
+            ? UIColor.white.withAlphaComponent(0.20)
+            : AppColors.separator.resolvedColor(with: traitCollection))
     ).cgColor
     quickActionsStack.arrangedSubviews
       .compactMap { $0 as? NewTabQuickActionButton }
@@ -586,7 +588,7 @@ final class NewTabView: UIView {
 
   private func updateContentTopInset() {
     guard let contentTopConstraint else { return }
-    let inset = max(0, safeAreaInsets.top) + AppSpacing.xxl
+    let inset = max(0, safeAreaInsets.top) + AppSpacing.lg
     if contentTopConstraint.constant != inset {
       contentTopConstraint.constant = inset
     }
@@ -724,7 +726,7 @@ private final class NewTabFavoriteButton: UIButton {
 
     var configuration = UIButton.Configuration.filled()
     configuration.image = UIImage(
-      systemName: "star.fill",
+      systemName: "globe",
       withConfiguration: UIImage.SymbolConfiguration(
         pointSize: 20,
         weight: .medium
@@ -869,6 +871,7 @@ private final class NewTabFavoriteButton: UIButton {
       let changes = {
         self.alpha = self.isHighlighted ? 0.72 : 1
         self.transform = self.isHighlighted
+          && !UIAccessibility.isReduceMotionEnabled
           ? CGAffineTransform(scaleX: 0.97, y: 0.97)
           : .identity
       }
@@ -900,7 +903,7 @@ private final class NewTabQuickActionButton: UIButton {
     configuration.imagePlacement = .top
     configuration.imagePadding = AppSpacing.xs
     configuration.baseForegroundColor = AppColors.primaryText
-    configuration.baseBackgroundColor = AppColors.secondarySurface
+    configuration.baseBackgroundColor = .clear
     configuration.cornerStyle = .medium
     configuration.contentInsets = NSDirectionalEdgeInsets(
       top: AppSpacing.sm,
@@ -926,7 +929,7 @@ private final class NewTabQuickActionButton: UIButton {
     configuration.baseForegroundColor = foreground
     configuration.baseBackgroundColor = overPhoto
       ? UIColor.black.withAlphaComponent(0.34)
-      : AppColors.secondarySurface
+      : .clear
     configuration.titleTextAttributesTransformer =
       UIConfigurationTextAttributesTransformer { attributes in
         var attributes = attributes
@@ -946,6 +949,7 @@ private final class NewTabQuickActionButton: UIButton {
       let changes = {
         self.alpha = self.isHighlighted ? 0.72 : 1
         self.transform = self.isHighlighted
+          && !UIAccessibility.isReduceMotionEnabled
           ? CGAffineTransform(scaleX: 0.97, y: 0.97)
           : .identity
       }

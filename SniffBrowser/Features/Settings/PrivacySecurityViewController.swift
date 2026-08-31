@@ -114,14 +114,10 @@ private struct PrivacySecuritySwiftUIScreen: View {
 
     private var privacySummary: some View {
         HStack(spacing: 14) {
-            Image(systemName: "hand.raised.fill")
-                .font(.system(size: 26, weight: .semibold))
-                .foregroundStyle(AppSwiftUIColors.accent)
-                .frame(width: 54, height: 54)
-                .background(
-                    AppSwiftUIColors.accentFill,
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-                )
+            Image(systemName: "hand.raised")
+                .font(.system(size: 28, weight: .regular))
+                .foregroundStyle(AppSwiftUIColors.secondaryText)
+                .frame(width: 36, height: 44)
             VStack(alignment: .leading, spacing: 4) {
                 Text("隐私由你控制")
                     .font(.headline)
@@ -132,14 +128,8 @@ private struct PrivacySecuritySwiftUIScreen: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(18)
-        .background(.regularMaterial)
-        .background(AppSwiftUIColors.surface.opacity(0.74))
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(AppSwiftUIColors.separator, lineWidth: 0.7)
-        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 8)
     }
 
     private var privacyControls: some View {
@@ -168,6 +158,7 @@ private struct PrivacySecuritySwiftUIScreen: View {
                 title: "清除浏览数据",
                 subtitle: "Cookie、网站数据与缓存",
                 systemName: "trash",
+                showsLeadingIcon: false,
                 isDestructive: true,
                 isEnabled: store.canClearBrowsingData,
                 showsChevron: false
@@ -208,7 +199,8 @@ private struct PrivacySecuritySwiftUIScreen: View {
         AppSwiftUIActionRow(
             title: title,
             subtitle: subtitle,
-            systemName: symbol
+            systemName: symbol,
+            showsLeadingIcon: false
         ) {
             onSelect(destination)
         }

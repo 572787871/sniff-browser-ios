@@ -15,7 +15,7 @@ enum AppThemeColor: Int, CaseIterable, Sendable {
   static var current: AppThemeColor {
     get {
       let rawValue = UserDefaults.standard.object(forKey: storageKey) as? Int
-      return rawValue.flatMap(AppThemeColor.init(rawValue:)) ?? .amber
+      return rawValue.flatMap(AppThemeColor.init(rawValue:)) ?? .ocean
     }
     set {
       guard newValue != current else { return }
@@ -93,11 +93,11 @@ enum AppThemeColor: Int, CaseIterable, Sendable {
       return UIColor(red: 0.949, green: 0.690, blue: 0.392, alpha: 1)
 
     case (.ocean, false, false):
-      return UIColor(red: 0.196, green: 0.404, blue: 0.690, alpha: 1)
+      return UIColor(red: 0.000, green: 0.443, blue: 0.890, alpha: 1)
     case (.ocean, false, true):
       return UIColor(red: 0.090, green: 0.286, blue: 0.604, alpha: 1)
     case (.ocean, true, false):
-      return UIColor(red: 0.420, green: 0.624, blue: 0.902, alpha: 1)
+      return UIColor(red: 0.039, green: 0.518, blue: 1.000, alpha: 1)
     case (.ocean, true, true):
       return UIColor(red: 0.545, green: 0.729, blue: 0.980, alpha: 1)
 
@@ -132,7 +132,7 @@ enum AppThemeColor: Int, CaseIterable, Sendable {
 }
 
 struct AppThemeColorTrait: UITraitDefinition {
-  static let defaultValue = AppThemeColor.amber
+  static let defaultValue = AppThemeColor.ocean
   static let affectsColorAppearance = true
   static let name = "SniffBrowser Theme Color"
   static let identifier = "com.sniffbrowser.themeColor.trait"

@@ -174,13 +174,9 @@ private struct LoginSwiftUIScreen: View {
     private var header: some View {
         VStack(spacing: 12) {
             Image(systemName: "person.crop.circle.badge.checkmark")
-                .font(.system(size: 46, weight: .medium))
-                .foregroundStyle(AppSwiftUIColors.accent)
-                .frame(width: 90, height: 90)
-                .background(
-                    AppSwiftUIColors.accentFill,
-                    in: RoundedRectangle(cornerRadius: 28, style: .continuous)
-                )
+                .font(.system(size: 52, weight: .regular))
+                .foregroundStyle(AppSwiftUIColors.secondaryText)
+                .frame(width: 72, height: 72)
             Text(store.mode == .signUp ? "创建账户" : "欢迎回来")
                 .font(.title2.weight(.bold))
             Text(store.mode == .signUp
@@ -202,7 +198,7 @@ private struct LoginSwiftUIScreen: View {
             .pickerStyle(.segmented)
             .disabled(store.isLoading)
 
-            VStack(spacing: 12) {
+            VStack(spacing: 0) {
                 HStack(spacing: 10) {
                     Image(systemName: "envelope")
                         .foregroundStyle(AppSwiftUIColors.secondaryText)
@@ -217,10 +213,8 @@ private struct LoginSwiftUIScreen: View {
                 }
                 .padding(.horizontal, 14)
                 .frame(minHeight: 52)
-                .background(
-                    AppSwiftUIColors.secondarySurface.opacity(0.66),
-                    in: RoundedRectangle(cornerRadius: 15, style: .continuous)
-                )
+
+                AppSwiftUIDivider(leading: 42)
 
                 HStack(spacing: 10) {
                     Image(systemName: "lock")
@@ -233,11 +227,9 @@ private struct LoginSwiftUIScreen: View {
                 }
                 .padding(.horizontal, 14)
                 .frame(minHeight: 52)
-                .background(
-                    AppSwiftUIColors.secondarySurface.opacity(0.66),
-                    in: RoundedRectangle(cornerRadius: 15, style: .continuous)
-                )
             }
+            .background(AppSwiftUIColors.secondarySurface)
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
 
             if let status = store.status {
                 Text(status)
@@ -274,13 +266,8 @@ private struct LoginSwiftUIScreen: View {
             }
         }
         .padding(18)
-        .background(.regularMaterial)
-        .background(AppSwiftUIColors.surface.opacity(0.75))
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(AppSwiftUIColors.separator, lineWidth: 0.7)
-        }
+        .background(AppSwiftUIColors.surface)
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.panel, style: .continuous))
     }
 
     private func submit() {

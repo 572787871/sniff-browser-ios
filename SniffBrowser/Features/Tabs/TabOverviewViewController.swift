@@ -640,22 +640,7 @@ final class TabOverviewViewController: BaseViewController {
             for: .selected
         )
 
-        let navAppearance = UINavigationBarAppearance()
-        navAppearance.configureWithOpaqueBackground()
-        navAppearance.backgroundColor = AppColors.background
-        navAppearance.shadowColor = AppColors.separator
-        navAppearance.titleTextAttributes = [
-            .foregroundColor: AppColors.primaryText,
-            .font: AppTypography.headline
-        ]
-        navAppearance.largeTitleTextAttributes = [
-            .foregroundColor: AppColors.primaryText,
-            .font: AppTypography.largeTitle
-        ]
         navigationController?.navigationBar.tintColor = AppColors.accent
-        navigationController?.navigationBar.standardAppearance = navAppearance
-        navigationController?.navigationBar.compactAppearance = navAppearance
-        navigationController?.navigationBar.scrollEdgeAppearance = navAppearance
         updateBottomBarTabCount()
         let changes = {
             self.privacyTintView.alpha = 0
