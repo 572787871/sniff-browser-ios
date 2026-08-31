@@ -521,9 +521,7 @@ private final class FileLibraryCell: UITableViewCell {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         selectionStyle = .none
 
-        var background = UIBackgroundConfiguration.listGroupedCell()
-        background.backgroundColor = AppColors.surface
-        backgroundConfiguration = background
+        backgroundConfiguration = AppGroupedListAppearance.cellBackground()
 
         thumbnailView.contentMode = .scaleAspectFill
         thumbnailView.clipsToBounds = true

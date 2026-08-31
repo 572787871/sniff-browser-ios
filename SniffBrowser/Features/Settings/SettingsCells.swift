@@ -8,9 +8,7 @@ final class GlassSummaryCell: UITableViewCell {
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         selectionStyle = .default
-        var background = UIBackgroundConfiguration.listGroupedCell()
-        background.backgroundColor = AppColors.surface
-        backgroundConfiguration = background
+        backgroundConfiguration = AppGroupedListAppearance.cellBackground()
     }
 
     required init?(coder: NSCoder) {
@@ -80,9 +78,7 @@ final class SettingsCheckmarkCell: UITableViewCell {
     }
 
     private func configureView() {
-        var background = UIBackgroundConfiguration.listGroupedCell()
-        background.backgroundColor = AppColors.surface
-        backgroundConfiguration = background
+        backgroundConfiguration = AppGroupedListAppearance.cellBackground()
         selectionStyle = .default
         isAccessibilityElement = true
 
@@ -190,9 +186,7 @@ final class SettingsToggleCell: UITableViewCell {
     }
 
     private func configureView() {
-        var background = UIBackgroundConfiguration.listGroupedCell()
-        background.backgroundColor = AppColors.surface
-        backgroundConfiguration = background
+        backgroundConfiguration = AppGroupedListAppearance.cellBackground()
         selectionStyle = .none
         toggle.addTarget(self, action: #selector(toggleChanged), for: .valueChanged)
         accessoryView = toggle

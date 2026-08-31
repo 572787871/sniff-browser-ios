@@ -148,6 +148,14 @@ final class DesignSystemTests: XCTestCase {
     XCTAssertTrue(last.roundsBottomCorners)
   }
 
+  @MainActor
+  func testUIKitGroupedListsUseTheSharedPanelRadius() {
+    let configuration = AppGroupedListAppearance.cellBackground()
+
+    XCTAssertEqual(configuration.cornerRadius, AppRadius.panel)
+    XCTAssertNotNil(configuration.backgroundColor)
+  }
+
   func testMinimumTapTargetMeetsAccessibilityGuideline() {
     XCTAssertGreaterThanOrEqual(AppMetrics.minimumTapSize, 44)
     XCTAssertGreaterThanOrEqual(AppMetrics.addressBarHeight, 44)

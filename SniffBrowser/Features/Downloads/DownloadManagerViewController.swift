@@ -918,9 +918,7 @@ private final class DownloadTaskCell: UITableViewCell {
     private func configureView() {
         selectionStyle = .none
 
-        var background = UIBackgroundConfiguration.listGroupedCell()
-        background.backgroundColor = AppColors.surface
-        backgroundConfiguration = background
+        backgroundConfiguration = AppGroupedListAppearance.cellBackground()
 
         iconView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 24)
         iconView.tintColor = AppColors.accent

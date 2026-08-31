@@ -114,6 +114,20 @@ enum AppAppearance {
     }
 }
 
+/// UIKit 分组列表与 SwiftUI `AppSwiftUISectionCard` 共享同一面板外形。
+/// 从系统 grouped 配置派生，保留原生高亮、选择和左滑交互。
+@MainActor
+enum AppGroupedListAppearance {
+    static func cellBackground(
+        color: UIColor = AppColors.surface
+    ) -> UIBackgroundConfiguration {
+        var configuration = UIBackgroundConfiguration.listGroupedCell()
+        configuration.backgroundColor = color
+        configuration.cornerRadius = AppRadius.panel
+        return configuration
+    }
+}
+
 /// 品牌图形集中在代码中生成，避免把页面图标锁死在单一分辨率位图里。
 @MainActor
 enum AppIconography {
