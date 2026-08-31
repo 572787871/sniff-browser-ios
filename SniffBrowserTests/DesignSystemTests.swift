@@ -132,6 +132,22 @@ final class DesignSystemTests: XCTestCase {
     XCTAssertLessThan(AppRadius.card, AppRadius.sheet)
   }
 
+  func testGroupedListRowsRoundOnlyTheSectionOuterEdges() {
+    let single = AppSwiftUIGroupedRowPosition(index: 0, count: 1)
+    let first = AppSwiftUIGroupedRowPosition(index: 0, count: 3)
+    let middle = AppSwiftUIGroupedRowPosition(index: 1, count: 3)
+    let last = AppSwiftUIGroupedRowPosition(index: 2, count: 3)
+
+    XCTAssertTrue(single.roundsTopCorners)
+    XCTAssertTrue(single.roundsBottomCorners)
+    XCTAssertTrue(first.roundsTopCorners)
+    XCTAssertFalse(first.roundsBottomCorners)
+    XCTAssertFalse(middle.roundsTopCorners)
+    XCTAssertFalse(middle.roundsBottomCorners)
+    XCTAssertFalse(last.roundsTopCorners)
+    XCTAssertTrue(last.roundsBottomCorners)
+  }
+
   func testMinimumTapTargetMeetsAccessibilityGuideline() {
     XCTAssertGreaterThanOrEqual(AppMetrics.minimumTapSize, 44)
     XCTAssertGreaterThanOrEqual(AppMetrics.addressBarHeight, 44)

@@ -179,7 +179,12 @@ private struct HistorySwiftUIScreen: View {
         List {
             ForEach(store.state.sections, id: \.title) { section in
                 Section(section.title) {
-                    ForEach(section.items) { item in
+                    ForEach(
+                        Array(section.items.enumerated()),
+                        id: \.element.id
+                    ) { indexedItem in
+                        let index = indexedItem.offset
+                        let item = indexedItem.element
                         HistorySwiftUIRow(item: item)
                             .contentShape(Rectangle())
                             .onTapGesture { onOpen(item) }
@@ -188,7 +193,14 @@ private struct HistorySwiftUIScreen: View {
                                     store.remove(item)
                                 }
                             }
-                            .listRowBackground(AppSwiftUIColors.surface)
+                            .listRowBackground(
+                                AppSwiftUIGroupedRowBackground(
+                                    position: AppSwiftUIGroupedRowPosition(
+                                        index: index,
+                                        count: section.items.count
+                                    )
+                                )
+                            )
                     }
                 }
             }

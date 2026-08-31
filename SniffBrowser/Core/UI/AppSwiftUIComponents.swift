@@ -135,6 +135,51 @@ struct AppSwiftUISectionCard<Content: View>: View {
     }
 }
 
+/// 为仍需保留系统 `List` 左滑操作的管理页面提供统一分组外形。
+/// `List(.insetGrouped)` 的默认圆角小于应用面板圆角，因此只替换每行
+/// 的背景几何；列表的滚动、左滑操作和系统上下文菜单均保持不变。
+enum AppSwiftUIGroupedRowPosition: Equatable {
+    case single
+    case first
+    case middle
+    case last
+
+    init(index: Int, count: Int) {
+        if count <= 1 {
+            self = .single
+        } else if index <= 0 {
+            self = .first
+        } else if index >= count - 1 {
+            self = .last
+        } else {
+            self = .middle
+        }
+    }
+
+    var roundsTopCorners: Bool {
+        self == .single || self == .first
+    }
+
+    var roundsBottomCorners: Bool {
+        self == .single || self == .last
+    }
+}
+
+struct AppSwiftUIGroupedRowBackground: View {
+    let position: AppSwiftUIGroupedRowPosition
+
+    var body: some View {
+        UnevenRoundedRectangle(
+            topLeadingRadius: position.roundsTopCorners ? AppRadius.panel : 0,
+            bottomLeadingRadius: position.roundsBottomCorners ? AppRadius.panel : 0,
+            bottomTrailingRadius: position.roundsBottomCorners ? AppRadius.panel : 0,
+            topTrailingRadius: position.roundsTopCorners ? AppRadius.panel : 0,
+            style: .continuous
+        )
+        .fill(AppSwiftUIColors.surface)
+    }
+}
+
 struct AppSwiftUIIconBadge: View {
     let systemName: String
     var tint: Color = AppSwiftUIColors.secondaryText

@@ -194,7 +194,12 @@ private struct FavoritesSwiftUIScreen: View {
     private var list: some View {
         List {
             Section {
-                ForEach(store.state.items) { item in
+                ForEach(
+                    Array(store.state.items.enumerated()),
+                    id: \.element.id
+                ) { indexedItem in
+                    let index = indexedItem.offset
+                    let item = indexedItem.element
                     FavoriteSwiftUIRow(item: item)
                         .contentShape(Rectangle())
                         .onTapGesture { onOpen(item) }
@@ -224,7 +229,14 @@ private struct FavoritesSwiftUIScreen: View {
                                 Label("删除", systemImage: "trash")
                             }
                         }
-                        .listRowBackground(AppSwiftUIColors.surface)
+                        .listRowBackground(
+                            AppSwiftUIGroupedRowBackground(
+                                position: AppSwiftUIGroupedRowPosition(
+                                    index: index,
+                                    count: store.state.items.count
+                                )
+                            )
+                        )
                 }
             } header: {
                 Text("已收藏 \(store.state.totalCount)")
