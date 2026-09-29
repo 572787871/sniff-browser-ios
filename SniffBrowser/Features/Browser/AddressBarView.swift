@@ -218,7 +218,10 @@ final class AddressBarView: UIView {
       action: #selector(trailingButtonPressed),
       for: .touchUpInside
     )
-    materialView.contentView.addSubview(trailingButton)
+    // Keep the chrome action above the visual-effect hierarchy. A button
+    // embedded in UIVisualEffectView.contentView can lose hit testing while
+    // the material is being transformed between compact and expanded states.
+    addSubview(trailingButton)
 
     progressView.translatesAutoresizingMaskIntoConstraints = false
     progressView.progressTintColor = AppColors.accent
@@ -257,7 +260,7 @@ final class AddressBarView: UIView {
       textField.bottomAnchor.constraint(equalTo: materialView.contentView.bottomAnchor),
 
       trailingButton.trailingAnchor.constraint(
-        equalTo: materialView.contentView.trailingAnchor,
+        equalTo: trailingAnchor,
         constant: -AppSpacing.xs
       ),
       trailingButton.centerYAnchor.constraint(
